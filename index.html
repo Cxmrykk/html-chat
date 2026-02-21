@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Motherfucking LLM Chat</title>
+    
+    <!-- Yeah, I'm loading a 30kb script for Markdown. Writing a regex parser for this shit is a waste of time. Deal with it. -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        /* Look at this minimal CSS. It's fucking beautiful. */
+        body {
+            max-width: 1000px;
+            margin: 2rem auto;
+            font-family: monospace, sans-serif;
+            line-height: 1.6;
+            padding: 0 1rem;
+            color: #111;
+            background: #fafafa;
+        }
+        h1, h2, h3 { margin-top: 0; }
+        button {
+            cursor: pointer;
+            font-family: inherit;
+            background: #eee;
+            border: 1px solid #000;
+            padding: 5px 10px;
+            color: #000;
+        }
+        button:hover { background: #ccc; }
+        input, textarea, select {
+            font-family: inherit;
+            padding: 8px;
+            border: 1px solid #000;
+            box-sizing: border-box;
+            width: 100%;
+            margin-bottom: 10px;
+            background: #fff;
+        }
+        textarea { min-height: 100px; resize: vertical; }
+        .hidden { display: none !important; }
+        
+        /* Lock In Button */
+        .lock-in-btn {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            color: #0055ff;
+            text-decoration: underline;
+            cursor: pointer;
+            font-size: 0.9em;
+            z-index: 100;
+        }
+        .lock-in-btn:hover { color: #ff0055; }
+
+        /* Layout */
+        .grid { display: flex; gap: 2rem; flex-wrap: wrap; }
+        
+        /* Sidebar with its own fucking scroll context */
+        .sidebar { 
+            flex: 1; 
+            min-width: 250px; 
+            max-height: 80vh; 
+            overflow-y: auto; 
+            padding-right: 10px; 
+        }
+        
+        .main { flex: 3; min-width: 300px; display: flex; flex-direction: column; }
+
+        /* Chat Container (The Scroll Box) */
+        #chat-container {
+            position: relative; /* Needed so offsetTop calculates correctly */
+            height: 60vh;
+            min-height: 300px;
+            overflow-y: auto;
+            border: 2px solid #000;
+            background: #ebebeb;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        /* Chat Messages */
+        .msg {
+            border-left: 4px solid #000;
+            padding-left: 15px;
+            margin-bottom: 20px;
+            background: #fff;
+            padding-top: 10px;
+            padding-bottom: 10px;
+            padding-right: 10px;
+            border-radius: 0 5px 5px 0;
+            box-shadow: 2px 2px 0px #000;
+        }
+        .msg:last-child { margin-bottom: 0; }
+        .msg.user { border-color: #0055ff; }
+        .msg.assistant { border-color: #ff0055; }
+        .msg.system { border-color: #ffaa00; background: #fff8e6; }
+        
+        .msg-meta {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #555;
+            display: flex;
+            justify-content: space-between;
+        }
+        .msg-actions button { font-size: 0.8em; padding: 2px 6px; margin-left: 5px; }
+        .msg-content { overflow-x: auto; }
+        .msg-content p:first-child { margin-top: 0; }
+        .msg-content p:last-child { margin-bottom: 0; }
+        
+        /* Markdown Code Blocks */
+        .msg-content pre { background: #eee; padding: 10px; border: 1px solid #ccc; overflow-x: auto; }
+        .msg-content code { background: #eee; padding: 2px 4px; }
+        .msg-content pre code { padding: 0; background: transparent; } /* Fixes the fucking indent issue */
+
+        /* Edit Area */
+        .edit-area { min-height: 250px; }
+
+        /* Chat List */
+        .chat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px;
+            border: 1px solid transparent;
+            margin-bottom: 5px;
+        }
+        .chat-item.active { border-color: #000; background: #eee; font-weight: bold; }
+        .chat-item-title { 
+            cursor: pointer; 
+            flex-grow: 1; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            white-space: nowrap; 
+            min-width: 0; 
+            margin-right: 10px;
+        }
+        .chat-item-actions { 
+            flex-shrink: 0; 
+            display: flex; 
+        }
+        .chat-item-actions button { font-size: 0.7em; padding: 2px 5px; margin-left: 2px; }
+
+        /* Config */
+        .config-box { background: #eee; padding: 15px; border: 1px solid #000; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <a id="lock-in-btn" class="lock-in-btn" onclick="toggleLockIn()">[lock in]</a>
+
+    <header>
+        <h1>Motherfucking LLM Chat</h1>
+        <p>No 50MB React bundles. No tracking. Just you, your API key, and the fucking machine.</p>
+    </header>
+
+    <div class="grid">
+        <!-- SIDEBAR: Config & Chat List -->
+        <aside class="sidebar" id="sidebar">
+            <div class="config-box">
+                <h3>Settings</h3>
+                <label>Base URL</label>
+                <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1">
+                
+                <label>API Key (Saved in your fucking browser)</label>
+                <input type="password" id="cfg-key" placeholder="sk-...">
+                
+                <label>Models (Comma separated)</label>
+                <input type="text" id="cfg-models" placeholder="gpt-4o, gpt-3.5-turbo">
+                
+                <button onclick="saveConfig()">Save Settings</button>
+            </div>
+
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3>Your Chats</h3>
+                    <button onclick="newChat()">+ New</button>
+                </div>
+                <div id="chat-list"></div>
+            </div>
+        </aside>
+
+        <!-- MAIN: Chat Area -->
+        <main class="main">
+            <div id="chat-container">
+                <!-- Messages go here -->
+            </div>
+
+            <div id="input-area">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <select id="model-select" style="width: auto; margin: 0;"></select>
+                    <button id="send-btn" onclick="sendMessage()" style="flex-grow: 1; font-weight: bold;">Send that shit</button>
+                </div>
+                <textarea id="chat-input" placeholder="Type your prompt here, motherfucker..."></textarea>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- STATE MANAGEMENT ---
+        let config = JSON.parse(localStorage.getItem('mf_config')) || { 
+            url: 'https://api.openai.com/v1', 
+            key: '', 
+            models: 'gpt-4o, gpt-4-turbo, gpt-3.5-turbo' 
+        };
+        let chats = JSON.parse(localStorage.getItem('mf_chats')) || [];
+        let currentChatId = localStorage.getItem('mf_current_chat_id') || null;
+        let isLockedIn = localStorage.getItem('mf_locked_in') === 'true';
+
+        function saveState() {
+            localStorage.setItem('mf_config', JSON.stringify(config));
+            localStorage.setItem('mf_chats', JSON.stringify(chats));
+            localStorage.setItem('mf_current_chat_id', currentChatId || '');
+            localStorage.setItem('mf_locked_in', isLockedIn);
+        }
+
+        // --- INITIALIZATION ---
+        function init() {
+            document.getElementById('cfg-url').value = config.url;
+            document.getElementById('cfg-key').value = config.key;
+            document.getElementById('cfg-models').value = config.models;
+            
+            updateModelDropdown();
+            applyLockInState();
+            
+            if (!currentChatId && chats.length > 0) {
+                currentChatId = chats[0].id;
+            }
+            
+            renderApp();
+        }
+
+        function toggleLockIn() {
+            isLockedIn = !isLockedIn;
+            saveState();
+            applyLockInState();
+        }
+
+        function applyLockInState() {
+            const sidebar = document.getElementById('sidebar');
+            const btn = document.getElementById('lock-in-btn');
+            if (isLockedIn) {
+                sidebar.classList.add('hidden');
+                btn.textContent = '[unlock]';
+            } else {
+                sidebar.classList.remove('hidden');
+                btn.textContent = '[lock in]';
+            }
+        }
+
+        function saveConfig() {
+            config.url = document.getElementById('cfg-url').value.trim();
+            config.key = document.getElementById('cfg-key').value.trim();
+            config.models = document.getElementById('cfg-models').value.trim();
+            saveState();
+            updateModelDropdown();
+            alert("Settings saved. Don't fuck them up.");
+        }
+
+        function updateModelDropdown() {
+            const select = document.getElementById('model-select');
+            select.innerHTML = '';
+            const models = config.models.split(',').map(m => m.trim()).filter(m => m);
+            models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m;
+                select.appendChild(opt);
+            });
+        }
+
+        // --- CHAT MANAGEMENT ---
+        function newChat() {
+            const id = Date.now().toString();
+            chats.unshift({ id, title: 'New Fucking Chat', messages: [] });
+            currentChatId = id;
+            saveState();
+            renderApp();
+        }
+
+        function loadChat(id) {
+            currentChatId = id;
+            saveState();
+            renderApp();
+        }
+
+        function deleteChat(id) {
+            chats = chats.filter(c => c.id !== id);
+            if (currentChatId === id) currentChatId = chats.length ? chats[0].id : null;
+            saveState();
+            renderApp();
+        }
+
+        function renameChat(id) {
+            const chat = chats.find(c => c.id === id);
+            const newTitle = prompt("Rename this shit:", chat.title);
+            if (newTitle) {
+                chat.title = newTitle.trim();
+                saveState();
+                renderApp(true); // Preserve scroll just in case
+            }
+        }
+
+        function forkChat(msgIndex) {
+            const chat = chats.find(c => c.id === currentChatId);
+            const newId = Date.now().toString();
+            const forkedMessages = JSON.parse(JSON.stringify(chat.messages.slice(0, msgIndex + 1)));
+            
+            chats.unshift({
+                id: newId,
+                title: chat.title + ' (Forked)',
+                messages: forkedMessages
+            });
+            
+            currentChatId = newId;
+            saveState();
+            renderApp();
+        }
+
+        function retryMessage(msgIndex) {
+            const chat = chats.find(c => c.id === currentChatId);
+            const textToRetry = chat.messages[msgIndex].content;
+            
+            // Truncate chat up to the target index (exclusive)
+            chat.messages = chat.messages.slice(0, msgIndex);
+            saveState();
+            
+            // Put text in input and send that shit again
+            document.getElementById('chat-input').value = textToRetry;
+            sendMessage();
+        }
+
+        function deleteMessage(msgIndex) {
+            const chat = chats.find(c => c.id === currentChatId);
+            chat.messages.splice(msgIndex, 1);
+            saveState();
+            renderApp(true); // Preserve scroll position
+        }
+
+        // --- RENDERING ---
+        function renderApp(preserveScroll = false) {
+            renderChatList();
+            renderCurrentChat(preserveScroll);
+        }
+
+        function renderChatList() {
+            const list = document.getElementById('chat-list');
+            list.innerHTML = '';
+            
+            if (chats.length === 0) {
+                list.innerHTML = '<p style="font-size:0.8em; color:#666;">No chats. Start typing.</p>';
+                return;
+            }
+
+            chats.forEach(chat => {
+                const div = document.createElement('div');
+                div.className = `chat-item ${chat.id === currentChatId ? 'active' : ''}`;
+                
+                const title = document.createElement('div');
+                title.className = 'chat-item-title';
+                title.textContent = chat.title;
+                title.onclick = () => loadChat(chat.id);
+                
+                const actions = document.createElement('div');
+                actions.className = 'chat-item-actions';
+                
+                const renBtn = document.createElement('button');
+                renBtn.textContent = '✎';
+                renBtn.title = 'Rename';
+                renBtn.onclick = () => renameChat(chat.id);
+                
+                const delBtn = document.createElement('button');
+                delBtn.textContent = '×';
+                delBtn.title = 'Delete';
+                delBtn.onclick = () => deleteChat(chat.id);
+                
+                actions.appendChild(renBtn);
+                actions.appendChild(delBtn);
+                
+                div.appendChild(title);
+                div.appendChild(actions);
+                list.appendChild(div);
+            });
+        }
+
+        function renderCurrentChat(preserveScroll = false) {
+            const container = document.getElementById('chat-container');
+            const prevScroll = container.scrollTop;
+            
+            container.innerHTML = '';
+            
+            if (!currentChatId) {
+                container.innerHTML = '<h2 style="margin:0;">Select or create a chat, asshole.</h2>';
+                return;
+            }
+
+            const chat = chats.find(c => c.id === currentChatId);
+            if (chat.messages.length === 0) {
+                container.innerHTML = '<p style="margin:0;">It is fucking empty in here. Send a prompt.</p>';
+                return;
+            }
+
+            chat.messages.forEach((msg, index) => {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = `msg ${msg.role}`;
+                
+                // Meta header
+                const metaDiv = document.createElement('div');
+                metaDiv.className = 'msg-meta';
+                
+                const roleSpan = document.createElement('span');
+                roleSpan.textContent = msg.role;
+                
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'msg-actions';
+                
+                const editBtn = document.createElement('button');
+                editBtn.textContent = 'Edit';
+                
+                const forkBtn = document.createElement('button');
+                forkBtn.textContent = 'Fork';
+                forkBtn.onclick = () => forkChat(index);
+
+                actionsDiv.appendChild(editBtn);
+                actionsDiv.appendChild(forkBtn);
+
+                // Only add Retry button if it's a user message
+                if (msg.role === 'user') {
+                    const retryBtn = document.createElement('button');
+                    retryBtn.textContent = 'Retry';
+                    retryBtn.onclick = () => retryMessage(index);
+                    actionsDiv.appendChild(retryBtn);
+                }
+                
+                const delBtn = document.createElement('button');
+                delBtn.textContent = 'Delete';
+                delBtn.onclick = () => deleteMessage(index);
+                
+                actionsDiv.appendChild(delBtn);
+                
+                metaDiv.appendChild(roleSpan);
+                metaDiv.appendChild(actionsDiv);
+                
+                // Content area
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'msg-content';
+                contentDiv.innerHTML = marked.parse(msg.content);
+                
+                // Edit area (hidden by default)
+                const editArea = document.createElement('textarea');
+                editArea.className = 'hidden edit-area';
+                editArea.value = msg.content;
+                
+                // Edit Actions Container
+                const editActionsContainer = document.createElement('div');
+                editActionsContainer.className = 'hidden';
+                editActionsContainer.style.marginTop = '5px';
+
+                const saveEditBtn = document.createElement('button');
+                saveEditBtn.textContent = 'Save Edit';
+                
+                const toggleWrapBtn = document.createElement('button');
+                toggleWrapBtn.textContent = 'Toggle Wrap';
+                toggleWrapBtn.style.marginLeft = '10px';
+
+                // Toggle wrap logic
+                toggleWrapBtn.onclick = () => {
+                    if (editArea.hasAttribute('wrap')) {
+                        editArea.removeAttribute('wrap');
+                    } else {
+                        editArea.setAttribute('wrap', 'off');
+                    }
+                };
+
+                editActionsContainer.appendChild(saveEditBtn);
+                editActionsContainer.appendChild(toggleWrapBtn);
+                
+                // Edit logic
+                editBtn.onclick = () => {
+                    contentDiv.classList.add('hidden');
+                    editArea.classList.remove('hidden');
+                    editActionsContainer.classList.remove('hidden');
+                    editBtn.classList.add('hidden');
+                };
+                
+                saveEditBtn.onclick = () => {
+                    msg.content = editArea.value;
+                    saveState();
+                    renderApp(true); // Preserve scroll when saving an edit
+                };
+
+                msgDiv.appendChild(metaDiv);
+                msgDiv.appendChild(contentDiv);
+                msgDiv.appendChild(editArea);
+                msgDiv.appendChild(editActionsContainer);
+                
+                container.appendChild(msgDiv);
+            });
+            
+            // Handle scroll position
+            if (preserveScroll) {
+                container.scrollTop = prevScroll;
+            } else {
+                const lastMsg = container.lastElementChild;
+                if (lastMsg) {
+                    // Scroll so the top of the last message is at the top of the container
+                    // Subtracting 15px to account for the container's padding so it looks clean
+                    container.scrollTop = lastMsg.offsetTop - 15;
+                }
+            }
+        }
+
+        // --- API INTERACTION ---
+        async function sendMessage() {
+            const inputEl = document.getElementById('chat-input');
+            const text = inputEl.value.trim();
+            if (!text) return;
+
+            if (!config.key) {
+                alert("Put your fucking API key in the settings first.");
+                return;
+            }
+
+            if (!currentChatId) newChat();
+            const chat = chats.find(c => c.id === currentChatId);
+            
+            // Auto-title if it's the first message
+            if (chat.messages.length === 0) {
+                chat.title = text.substring(0, 30) + (text.length > 30 ? '...' : '');
+            }
+
+            // Add user message
+            chat.messages.push({ role: 'user', content: text });
+            inputEl.value = '';
+            saveState();
+            renderApp(); // Scroll to top of new message
+
+            const btn = document.getElementById('send-btn');
+            const model = document.getElementById('model-select').value;
+            
+            btn.disabled = true;
+            btn.textContent = 'Thinking...';
+
+            try {
+                // Strip out any system errors before sending to API
+                const cleanMessages = chat.messages
+                    .filter(m => m.role !== 'system')
+                    .map(m => ({ role: m.role, content: m.content }));
+
+                const response = await fetch(`${config.url}/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${config.key}`
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: cleanMessages
+                    })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error?.message || `HTTP ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const reply = data.choices[0].message.content;
+                
+                chat.messages.push({ role: 'assistant', content: reply });
+
+            } catch (error) {
+                chat.messages.push({ role: 'system', content: `**Fucking Error:**\n\n${error.message}` });
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Send that shit';
+            saveState();
+            renderApp(); // Scroll to top of new message
+        }
+
+        // Allow Ctrl+Enter to send
+        document.getElementById('chat-input').addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Boot this shit up
+        init();
+    </script>
+</body>
+</html>
