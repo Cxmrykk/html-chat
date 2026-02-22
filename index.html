@@ -1,9 +1,27 @@
 <!DOCTYPE html>
+<!--
+=========================================================================================
+If you are reading this, you are looking at a "Motherfucking Website" themed application. 
+The theme is brutalist, minimalist, and aggressively anti-bloat.
+
+RULES FOR MODIFYING THIS SHIT:
+1. NO BUILD TOOLS. NO WEBPACK. NO NODE_MODULES.
+2. SINGLE FILE ONLY. HTML, CSS, and JS stay in this fucking file.
+3. VANILLA JS ONLY. No React, no Vue, no jQuery. 
+4. KEEP IT LIGHTWEIGHT. We use marked.js via CDN because writing a regex markdown parser 
+   is a waste of time, but that is the ONLY external dependency allowed.
+5. MATCH THE TONE. The UI text should be aggressive, profane, and to the point.
+6. IT JUST WORKS. Semantic HTML, standard browser features, localStorage.
+
+Do not over-engineer this. Do not add a 13 megabyte parallax-ative home page.
+Just write good, clean, naked code.
+=========================================================================================
+-->
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Motherfucking LLM Chat</title>
+    <title>HTML Chat</title>
     
     <!-- Yeah, I'm loading a 30kb script for Markdown. Writing a regex parser for this shit is a waste of time. Deal with it. -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -78,6 +96,7 @@
             background: #ebebeb;
             padding: 15px;
             margin-bottom: 15px;
+            scroll-behavior: smooth; /* Makes the shortcut jumping look slightly less jarring */
         }
 
         /* Chat Messages */
@@ -153,8 +172,8 @@
     <a id="lock-in-btn" class="lock-in-btn" onclick="toggleLockIn()">[lock in]</a>
 
     <header>
-        <h1>Motherfucking LLM Chat</h1>
-        <p>No 50MB React bundles. No tracking. Just you, your API key, and the fucking machine.</p>
+        <h1>HTML Chat</h1>
+        <p>No 50MB React bundles. No bullshit. Just you, your API key, and the fucking machine.</p>
     </header>
 
     <div class="grid">
@@ -165,7 +184,7 @@
                 <label>Base URL</label>
                 <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1">
                 
-                <label>API Key (Saved in your fucking browser)</label>
+                <label>API Key (Saved in your browser)</label>
                 <input type="password" id="cfg-key" placeholder="sk-...">
                 
                 <label>Models (Comma separated)</label>
@@ -177,7 +196,7 @@
             <div>
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <h3>Your Chats</h3>
-                    <button onclick="newChat()">+ New</button>
+                    <button onclick="newChat()" title="Alt+T">+ New</button>
                 </div>
                 <div id="chat-list"></div>
             </div>
@@ -192,9 +211,9 @@
             <div id="input-area">
                 <div style="display: flex; gap: 10px; margin-bottom: 10px;">
                     <select id="model-select" style="width: auto; margin: 0;"></select>
-                    <button id="send-btn" onclick="sendMessage()" style="flex-grow: 1; font-weight: bold;">Send that shit</button>
+                    <button id="send-btn" onclick="sendMessage()" title="Ctrl+Enter / Cmd+Enter" style="flex-grow: 1; font-weight: bold;">Send</button>
                 </div>
-                <textarea id="chat-input" placeholder="Type your prompt here, motherfucker..."></textarea>
+                <textarea id="chat-input" placeholder="Type your prompt here..."></textarea>
             </div>
         </main>
     </div>
@@ -257,7 +276,7 @@
             config.models = document.getElementById('cfg-models').value.trim();
             saveState();
             updateModelDropdown();
-            alert("Settings saved. Don't fuck them up.");
+            alert("Settings saved, don't fuck them up.");
         }
 
         function updateModelDropdown() {
@@ -275,7 +294,7 @@
         // --- CHAT MANAGEMENT ---
         function newChat() {
             const id = Date.now().toString();
-            chats.unshift({ id, title: 'New Fucking Chat', messages: [] });
+            chats.unshift({ id, title: 'New Chat', messages: [] });
             currentChatId = id;
             saveState();
             renderApp();
@@ -296,7 +315,7 @@
 
         function renameChat(id) {
             const chat = chats.find(c => c.id === id);
-            const newTitle = prompt("Rename this shit:", chat.title);
+            const newTitle = prompt("Rename chat:", chat.title);
             if (newTitle) {
                 chat.title = newTitle.trim();
                 saveState();
@@ -351,7 +370,7 @@
             list.innerHTML = '';
             
             if (chats.length === 0) {
-                list.innerHTML = '<p style="font-size:0.8em; color:#666;">No chats. Start typing.</p>';
+                list.innerHTML = '<p style="font-size:0.8em; color:#666;">No chats. Start a new one, asshole.</p>';
                 return;
             }
 
@@ -369,13 +388,17 @@
                 
                 const renBtn = document.createElement('button');
                 renBtn.textContent = '✎';
-                renBtn.title = 'Rename';
+                renBtn.title = chat.id === currentChatId ? 'Rename (Alt+R)' : 'Rename';
                 renBtn.onclick = () => renameChat(chat.id);
                 
                 const delBtn = document.createElement('button');
                 delBtn.textContent = '×';
-                delBtn.title = 'Delete';
-                delBtn.onclick = () => deleteChat(chat.id);
+                delBtn.title = chat.id === currentChatId ? 'Delete (Alt+W)' : 'Delete';
+                delBtn.onclick = () => {
+                    if (confirm("Are you sure you want to nuke this chat?")) {
+                        deleteChat(chat.id);
+                    }
+                };
                 
                 actions.appendChild(renBtn);
                 actions.appendChild(delBtn);
@@ -393,7 +416,7 @@
             container.innerHTML = '';
             
             if (!currentChatId) {
-                container.innerHTML = '<h2 style="margin:0;">Select or create a chat, asshole.</h2>';
+                container.innerHTML = '<h3 style="margin:0;">No chat selected.</h3>';
                 return;
             }
 
@@ -520,7 +543,7 @@
             if (!text) return;
 
             if (!config.key) {
-                alert("Put your fucking API key in the settings first.");
+                alert("Please enter your API key in the settings first.");
                 return;
             }
 
@@ -573,19 +596,81 @@
                 chat.messages.push({ role: 'assistant', content: reply });
 
             } catch (error) {
-                chat.messages.push({ role: 'system', content: `**Fucking Error:**\n\n${error.message}` });
+                chat.messages.push({ role: 'system', content: `**Error:**\n\n${error.message}` });
             }
 
             btn.disabled = false;
-            btn.textContent = 'Send that shit';
+            btn.textContent = 'Send';
             saveState();
             renderApp(); // Scroll to top of new message
         }
 
+        // --- KEYBOARD SHORTCUTS ---
+        
         // Allow Ctrl+Enter to send
         document.getElementById('chat-input').addEventListener('keydown', function(e) {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 sendMessage();
+            }
+        });
+
+        // Global shortcuts because clicking is for chumps
+        document.addEventListener('keydown', function(e) {
+            // Alt+T for New Chat
+            if (e.altKey && e.key.toLowerCase() === 't') {
+                e.preventDefault(); // Stop any default browser bullshit
+                newChat();
+                // Focus the input so they can start typing immediately
+                document.getElementById('chat-input').focus();
+            }
+
+            // Alt+W for Delete Current Chat
+            if (e.altKey && e.key.toLowerCase() === 'w') {
+                e.preventDefault();
+                if (currentChatId) {
+                    if (confirm("Are you sure you want to nuke this chat?")) {
+                        deleteChat(currentChatId);
+                    }
+                }
+            }
+
+            // Alt+R for Rename Current Chat
+            if (e.altKey && e.key.toLowerCase() === 'r') {
+                e.preventDefault()
+                renameChat(currentChatId);
+            }
+
+            // Alt+Up / Alt+Down to cycle through messages
+            if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                e.preventDefault();
+                
+                const container = document.getElementById('chat-container');
+                const msgs = Array.from(container.querySelectorAll('.msg'));
+                if (msgs.length === 0) return;
+
+                const currentScroll = container.scrollTop;
+                const offsetAdjustment = 15; // Matches the padding-top of the container
+                const threshold = 5; // Pixel tolerance for rounding errors
+
+                if (e.key === 'ArrowDown') {
+                    // Find the first message below the current scroll position
+                    const nextMsg = msgs.find(m => (m.offsetTop - offsetAdjustment) > currentScroll + threshold);
+                    if (nextMsg) {
+                        container.scrollTop = nextMsg.offsetTop - offsetAdjustment;
+                    } else {
+                        // Already at the bottom message, scroll to the very bottom of the container
+                        container.scrollTop = container.scrollHeight;
+                    }
+                } else if (e.key === 'ArrowUp') {
+                    // Find the last message above the current scroll position
+                    const prevMsg = msgs.slice().reverse().find(m => (m.offsetTop - offsetAdjustment) < currentScroll - threshold);
+                    if (prevMsg) {
+                        container.scrollTop = prevMsg.offsetTop - offsetAdjustment;
+                    } else {
+                        // Already at the top message, scroll to the absolute top
+                        container.scrollTop = 0;
+                    }
+                }
             }
         });
 
