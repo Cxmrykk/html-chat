@@ -26,8 +26,13 @@ Just write good, clean, naked code.
     <!-- Yeah, I'm loading a 30kb script for Markdown. Writing a regex parser for this shit is a waste of time. Deal with it. -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
+    <!-- The math shit. Unless you like reading raw latex, we're gonna need this too. -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex/dist/contrib/auto-render.min.js"></script>
+
     <style>
-        /* Look at this minimal CSS. It's fucking beautiful. */
+        /* Just enough CSS so it doesn't look like shit. */
         body {
             max-width: 1000px;
             margin: 2rem auto;
@@ -132,7 +137,7 @@ Just write good, clean, naked code.
         /* Markdown Code Blocks */
         .msg-content pre { background: #eee; padding: 10px; border: 1px solid #ccc; overflow-x: auto; }
         .msg-content code { background: #eee; padding: 2px 4px; }
-        .msg-content pre code { padding: 0; background: transparent; } /* Fixes the fucking indent issue */
+        .msg-content pre code { padding: 0; background: transparent; } /* Fixes the indent issue with code blocks */
 
         /* Edit Area */
         .edit-area { min-height: 250px; }
@@ -165,12 +170,24 @@ Just write good, clean, naked code.
         /* Config */
         .config-box { background: #eee; padding: 15px; border: 1px solid #000; margin-bottom: 20px; }
         
-        /* Show the 'Hand' and hover shade only when copy mode is active */
         body.ctrl-down pre, 
-        body.ctrl-down code {
+        body.ctrl-down code,
+        body.ctrl-down .katex {
             cursor: pointer !important;
         }
 
+        /* CTRL-Copy */
+        body.ctrl-down pre:hover,
+        body.ctrl-down code:hover,
+        body.ctrl-down .katex:hover {
+            background: #e0e0e0;
+        }
+
+        .katex {
+            user-select: none; /* Prevent users from highlighting individual spans in math because it looks like shit */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+        }
     </style>
 </head>
 <body>
@@ -179,7 +196,7 @@ Just write good, clean, naked code.
 
     <header>
         <h1>HTML Chat</h1>
-        <p>No 500mB Docker containers. No bullshit. Just you, your API key, and the fucking machine.</p>
+        <p>No 500MB Docker containers. No bullshit. Just you, your API key, and the fucking machine.</p>
     </header>
 
     <div class="grid">
@@ -476,7 +493,17 @@ Just write good, clean, naked code.
                 // Content area
                 const contentDiv = document.createElement('div');
                 contentDiv.className = 'msg-content';
-                contentDiv.innerHTML = marked.parse(msg.content);
+
+                // contentDiv.innerHTML = marked.parse(msg.content);
+                // DO THIS INSTEAD:
+                // We double-escape backslashes inside $$ blocks so marked.js doesn't fuck them up
+                const escapedContent = msg.content.replace(/(\${1,2})([\s\S]*?)\1/g, (match) => {
+                    return match.replace(/\\/g, '\\\\');
+                });
+
+
+                contentDiv.innerHTML = marked.parse(escapedContent);
+
                 
                 // Edit area (hidden by default)
                 const editArea = document.createElement('textarea');
@@ -489,22 +516,24 @@ Just write good, clean, naked code.
                 editActionsContainer.style.marginTop = '5px';
 
                 const saveEditBtn = document.createElement('button');
-                saveEditBtn.textContent = 'Save Edit';
+                saveEditBtn.textContent = 'Save';
                 
+                const cancelEditBtn = document.createElement('button');
+                cancelEditBtn.textContent = 'Cancel';
+                cancelEditBtn.style.marginLeft = '5px';
+
                 const toggleWrapBtn = document.createElement('button');
                 toggleWrapBtn.textContent = 'Toggle Wrap';
-                toggleWrapBtn.style.marginLeft = '10px';
+                toggleWrapBtn.style.marginLeft = '5px';
 
                 // Toggle wrap logic
                 toggleWrapBtn.onclick = () => {
-                    if (editArea.hasAttribute('wrap')) {
-                        editArea.removeAttribute('wrap');
-                    } else {
-                        editArea.setAttribute('wrap', 'off');
-                    }
+                    editArea.style.whiteSpace = editArea.style.whiteSpace === 'pre' ? 'pre-wrap' : 'pre';
+                    editArea.style.overflowX = editArea.style.whiteSpace === 'pre' ? 'auto' : 'hidden';
                 };
 
                 editActionsContainer.appendChild(saveEditBtn);
+                editActionsContainer.appendChild(cancelEditBtn);
                 editActionsContainer.appendChild(toggleWrapBtn);
                 
                 // Edit logic
@@ -513,13 +542,19 @@ Just write good, clean, naked code.
                     editArea.classList.remove('hidden');
                     editActionsContainer.classList.remove('hidden');
                     editBtn.classList.add('hidden');
+                    editArea.focus();
+                };
+
+                cancelEditBtn.onclick = () => {
+                    renderApp(true); // Just re-render to get rid of the edit state
                 };
                 
                 saveEditBtn.onclick = () => {
                     msg.content = editArea.value;
                     saveState();
-                    renderApp(true); // Preserve scroll when saving an edit
+                    renderApp(true); // Save and refresh
                 };
+
 
                 msgDiv.appendChild(metaDiv);
                 msgDiv.appendChild(contentDiv);
@@ -527,6 +562,16 @@ Just write good, clean, naked code.
                 msgDiv.appendChild(editActionsContainer);
                 
                 container.appendChild(msgDiv);
+
+                renderMathInElement(msgDiv, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false}
+                    ],
+                    output: 'htmlAndMathml', // This is usually default, but good to be explicit
+                    throwOnError: false
+                });
+
             });
             
             // Handle scroll position
@@ -694,22 +739,40 @@ Just write good, clean, naked code.
         document.getElementById('chat-container').addEventListener('click', function(e) {
             if (!(e.ctrlKey || e.metaKey)) return;
 
-            const target = e.target.closest('pre') || e.target.closest('code');
-            if (!target) return;
+            let text = "";
+            let target = null;
+
+            // Check if it's a code block
+            const codeTarget = e.target.closest('pre') || e.target.closest('code');
+            
+            // Check if it's a KaTeX math block
+            const mathTarget = e.target.closest('.katex');
+
+            if (mathTarget) {
+                target = mathTarget;
+                // KaTeX stores the original LaTeX in an <annotation> tag
+                const annotation = mathTarget.querySelector('annotation');
+                if (annotation) {
+                    text = annotation.textContent;
+                } else {
+                    // Fallback for some configurations: try to find the TeX source
+                    text = mathTarget.querySelector('.katex-mathml math').getAttribute('alttext') || "";
+                }
+            } else if (codeTarget) {
+                target = codeTarget;
+                text = target.innerText;
+            }
+
+            if (!target || !text) return;
 
             e.preventDefault();
-            const text = target.innerText;
-
             navigator.clipboard.writeText(text).then(() => {
-                // Flash feedback
                 const originalBg = target.style.backgroundColor;
                 target.style.backgroundColor = '#ccc';
-
-                setTimeout(() => {
-                    target.style.backgroundColor = originalBg;
-                }, 100);
+                setTimeout(() => { target.style.backgroundColor = originalBg; }, 100);
             });
         });
+
 
         // Boot this shit up
         init();
