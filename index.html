@@ -86,9 +86,9 @@ Just write good, clean, naked code.
         
         .main { flex: 3; min-width: 300px; display: flex; flex-direction: column; }
 
-        /* Chat Container (The Scroll Box) */
+        /* Updated Chat Container */
         #chat-container {
-            position: relative; /* Needed so offsetTop calculates correctly */
+            position: relative;
             height: 60vh;
             min-height: 300px;
             overflow-y: auto;
@@ -96,7 +96,6 @@ Just write good, clean, naked code.
             background: #ebebeb;
             padding: 15px;
             margin-bottom: 15px;
-            scroll-behavior: smooth; /* Makes the shortcut jumping look slightly less jarring */
         }
 
         /* Chat Messages */
@@ -165,6 +164,13 @@ Just write good, clean, naked code.
 
         /* Config */
         .config-box { background: #eee; padding: 15px; border: 1px solid #000; margin-bottom: 20px; }
+        
+        /* Show the 'Hand' and hover shade only when copy mode is active */
+        body.ctrl-down pre, 
+        body.ctrl-down code {
+            cursor: pointer !important;
+        }
+
     </style>
 </head>
 <body>
@@ -173,7 +179,7 @@ Just write good, clean, naked code.
 
     <header>
         <h1>HTML Chat</h1>
-        <p>No 50MB React bundles. No bullshit. Just you, your API key, and the fucking machine.</p>
+        <p>No 500mB Docker containers. No bullshit. Just you, your API key, and the fucking machine.</p>
     </header>
 
     <div class="grid">
@@ -672,6 +678,37 @@ Just write good, clean, naked code.
                     }
                 }
             }
+        });
+
+        // --- CLIPBOARD SHIT ---
+
+        // Toggle the copy-mode class based on key state
+        const toggleCopyMode = (e) => {
+            if (e.key === 'Control' || e.key === 'Meta') {
+                document.body.classList.toggle('ctrl-down', e.type === 'keydown');
+            }
+        };
+        window.addEventListener('keydown', toggleCopyMode);
+        window.addEventListener('keyup', toggleCopyMode);
+
+        document.getElementById('chat-container').addEventListener('click', function(e) {
+            if (!(e.ctrlKey || e.metaKey)) return;
+
+            const target = e.target.closest('pre') || e.target.closest('code');
+            if (!target) return;
+
+            e.preventDefault();
+            const text = target.innerText;
+
+            navigator.clipboard.writeText(text).then(() => {
+                // Flash feedback
+                const originalBg = target.style.backgroundColor;
+                target.style.backgroundColor = '#ccc';
+
+                setTimeout(() => {
+                    target.style.backgroundColor = originalBg;
+                }, 100);
+            });
         });
 
         // Boot this shit up
