@@ -337,11 +337,11 @@ but when there is nothing left to take away." — Some dead guy.
           <label>Base URL</label>
           <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1" />
 
-          <label>API Key (Saved in your browser)</label>
+          <label>API Key</label>
           <input type="password" id="cfg-key" placeholder="sk-..." />
 
-          <label>Models (Comma separated)</label>
-          <input type="text" id="cfg-models" placeholder="gpt-4o, gpt-3.5-turbo" />
+          <label>Models (use commas)</label>
+          <input type="text" id="cfg-models" placeholder="gpt-4o,gpt-3.5-turbo" />
 
           <button onclick="saveConfig()">Save Settings</button>
         </div>
@@ -658,12 +658,25 @@ but when there is nothing left to take away." — Some dead guy.
           const contentDiv = document.createElement("div");
           contentDiv.className = "msg-content";
 
-          // We double-escape backslashes inside $$ blocks so marked.js doesn't fuck them up
-          const escapedContent = msg.content.replace(/(\${1,2})([\s\S]*?)\1/g, (match) => {
-            return match.replace(/\\/g, "\\\\");
+          // 1. Extract math blocks so marked.js doesn't fuck up underscores and asterisks
+          const mathBlocks = [];
+          // $$ can span lines, but $ must stay on a single line to prevent eating currency
+          const placeholderContent = msg.content.replace(/(\$\$)([\s\S]*?)\1|\$((?:\\.|[^$\n])+?)\$/g, (match) => {
+            // Escape HTML chars so the browser doesn't eat < and > when we inject it back
+            const safeMath = match.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            mathBlocks.push(safeMath);
+            return `%%%MATH${mathBlocks.length - 1}%%%`;
           });
 
-          contentDiv.innerHTML = marked.parse(escapedContent);
+          // 2. Parse the markdown (which now only sees the safe placeholders)
+          let parsedContent = marked.parse(placeholderContent);
+
+          // 3. Inject the math back in before KaTeX gets to it
+          parsedContent = parsedContent.replace(/%%%MATH(\d+)%%%/g, (match, i) => {
+            return mathBlocks[i];
+          });
+
+          contentDiv.innerHTML = parsedContent;
 
           // Edit area (hidden by default)
           const editArea = document.createElement("textarea");
@@ -908,8 +921,13 @@ but when there is nothing left to take away." — Some dead guy.
           document.body.classList.toggle("ctrl-down", e.type === "keydown");
         }
       };
+
       window.addEventListener("keydown", toggleCopyMode);
       window.addEventListener("keyup", toggleCopyMode);
+      window.addEventListener("blur", () => {
+        // Remove the highlighting if the user switches tabs or windows
+        document.body.classList.remove("ctrl-down");
+      });
 
       document.getElementById("chat-container").addEventListener("click", function (e) {
         if (!(e.ctrlKey || e.metaKey)) return;
