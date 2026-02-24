@@ -306,8 +306,13 @@ but when there is nothing left to take away." — Some dead guy.
       /* CTRL-Copy */
       body.ctrl-down pre:hover,
       body.ctrl-down code:hover,
-      body.ctrl-down .katex:hover {
+      body.ctrl-down .katex:hover,
+      body.ctrl-down .chat-item:hover {
         background: #e0e0e0;
+      }
+
+      body.ctrl-down .chat-item-title {
+        cursor: copy !important;
       }
 
       /* Latex */
@@ -526,6 +531,27 @@ but when there is nothing left to take away." — Some dead guy.
         renderApp();
       }
 
+      function copyChat(chat, element) {
+        if (chat.messages.length === 0) {
+          alert("Chat is empty, nothing to copy.");
+          return;
+        }
+
+        let formattedText = `# ${chat.title}\n\n`;
+        chat.messages.forEach((msg) => {
+          const role = msg.role.toUpperCase();
+          formattedText += `## ${role}\n${msg.content}\n\n`;
+        });
+
+        navigator.clipboard.writeText(formattedText.trim()).then(() => {
+          const originalBg = element.style.backgroundColor;
+          element.style.backgroundColor = "#ccc";
+          setTimeout(() => {
+            element.style.backgroundColor = originalBg;
+          }, 150);
+        });
+      }
+
       function retryMessage(msgIndex) {
         const chat = chats.find((c) => c.id === currentChatId);
         const textToRetry = chat.messages[msgIndex].content;
@@ -568,7 +594,14 @@ but when there is nothing left to take away." — Some dead guy.
           const title = document.createElement("div");
           title.className = "chat-item-title";
           title.textContent = chat.title;
-          title.onclick = () => loadChat(chat.id);
+
+          title.onclick = (e) => {
+            if (e.ctrlKey || e.metaKey) {
+              copyChat(chat, div);
+            } else {
+              loadChat(chat.id);
+            }
+          };
 
           const actions = document.createElement("div");
           actions.className = "chat-item-actions";
