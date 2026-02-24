@@ -1,20 +1,17 @@
 <!DOCTYPE html>
 <!--
 =========================================================================================
-If you are reading this, you are looking at a "Motherfucking Website" themed application. 
-The theme is brutalist, minimalist, and aggressively anti-bloat.
+RULES FOR CONTINUED EXISTENCE:
+1. NO BULLSHIT FRAMEWORKS. If you think this needs React, you are the problem.
+2. NO BUILD TOOLS. If it doesn't run by double-clicking the .html file, delete it.
+3. DEPENDENCY HONESTY. We use Marked, KaTeX, and Prism because we aren't masochists.
+   We value our time and sanity more than loading 100kb of minified JS.
+4. SINGLE FILE SUPREMACY. If it can't live in this one file, it doesn't deserve to live.
+5. PERFORMANCE IS A FEATURE. We don't animate. We don't fade. We don't "hydrate."
+   We render the fucking HTML and we get out of the way.
 
-RULES FOR MODIFYING THIS SHIT:
-1. NO BUILD TOOLS. NO WEBPACK. NO NODE_MODULES.
-2. SINGLE FILE ONLY. HTML, CSS, and JS stay in this fucking file.
-3. VANILLA JS ONLY. No React, no Vue, no jQuery. 
-4. KEEP IT LIGHTWEIGHT. We use marked.js via CDN because writing a regex markdown parser 
-   is a waste of time, but that is the ONLY external dependency allowed.
-5. MATCH THE TONE. The UI text should be aggressive, profane, and to the point.
-6. IT JUST WORKS. Semantic HTML, standard browser features, localStorage.
-
-Do not over-engineer this. Do not add a 13 megabyte parallax-ative home page.
-Just write good, clean, naked code.
+"A designer knows he has achieved perfection not when there is nothing left to add, 
+but when there is nothing left to take away." — Some dead guy.
 =========================================================================================
 -->
 <html lang="en">
@@ -31,22 +28,32 @@ Just write good, clean, naked code.
     <script src="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex/dist/contrib/auto-render.min.js"></script>
 
-    <!-- Prism.js: Core (5kb) + Autoloader (2kb). It only downloads language definitions when needed. -->
-    <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css" rel="stylesheet" />
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <!-- I'd rather neck myself than stare at a gray wall of text. -->
+    <link href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/prismjs/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs/plugins/autoloader/prism-autoloader.min.js"></script>
 
     <style>
         /* Just enough CSS so it doesn't look like shit. */
         body {
             max-width: 1000px;
-            margin: 2rem auto;
+            margin: 0 auto;
+            height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
             font-family: monospace, sans-serif;
             line-height: 1.6;
-            padding: 0 1rem;
+            padding: 2rem 1rem 1rem 1rem;
             color: #111;
             background: #fafafa;
+            overflow: hidden; /* NO BODY SCROLLING. EVER. */
         }
+        
+        header {
+            flex-shrink: 0; /* Prevents the header from getting squished */
+        }
+
         h1, h2, h3 { margin-top: 0; }
         button {
             cursor: pointer;
@@ -69,43 +76,69 @@ Just write good, clean, naked code.
         textarea { min-height: 100px; resize: vertical; }
         .hidden { display: none !important; }
         
-        /* Lock In Button */
-        .lock-in-btn {
+        /* Top Actions */
+        .top-actions {
             position: fixed;
             top: 1rem;
             right: 1rem;
+            display: flex;
+            gap: 15px;
+            z-index: 100;
+        }
+        .top-btn {
             color: #0055ff;
             text-decoration: underline;
             cursor: pointer;
             font-size: 0.9em;
-            z-index: 100;
         }
-        .lock-in-btn:hover { color: #ff0055; }
+        .top-btn:hover { color: #ff0055; }
 
         /* Layout */
-        .grid { display: flex; gap: 2rem; flex-wrap: wrap; }
+        .grid { 
+            display: flex; 
+            gap: 2rem; 
+            flex-grow: 1;
+            min-height: 0; /* Forces flexbox to respect boundaries */
+            margin-top: 1rem; 
+            /* Removed flex-wrap so it doesn't stack and break the 100vh limit */
+        }
+        
+        /* Basic mobile support so it doesn't look like shit on a phone */
+        @media (max-width: 768px) {
+            .grid { flex-direction: column; }
+            .sidebar { flex: 0 0 30%; min-height: 0; }
+        }
         
         /* Sidebar with its own fucking scroll context */
         .sidebar { 
             flex: 1; 
             min-width: 250px; 
-            max-height: 80vh; 
             overflow-y: auto; 
             padding-right: 10px; 
         }
         
-        .main { flex: 3; min-width: 300px; display: flex; flex-direction: column; }
+        .main { 
+            flex: 3; 
+            min-width: 300px; 
+            display: flex; 
+            flex-direction: column; 
+            min-height: 0; 
+        }
 
-        /* Updated Chat Container */
+        /* Chat Container */
         #chat-container {
             position: relative;
-            height: 60vh;
-            min-height: 300px;
+            flex-grow: 1; 
+            min-height: 0; /* Let it actually shrink */
             overflow-y: auto;
             border: 2px solid #000;
             background: #ebebeb;
             padding: 15px;
             margin-bottom: 15px;
+        }
+
+        #input-area {
+            flex-shrink: 0; /* Prevents the text area from being crushed by the chat container */
         }
 
         /* Chat Messages */
@@ -158,12 +191,12 @@ Just write good, clean, naked code.
             direction: ltr;
         }
 
-        /* Fix the Ctrl-Copy hover so the whole block highlights uniformly */
+        /* Highlight the whole block on Ctrl-Copy hover */
         body.ctrl-down .msg-content pre[class*="language-"]:hover {
             background: #e0e0e0;
         }
         body.ctrl-down pre:hover code {
-            background: transparent; /* Stops the text from highlighting independently */
+            background: transparent; /* Stop the text from highlighting independently */
         }
 
         /* Edit Area */
@@ -210,8 +243,9 @@ Just write good, clean, naked code.
             background: #e0e0e0;
         }
 
+        /* Latex */
         .katex {
-            user-select: none; /* Prevent users from highlighting individual spans in math because it looks like shit */
+            user-select: none;
             -webkit-user-select: none;
             -moz-user-select: none;
         }
@@ -219,11 +253,14 @@ Just write good, clean, naked code.
 </head>
 <body>
 
-    <a id="lock-in-btn" class="lock-in-btn" onclick="toggleLockIn()">[lock in]</a>
+    <div class="top-actions">
+        <a id="toggle-title-btn" class="top-btn" title="Alt+O" onclick="toggleTitle()">[hide title]</a>
+        <a id="toggle-sidebar-btn" class="top-btn" title="Alt+P" onclick="toggleSidebar()">[hide sidebar]</a>
+    </div>
 
     <header>
         <h1>HTML Chat</h1>
-        <p>No 500MB Docker containers. No bullshit. Just you, your API key, and the fucking machine.</p>
+        <p>No 500MB Docker containers. No bullshit. Just you, your API key, and the fucking browser.</p>
     </header>
 
     <div class="grid">
@@ -277,13 +314,17 @@ Just write good, clean, naked code.
         };
         let chats = JSON.parse(localStorage.getItem('mf_chats')) || [];
         let currentChatId = localStorage.getItem('mf_current_chat_id') || null;
-        let isLockedIn = localStorage.getItem('mf_locked_in') === 'true';
+        
+        // Fallback to 'mf_locked_in' so your old state doesn't break
+        let isSidebarHidden = localStorage.getItem('mf_sidebar_hidden') === 'true' || localStorage.getItem('mf_locked_in') === 'true';
+        let isTitleHidden = localStorage.getItem('mf_title_hidden') === 'true';
 
         function saveState() {
             localStorage.setItem('mf_config', JSON.stringify(config));
             localStorage.setItem('mf_chats', JSON.stringify(chats));
             localStorage.setItem('mf_current_chat_id', currentChatId || '');
-            localStorage.setItem('mf_locked_in', isLockedIn);
+            localStorage.setItem('mf_sidebar_hidden', isSidebarHidden);
+            localStorage.setItem('mf_title_hidden', isTitleHidden);
         }
 
         // --- INITIALIZATION ---
@@ -293,7 +334,8 @@ Just write good, clean, naked code.
             document.getElementById('cfg-models').value = config.models;
             
             updateModelDropdown();
-            applyLockInState();
+            applySidebarState();
+            applyTitleState();
             
             if (!currentChatId && chats.length > 0) {
                 currentChatId = chats[0].id;
@@ -302,21 +344,39 @@ Just write good, clean, naked code.
             renderApp();
         }
 
-        function toggleLockIn() {
-            isLockedIn = !isLockedIn;
+        function toggleSidebar() {
+            isSidebarHidden = !isSidebarHidden;
             saveState();
-            applyLockInState();
+            applySidebarState();
         }
 
-        function applyLockInState() {
+        function applySidebarState() {
             const sidebar = document.getElementById('sidebar');
-            const btn = document.getElementById('lock-in-btn');
-            if (isLockedIn) {
+            const btn = document.getElementById('toggle-sidebar-btn');
+            if (isSidebarHidden) {
                 sidebar.classList.add('hidden');
-                btn.textContent = '[unlock]';
+                btn.textContent = '[show sidebar]';
             } else {
                 sidebar.classList.remove('hidden');
-                btn.textContent = '[lock in]';
+                btn.textContent = '[hide sidebar]';
+            }
+        }
+
+        function toggleTitle() {
+            isTitleHidden = !isTitleHidden;
+            saveState();
+            applyTitleState();
+        }
+
+        function applyTitleState() {
+            const header = document.querySelector('header');
+            const btn = document.getElementById('toggle-title-btn');
+            if (isTitleHidden) {
+                header.classList.add('hidden');
+                btn.textContent = '[show title]';
+            } else {
+                header.classList.remove('hidden');
+                btn.textContent = '[hide title]';
             }
         }
 
@@ -713,6 +773,18 @@ Just write good, clean, naked code.
             if (e.altKey && e.key.toLowerCase() === 'r') {
                 e.preventDefault()
                 renameChat(currentChatId);
+            }
+
+            // Alt+P for toggle hide sidebar
+            if (e.altKey && e.key.toLowerCase() === 'p') {
+                e.preventDefault()
+                toggleSidebar();
+            }
+
+            // Alt+O for toggle hide title
+            if (e.altKey && e.key.toLowerCase() === 'o') {
+                e.preventDefault()
+                toggleTitle();
             }
 
             // Alt+Up / Alt+Down to cycle through messages
