@@ -70,7 +70,8 @@ but when there is nothing left to take away." — Some dead guy.
       button:hover {
         background: #ccc;
       }
-      input,
+      input[type="text"],
+      input[type="password"],
       textarea,
       select {
         font-family: inherit;
@@ -115,7 +116,6 @@ but when there is nothing left to take away." — Some dead guy.
         flex-grow: 1;
         min-height: 0; /* Forces flexbox to respect boundaries */
         margin-top: 1rem;
-        /* Removed flex-wrap so it doesn't stack and break the 100vh limit */
       }
 
       /* Basic mobile support so it doesn't look like shit on a phone */
@@ -202,7 +202,7 @@ but when there is nothing left to take away." — Some dead guy.
         margin-left: 5px;
       }
       .msg-content {
-        overflow-x: auto;
+        overflow-wrap: anywhere;
       }
       .msg-content p:first-child {
         margin-top: 0;
@@ -216,6 +216,8 @@ but when there is nothing left to take away." — Some dead guy.
         padding: 10px;
         border: 1px solid #000;
         overflow-x: auto;
+        overflow-y: hidden;
+        max-height: none !important; /* Override any Prism.js max-height bullshit */
         border-radius: 0;
       }
       .msg-content code {
@@ -296,6 +298,13 @@ but when there is nothing left to take away." — Some dead guy.
         border: 1px solid #000;
         margin-bottom: 20px;
       }
+      .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        cursor: pointer;
+      }
 
       body.ctrl-down pre,
       body.ctrl-down code,
@@ -348,6 +357,11 @@ but when there is nothing left to take away." — Some dead guy.
           <label>Models (use commas)</label>
           <input type="text" id="cfg-models" placeholder="gpt-4o,gpt-3.5-turbo" />
 
+          <label class="checkbox-label">
+            <input type="checkbox" id="cfg-godmode" />
+            <strong>God-Mode (JS Exec)</strong>
+          </label>
+
           <button onclick="saveConfig()">Save Settings</button>
         </div>
 
@@ -389,12 +403,12 @@ but when there is nothing left to take away." — Some dead guy.
         url: "https://api.openai.com/v1",
         key: "",
         models: "gpt-4o, gpt-4-turbo, gpt-3.5-turbo",
+        godMode: false,
       };
       let chats = JSON.parse(localStorage.getItem("mf_chats")) || [];
       let currentChatId = localStorage.getItem("mf_current_chat_id") || null;
       let currentAbortController = null;
 
-      // Fallback to 'mf_locked_in' so your old state doesn't break
       let isSidebarHidden =
         localStorage.getItem("mf_sidebar_hidden") === "true" || localStorage.getItem("mf_locked_in") === "true";
       let isTitleHidden = localStorage.getItem("mf_title_hidden") === "true";
@@ -412,6 +426,7 @@ but when there is nothing left to take away." — Some dead guy.
         document.getElementById("cfg-url").value = config.url;
         document.getElementById("cfg-key").value = config.key;
         document.getElementById("cfg-models").value = config.models;
+        document.getElementById("cfg-godmode").checked = config.godMode || false;
 
         updateModelDropdown();
         applySidebarState();
@@ -464,6 +479,7 @@ but when there is nothing left to take away." — Some dead guy.
         config.url = document.getElementById("cfg-url").value.trim();
         config.key = document.getElementById("cfg-key").value.trim();
         config.models = document.getElementById("cfg-models").value.trim();
+        config.godMode = document.getElementById("cfg-godmode").checked;
         saveState();
         updateModelDropdown();
         alert("Settings saved, don't fuck them up.");
@@ -512,7 +528,7 @@ but when there is nothing left to take away." — Some dead guy.
         if (newTitle) {
           chat.title = newTitle.trim();
           saveState();
-          renderApp(true); // Preserve scroll just in case
+          renderApp(true);
         }
       }
 
@@ -557,11 +573,9 @@ but when there is nothing left to take away." — Some dead guy.
         const chat = chats.find((c) => c.id === currentChatId);
         const textToRetry = chat.messages[msgIndex].content;
 
-        // Truncate chat up to the target index (exclusive)
         chat.messages = chat.messages.slice(0, msgIndex);
         saveState();
 
-        // Put text in input and send that shit again
         document.getElementById("chat-input").value = textToRetry;
         sendMessage();
       }
@@ -570,7 +584,7 @@ but when there is nothing left to take away." — Some dead guy.
         const chat = chats.find((c) => c.id === currentChatId);
         chat.messages.splice(msgIndex, 1);
         saveState();
-        renderApp(true); // Preserve scroll position
+        renderApp(true);
       }
 
       // --- RENDERING ---
@@ -651,7 +665,6 @@ but when there is nothing left to take away." — Some dead guy.
           const msgDiv = document.createElement("div");
           msgDiv.className = `msg ${msg.role}`;
 
-          // Meta header
           const metaDiv = document.createElement("div");
           metaDiv.className = "msg-meta";
 
@@ -671,7 +684,6 @@ but when there is nothing left to take away." — Some dead guy.
           actionsDiv.appendChild(editBtn);
           actionsDiv.appendChild(forkBtn);
 
-          // Only add Retry button if it's a user message
           if (msg.role === "user") {
             const retryBtn = document.createElement("button");
             retryBtn.textContent = "Retry";
@@ -692,32 +704,29 @@ but when there is nothing left to take away." — Some dead guy.
           const contentDiv = document.createElement("div");
           contentDiv.className = "msg-content";
 
+          // Ensure content is always a string to prevent regex crashes
+          const safeContent = msg.content || "";
+
           // 1. Extract math blocks so marked.js doesn't fuck up underscores and asterisks
           const mathBlocks = [];
-          // $$ can span lines, but $ must stay on a single line to prevent eating currency
-          const placeholderContent = msg.content.replace(/(\$\$)([\s\S]*?)\1|\$((?:\\.|[^$\n])+?)\$/g, (match) => {
-            // Escape HTML chars so the browser doesn't eat < and > when we inject it back
+          const placeholderContent = safeContent.replace(/(\$\$)([\s\S]*?)\1|\$((?:\\.|[^$\n])+?)\$/g, (match) => {
             const safeMath = match.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
             mathBlocks.push(safeMath);
             return `%%%MATH${mathBlocks.length - 1}%%%`;
           });
 
-          // 2. Parse the markdown (which now only sees the safe placeholders)
           let parsedContent = marked.parse(placeholderContent);
 
-          // 3. Inject the math back in before KaTeX gets to it
           parsedContent = parsedContent.replace(/%%%MATH(\d+)%%%/g, (match, i) => {
             return mathBlocks[i];
           });
 
           contentDiv.innerHTML = parsedContent;
 
-          // Edit area (hidden by default)
           const editArea = document.createElement("textarea");
           editArea.className = "hidden edit-area";
           editArea.value = msg.content;
 
-          // Edit Actions Container
           const editActionsContainer = document.createElement("div");
           editActionsContainer.className = "hidden";
           editActionsContainer.style.marginTop = "5px";
@@ -733,7 +742,6 @@ but when there is nothing left to take away." — Some dead guy.
           toggleWrapBtn.textContent = "Toggle Wrap";
           toggleWrapBtn.style.marginLeft = "5px";
 
-          // Toggle wrap logic
           toggleWrapBtn.onclick = () => {
             editArea.style.whiteSpace = editArea.style.whiteSpace === "pre" ? "pre-wrap" : "pre";
             editArea.style.overflowX = editArea.style.whiteSpace === "pre" ? "auto" : "hidden";
@@ -743,7 +751,6 @@ but when there is nothing left to take away." — Some dead guy.
           editActionsContainer.appendChild(cancelEditBtn);
           editActionsContainer.appendChild(toggleWrapBtn);
 
-          // Edit logic
           editBtn.onclick = () => {
             contentDiv.classList.add("hidden");
             editArea.classList.remove("hidden");
@@ -753,13 +760,13 @@ but when there is nothing left to take away." — Some dead guy.
           };
 
           cancelEditBtn.onclick = () => {
-            renderApp(true); // Just re-render to get rid of the edit state
+            renderApp(true);
           };
 
           saveEditBtn.onclick = () => {
             msg.content = editArea.value;
             saveState();
-            renderApp(true); // Save and refresh
+            renderApp(true);
           };
 
           msgDiv.appendChild(metaDiv);
@@ -774,33 +781,44 @@ but when there is nothing left to take away." — Some dead guy.
               { left: "$$", right: "$$", display: true },
               { left: "$", right: "$", display: false },
             ],
-            output: "htmlAndMathml", // This is usually default, but good to be explicit
+            output: "htmlAndMathml",
             throwOnError: false,
           });
 
-          // Tell Prism to highlight any code blocks in this message
           Prism.highlightAllUnder(msgDiv);
         });
 
-        // Handle scroll position
         if (preserveScroll) {
           container.scrollTop = prevScroll;
         } else {
           const lastMsg = container.lastElementChild;
           if (lastMsg) {
-            // Scroll so the top of the last message is at the top of the container
-            // Subtracting 15px to account for the container's padding so it looks clean
             container.scrollTop = lastMsg.offsetTop - 15;
           }
         }
       }
 
-      // --- API INTERACTION ---
-      async function sendMessage() {
+      // --- API INTERACTION & GOD MODE LOOP ---
+      async function sendMessage(autoLoopDepth = 0) {
         const btn = document.getElementById("send-btn");
+        const MAX_LOOPS = 5; // The Kill Switch
 
-        // Cancel if we are already thinking
-        if (currentAbortController) {
+        // If we hit the loop limit, forcefully stop the recursion
+        if (autoLoopDepth >= MAX_LOOPS) {
+          const chat = chats.find((c) => c.id === currentChatId);
+          chat.messages.push({
+            role: "system",
+            content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached. The LLM was forcefully stopped to prevent an infinite loop.`,
+          });
+          saveState();
+          renderApp();
+          btn.textContent = "Send";
+          return;
+        }
+
+        const isAutoLoop = autoLoopDepth > 0;
+
+        if (currentAbortController && !isAutoLoop) {
           currentAbortController.abort();
           currentAbortController = null;
           btn.textContent = "Send";
@@ -809,35 +827,73 @@ but when there is nothing left to take away." — Some dead guy.
 
         const inputEl = document.getElementById("chat-input");
         const text = inputEl.value.trim();
-        if (!text) return;
 
-        if (!config.key) {
-          alert("Please enter your API key in the settings first.");
-          return;
+        if (!isAutoLoop) {
+          if (!text) return;
+          if (!config.key) {
+            alert("Please enter your API key in the settings first.");
+            return;
+          }
+          if (!currentChatId) newChat();
         }
 
-        if (!currentChatId) newChat();
         const chat = chats.find((c) => c.id === currentChatId);
 
-        // Auto-title if it's the first message
-        if (chat.messages.length === 0) {
-          chat.title = text.substring(0, 30) + (text.length > 30 ? "..." : "");
+        if (!isAutoLoop) {
+          if (chat.messages.length === 0) {
+            chat.title = text.substring(0, 30) + (text.length > 30 ? "..." : "");
+          }
+          chat.messages.push({ role: "user", content: text });
+          inputEl.value = "";
+          saveState();
+          renderApp();
         }
-
-        // Add user message
-        chat.messages.push({ role: "user", content: text });
-        inputEl.value = "";
-        saveState();
-        renderApp(); // Scroll to top of new message
 
         const model = document.getElementById("model-select").value;
         currentAbortController = new AbortController();
-        btn.textContent = "Thinking...";
+
+        // Update button text to show loop depth
+        btn.textContent = isAutoLoop ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...` : "Thinking...";
 
         try {
           const cleanMessages = chat.messages
-            .filter((m) => m.role !== "system")
-            .map((m) => ({ role: m.role, content: m.content }));
+            .filter(
+              (m) =>
+                m.role !== "system" ||
+                (m.content &&
+                  (m.content.includes("**Execution Result:**") || m.content.includes("**Executing Code:**"))),
+            )
+            .map((m) => {
+              let apiRole = m.role;
+              if (
+                apiRole === "system" &&
+                (m.content.includes("**Execution Result:**") || m.content.includes("**Executing Code:**"))
+              ) {
+                apiRole = "user";
+              }
+              return { role: apiRole, content: m.content || "" };
+            });
+
+          if (config.godMode) {
+            cleanMessages.unshift({
+              role: "system",
+              content: `[SYSTEM OVERRIDE: GOD MODE ENABLED]
+You are executing directly inside the user's web browser. You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.
+
+To execute code, you MUST use this exact syntax:
+<run>
+// browser-side JS goes here
+return window.innerWidth;
+</run>
+
+RULES:
+1. NEVER use Node.js modules (require, os, fs). They do not exist here.
+2. NEVER use markdown backticks (\`\`\`) around the <run> tags. Just output the raw tags.
+3. You can use multiple <run> blocks if needed. They will be extracted and executed in order.
+4. The system will extract your <run> blocks, execute them, and return both the code and the output to you.
+5. HOW TO STOP: Once you have the final answer, write your explanation to the user and DO NOT include any <run> tags. If you include a <run> tag, the system will loop and execute it again. Only use <run> if you need more data.`,
+            });
+          }
 
           const response = await fetch(`${config.url}/chat/completions`, {
             method: "POST",
@@ -858,11 +914,88 @@ but when there is nothing left to take away." — Some dead guy.
           }
 
           const data = await response.json();
-          const reply = data.choices[0].message.content;
+          const reply = data.choices[0].message.content || "";
 
-          chat.messages.push({ role: "assistant", content: reply });
+          // --- GOD MODE INTERCEPTOR & QUEUE ---
+          if (config.godMode && reply) {
+            const runMatches = [...reply.matchAll(/<run>([\s\S]*?)<\/run>/g)];
+
+            if (runMatches.length > 0) {
+              let assistantContent = reply.replace(/<run>[\s\S]*?<\/run>/g, "").trim();
+
+              if (assistantContent === "") {
+                assistantContent = "*(Executing code...)*";
+              }
+
+              chat.messages.push({ role: "assistant", content: assistantContent });
+              saveState();
+              renderApp();
+
+              for (const match of runMatches) {
+                const code = match[1].trim();
+
+                chat.messages.push({
+                  role: "system",
+                  content: `**Executing Code:**\n\`\`\`javascript\n${code}\n\`\`\``,
+                });
+                saveState();
+                renderApp();
+
+                let logs = [];
+                const safeStringify = (obj) => {
+                  try {
+                    return typeof obj === "object" ? JSON.stringify(obj, null, 2) : String(obj);
+                  } catch (e) {
+                    return Object.prototype.toString.call(obj);
+                  }
+                };
+
+                const proxyConsole = {
+                  log: (...args) => logs.push(args.map(safeStringify).join(" ")),
+                  error: (...args) => logs.push("ERROR: " + args.map(safeStringify).join(" ")),
+                };
+
+                let result;
+                let errorStr = "";
+
+                try {
+                  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+                  const execFn = new AsyncFunction("console", code);
+                  result = await execFn(proxyConsole);
+                } catch (err) {
+                  errorStr = err.toString();
+                }
+
+                let outputMsg = "**Execution Result:**\n```text\n";
+                if (logs.length > 0) outputMsg += logs.join("\n") + "\n";
+                if (result !== undefined) outputMsg += "Return: " + safeStringify(result) + "\n";
+                if (errorStr) outputMsg += "Error: " + errorStr + "\n";
+                if (logs.length === 0 && result === undefined && !errorStr)
+                  outputMsg += "Code executed successfully with no output.\n";
+                outputMsg += "```";
+
+                chat.messages.push({ role: "system", content: outputMsg });
+                saveState();
+                renderApp();
+              }
+
+              // Recursively call sendMessage with an incremented loop depth
+              return sendMessage(autoLoopDepth + 1);
+            } else {
+              if (reply.trim() !== "" || isAutoLoop) {
+                chat.messages.push({ role: "assistant", content: reply });
+                saveState();
+                renderApp();
+              }
+            }
+          } else {
+            if (reply.trim() !== "" || isAutoLoop) {
+              chat.messages.push({ role: "assistant", content: reply });
+              saveState();
+              renderApp();
+            }
+          }
         } catch (error) {
-          // 4. HANDLE THE ABORT ERROR GRACEFULLY
           if (error.name === "AbortError") {
             chat.messages.push({ role: "system", content: "**System:** Request cancelled by user." });
           } else {
@@ -870,7 +1003,6 @@ but when there is nothing left to take away." — Some dead guy.
           }
         }
 
-        // 5. CLEANUP
         currentAbortController = null;
         btn.textContent = "Send";
         saveState();
@@ -878,25 +1010,18 @@ but when there is nothing left to take away." — Some dead guy.
       }
 
       // --- KEYBOARD SHORTCUTS ---
-
-      // Allow Ctrl+Enter to send
       document.getElementById("chat-input").addEventListener("keydown", function (e) {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
           sendMessage();
         }
       });
 
-      // Global shortcuts because clicking is for chumps
       document.addEventListener("keydown", function (e) {
-        // Alt+T for New Chat
         if (e.altKey && e.key.toLowerCase() === "t") {
-          e.preventDefault(); // Stop any default browser bullshit
+          e.preventDefault();
           newChat();
-          // Focus the input so they can start typing immediately
           document.getElementById("chat-input").focus();
         }
-
-        // Alt+W for Delete Current Chat
         if (e.altKey && e.key.toLowerCase() === "w") {
           e.preventDefault();
           if (currentChatId) {
@@ -905,48 +1030,36 @@ but when there is nothing left to take away." — Some dead guy.
             }
           }
         }
-
-        // Alt+R for Rename Current Chat
         if (e.altKey && e.key.toLowerCase() === "r") {
           e.preventDefault();
           renameChat(currentChatId);
         }
-
-        // Alt+P for toggle hide sidebar
         if (e.altKey && e.key.toLowerCase() === "p") {
           e.preventDefault();
           toggleSidebar();
         }
-
-        // Alt+O for toggle hide title
         if (e.altKey && e.key.toLowerCase() === "o") {
           e.preventDefault();
           toggleTitle();
         }
-
-        // Alt+Up / Alt+Down to cycle through messages
         if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
           e.preventDefault();
-
           const container = document.getElementById("chat-container");
           const msgs = Array.from(container.querySelectorAll(".msg"));
           if (msgs.length === 0) return;
 
           const currentScroll = container.scrollTop;
-          const offsetAdjustment = 15; // Matches the padding-top of the container
-          const threshold = 5; // Pixel tolerance for rounding errors
+          const offsetAdjustment = 15;
+          const threshold = 5;
 
           if (e.key === "ArrowDown") {
-            // Find the first message below the current scroll position
             const nextMsg = msgs.find((m) => m.offsetTop - offsetAdjustment > currentScroll + threshold);
             if (nextMsg) {
               container.scrollTop = nextMsg.offsetTop - offsetAdjustment;
             } else {
-              // Already at the bottom message, scroll to the very bottom of the container
               container.scrollTop = container.scrollHeight;
             }
           } else if (e.key === "ArrowUp") {
-            // Find the last message above the current scroll position
             const prevMsg = msgs
               .slice()
               .reverse()
@@ -954,7 +1067,6 @@ but when there is nothing left to take away." — Some dead guy.
             if (prevMsg) {
               container.scrollTop = prevMsg.offsetTop - offsetAdjustment;
             } else {
-              // Already at the top message, scroll to the absolute top
               container.scrollTop = 0;
             }
           }
@@ -962,8 +1074,6 @@ but when there is nothing left to take away." — Some dead guy.
       });
 
       // --- CLIPBOARD SHIT ---
-
-      // Toggle the copy-mode class based on key state
       const toggleCopyMode = (e) => {
         if (e.key === "Control" || e.key === "Meta") {
           document.body.classList.toggle("ctrl-down", e.type === "keydown");
@@ -973,7 +1083,6 @@ but when there is nothing left to take away." — Some dead guy.
       window.addEventListener("keydown", toggleCopyMode);
       window.addEventListener("keyup", toggleCopyMode);
       window.addEventListener("blur", () => {
-        // Remove the highlighting if the user switches tabs or windows
         document.body.classList.remove("ctrl-down");
       });
 
@@ -983,20 +1092,15 @@ but when there is nothing left to take away." — Some dead guy.
         let text = "";
         let target = null;
 
-        // Check if it's a code block
         const codeTarget = e.target.closest("pre") || e.target.closest("code");
-
-        // Check if it's a KaTeX math block
         const mathTarget = e.target.closest(".katex");
 
         if (mathTarget) {
           target = mathTarget;
-          // KaTeX stores the original LaTeX in an <annotation> tag
           const annotation = mathTarget.querySelector("annotation");
           if (annotation) {
             text = annotation.textContent;
           } else {
-            // Fallback for some configurations: try to find the TeX source
             text = mathTarget.querySelector(".katex-mathml math").getAttribute("alttext") || "";
           }
         } else if (codeTarget) {
