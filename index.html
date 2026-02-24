@@ -392,6 +392,7 @@ but when there is nothing left to take away." — Some dead guy.
       };
       let chats = JSON.parse(localStorage.getItem("mf_chats")) || [];
       let currentChatId = localStorage.getItem("mf_current_chat_id") || null;
+      let currentAbortController = null;
 
       // Fallback to 'mf_locked_in' so your old state doesn't break
       let isSidebarHidden =
@@ -796,6 +797,16 @@ but when there is nothing left to take away." — Some dead guy.
 
       // --- API INTERACTION ---
       async function sendMessage() {
+        const btn = document.getElementById("send-btn");
+
+        // Cancel if we are already thinking
+        if (currentAbortController) {
+          currentAbortController.abort();
+          currentAbortController = null;
+          btn.textContent = "Send";
+          return;
+        }
+
         const inputEl = document.getElementById("chat-input");
         const text = inputEl.value.trim();
         if (!text) return;
@@ -819,14 +830,11 @@ but when there is nothing left to take away." — Some dead guy.
         saveState();
         renderApp(); // Scroll to top of new message
 
-        const btn = document.getElementById("send-btn");
         const model = document.getElementById("model-select").value;
-
-        btn.disabled = true;
+        currentAbortController = new AbortController();
         btn.textContent = "Thinking...";
 
         try {
-          // Strip out any system errors before sending to API
           const cleanMessages = chat.messages
             .filter((m) => m.role !== "system")
             .map((m) => ({ role: m.role, content: m.content }));
@@ -841,6 +849,7 @@ but when there is nothing left to take away." — Some dead guy.
               model: model,
               messages: cleanMessages,
             }),
+            signal: currentAbortController.signal,
           });
 
           if (!response.ok) {
@@ -853,13 +862,19 @@ but when there is nothing left to take away." — Some dead guy.
 
           chat.messages.push({ role: "assistant", content: reply });
         } catch (error) {
-          chat.messages.push({ role: "system", content: `**Error:**\n\n${error.message}` });
+          // 4. HANDLE THE ABORT ERROR GRACEFULLY
+          if (error.name === "AbortError") {
+            chat.messages.push({ role: "system", content: "**System:** Request cancelled by user." });
+          } else {
+            chat.messages.push({ role: "system", content: `**Error:**\n\n${error.message}` });
+          }
         }
 
-        btn.disabled = false;
+        // 5. CLEANUP
+        currentAbortController = null;
         btn.textContent = "Send";
         saveState();
-        renderApp(); // Scroll to top of new message
+        renderApp();
       }
 
       // --- KEYBOARD SHORTCUTS ---
