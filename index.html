@@ -833,7 +833,13 @@ but when there is nothing left to take away." — Some dead guy.
         } else {
           const lastMsg = container.lastElementChild;
           if (lastMsg) {
-            container.scrollTop = lastMsg.offsetTop - 15;
+            if (lastMsg.classList.contains("user")) {
+              // Scroll to the absolute bottom so the end of the user message is at the bottom of the view
+              container.scrollTop = container.scrollHeight;
+            } else {
+              // Pin the top of the assistant/system message to the top of the view
+              container.scrollTop = lastMsg.offsetTop - 15;
+            }
           }
         }
       }
@@ -1155,6 +1161,20 @@ Assistant: The square root of 9999 is 99.994999875.`,
             if (currentIndex < chats.length - 1) {
               loadChat(chats[currentIndex + 1].id);
             }
+          }
+        }
+
+        // Smooth scroll chat container with plain arrow keys ---
+        if (!e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
+          // Only trigger if we aren't typing in an input, textarea, or select
+          if (activeTag !== "input" && activeTag !== "textarea" && activeTag !== "select") {
+            e.preventDefault();
+            const container = document.getElementById("chat-container");
+            container.scrollBy({
+              top: e.key === "ArrowDown" ? 150 : -150,
+              behavior: "smooth",
+            });
           }
         }
       });
