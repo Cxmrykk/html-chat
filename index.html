@@ -414,6 +414,48 @@ but when there is nothing left to take away." — Some dead guy.
         localStorage.getItem("mf_sidebar_hidden") === "true" || localStorage.getItem("mf_locked_in") === "true";
       let isTitleHidden = localStorage.getItem("mf_title_hidden") === "true";
 
+      // Tell Marked.js how to handle math natively so it doesn't fight with code blocks
+      const mathExtension = {
+        name: "math",
+        level: "inline",
+        start(src) {
+          return src.match(/\$/)?.index;
+        }, // Tell Marked where to look
+        tokenizer(src, tokens) {
+          // 1. Check for block math: $$ ... $$
+          const blockRule = /^\$\$([\s\S]+?)\$\$/;
+          const blockMatch = blockRule.exec(src);
+          if (blockMatch) {
+            return {
+              type: "math",
+              raw: blockMatch[0], // The exact string to consume
+              text: blockMatch[1],
+            };
+          }
+
+          // 2. Check for inline math: $ ... $
+          // (Requires a non-space character after the first $ to prevent matching "$5 and $10")
+          const inlineRule = /^\$([^\s$](?:\\.|[^$\n])*?)\$/;
+          const inlineMatch = inlineRule.exec(src);
+          if (inlineMatch) {
+            return {
+              type: "math",
+              raw: inlineMatch[0],
+              text: inlineMatch[1],
+            };
+          }
+        },
+        renderer(token) {
+          // Just return the raw string. KaTeX's renderMathInElement will handle the actual HTML conversion later.
+          // We escape HTML entities so < and > inside math don't break the DOM.
+          const safeMath = token.raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          return safeMath;
+        },
+      };
+
+      // Register the extension
+      marked.use({ extensions: [mathExtension] });
+
       function saveState() {
         localStorage.setItem("mf_config", JSON.stringify(config));
         localStorage.setItem("mf_chats", JSON.stringify(chats));
@@ -715,26 +757,11 @@ but when there is nothing left to take away." — Some dead guy.
 
           // Content area
           const contentDiv = document.createElement("div");
-          contentDiv.className = "msg-content";
-
-          // Ensure content is always a string to prevent regex crashes
           const safeContent = msg.content || "";
 
-          // 1. Extract math blocks so marked.js doesn't fuck up underscores and asterisks
-          const mathBlocks = [];
-          const placeholderContent = safeContent.replace(/(\$\$)([\s\S]*?)\1|\$((?:\\.|[^$\n])+?)\$/g, (match) => {
-            const safeMath = match.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            mathBlocks.push(safeMath);
-            return `%%%MATH${mathBlocks.length - 1}%%%`;
-          });
-
-          let parsedContent = marked.parse(placeholderContent);
-
-          parsedContent = parsedContent.replace(/%%%MATH(\d+)%%%/g, (match, i) => {
-            return mathBlocks[i];
-          });
-
-          contentDiv.innerHTML = parsedContent;
+          // Marked.js now natively understands math and won't mangle it or confuse it with code blocks.
+          contentDiv.innerHTML = marked.parse(safeContent);
+          contentDiv.className = "msg-content";
 
           const editArea = document.createElement("textarea");
           editArea.className = "hidden edit-area";
