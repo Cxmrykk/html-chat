@@ -9,9 +9,6 @@ RULES FOR CONTINUED EXISTENCE:
 4. SINGLE FILE SUPREMACY. If it can't live in this one file, it doesn't deserve to live.
 5. PERFORMANCE IS A FEATURE. We don't animate. We don't fade. We don't "hydrate."
    We render the fucking HTML and we get out of the way.
-
-"A designer knows he has achieved perfection not when there is nothing left to add, 
-but when there is nothing left to take away." — Some dead guy.
 =========================================================================================
 -->
 <html lang="en">
@@ -20,21 +17,16 @@ but when there is nothing left to take away." — Some dead guy.
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>HTML Chat</title>
 
-    <!-- Yeah, I'm loading a 30kb script for Markdown. Writing a regex parser for this shit is a waste of time. Deal with it. -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-    <!-- The math shit. Unless you like reading raw latex, we're gonna need this too. -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css" />
     <script src="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex/dist/contrib/auto-render.min.js"></script>
-
-    <!-- I'd rather neck myself than stare at a gray wall of text. -->
     <link href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/prismjs/prism.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prismjs/plugins/autoloader/prism-autoloader.min.js"></script>
 
     <style>
-      /* Just enough CSS so it doesn't look like shit. */
+      /* Just enough CSS to provide a functional interface */
       body {
         max-width: 1000px;
         margin: 0 auto;
@@ -47,13 +39,11 @@ but when there is nothing left to take away." — Some dead guy.
         padding: 2rem 1rem 1rem 1rem;
         color: #111;
         background: #fafafa;
-        overflow: hidden; /* NO BODY SCROLLING. EVER. */
+        overflow: hidden;
       }
-
       header {
-        flex-shrink: 0; /* Prevents the header from getting squished */
+        flex-shrink: 0;
       }
-
       h1,
       h2,
       h3 {
@@ -89,8 +79,6 @@ but when there is nothing left to take away." — Some dead guy.
       .hidden {
         display: none !important;
       }
-
-      /* Top Actions */
       .top-actions {
         position: fixed;
         top: 1rem;
@@ -108,17 +96,13 @@ but when there is nothing left to take away." — Some dead guy.
       .top-btn:hover {
         color: #ff0055;
       }
-
-      /* Layout */
       .grid {
         display: flex;
         gap: 2rem;
         flex-grow: 1;
-        min-height: 0; /* Forces flexbox to respect boundaries */
+        min-height: 0;
         margin-top: 1rem;
       }
-
-      /* Basic mobile support so it doesn't look like shit on a phone */
       @media (max-width: 768px) {
         .grid {
           flex-direction: column;
@@ -128,15 +112,12 @@ but when there is nothing left to take away." — Some dead guy.
           min-height: 0;
         }
       }
-
-      /* Sidebar with its own fucking scroll context */
       .sidebar {
         flex: 1;
         min-width: 250px;
         overflow-y: auto;
         padding-right: 10px;
       }
-
       .main {
         flex: 3;
         min-width: 300px;
@@ -144,32 +125,25 @@ but when there is nothing left to take away." — Some dead guy.
         flex-direction: column;
         min-height: 0;
       }
-
-      /* Chat Container */
       #chat-container {
         position: relative;
         flex-grow: 1;
-        min-height: 0; /* Let it actually shrink */
+        min-height: 0;
         overflow-y: auto;
         border: 2px solid #000;
         background: #ebebeb;
         padding: 15px;
         margin-bottom: 15px;
       }
-
       #input-area {
-        flex-shrink: 0; /* Prevents the text area from being crushed by the chat container */
+        flex-shrink: 0;
       }
-
-      /* Chat Messages */
       .msg {
         border-left: 4px solid #000;
         padding-left: 15px;
         margin-bottom: 20px;
         background: #fff;
-        padding-top: 10px;
-        padding-bottom: 10px;
-        padding-right: 10px;
+        padding: 10px 10px 10px 15px;
         border-radius: 0 5px 5px 0;
         box-shadow: 2px 2px 0px #000;
       }
@@ -186,7 +160,6 @@ but when there is nothing left to take away." — Some dead guy.
         border-color: #ffaa00;
         background: #fff8e6;
       }
-
       .msg-meta {
         font-size: 0.85em;
         text-transform: uppercase;
@@ -210,14 +183,12 @@ but when there is nothing left to take away." — Some dead guy.
       .msg-content p:last-child {
         margin-bottom: 0;
       }
-
-      /* Markdown Code Blocks */
       .msg-content pre {
         padding: 10px;
         border: 1px solid #000;
         overflow-x: auto;
         overflow-y: hidden;
-        max-height: none !important; /* Override any Prism.js max-height bullshit */
+        max-height: none !important;
         border-radius: 0;
       }
       .msg-content code {
@@ -230,8 +201,6 @@ but when there is nothing left to take away." — Some dead guy.
         background: transparent;
         color: inherit;
       }
-
-      /* Override Prism's soft bullshit without breaking hover states */
       .msg-content pre[class*="language-"] {
         background: #eee;
         margin: 0.5em 0;
@@ -244,21 +213,15 @@ but when there is nothing left to take away." — Some dead guy.
         line-height: 1.6;
         direction: ltr;
       }
-
-      /* Highlight the whole block on Ctrl-Copy hover */
       body.ctrl-down .msg-content pre[class*="language-"]:hover {
         background: #e0e0e0;
       }
       body.ctrl-down pre:hover code {
-        background: transparent; /* Stop the text from highlighting independently */
+        background: transparent;
       }
-
-      /* Edit Area */
       .edit-area {
         min-height: 250px;
       }
-
-      /* Chat List */
       .chat-item {
         display: flex;
         justify-content: space-between;
@@ -290,8 +253,6 @@ but when there is nothing left to take away." — Some dead guy.
         padding: 2px 5px;
         margin-left: 2px;
       }
-
-      /* Config */
       .config-box {
         background: #eee;
         padding: 15px;
@@ -305,26 +266,20 @@ but when there is nothing left to take away." — Some dead guy.
         margin-bottom: 10px;
         cursor: pointer;
       }
-
       body.ctrl-down pre,
       body.ctrl-down code,
       body.ctrl-down .katex {
         cursor: pointer !important;
       }
-
-      /* CTRL-Copy */
       body.ctrl-down pre:hover,
       body.ctrl-down code:hover,
       body.ctrl-down .katex:hover,
       body.ctrl-down .chat-item:hover {
         background: #e0e0e0;
       }
-
       body.ctrl-down .chat-item-title {
         cursor: copy !important;
       }
-
-      /* Latex */
       .katex {
         user-select: none;
         -webkit-user-select: none;
@@ -338,30 +293,25 @@ but when there is nothing left to take away." — Some dead guy.
       <a id="toggle-sidebar-btn" class="top-btn" title="Alt+P" onclick="toggleSidebar()">[hide sidebar]</a>
     </div>
 
-    <header>
+    <header id="header">
       <h1>HTML Chat</h1>
       <p>No 500MB Docker containers. No bullshit. Just you, your API key, and the fucking browser.</p>
     </header>
 
     <div class="grid">
-      <!-- SIDEBAR: Config & Chat List -->
       <aside class="sidebar" id="sidebar">
         <div class="config-box">
           <h3>Settings</h3>
           <label>Base URL</label>
           <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1" />
-
           <label>API Key</label>
           <input type="password" id="cfg-key" placeholder="sk-..." />
-
           <label>Models (use commas)</label>
           <input type="text" id="cfg-models" placeholder="gpt-4o,gpt-3.5-turbo" />
-
           <label class="checkbox-label">
             <input type="checkbox" id="cfg-godmode" />
             <strong>God-Mode (JS Exec)</strong>
           </label>
-
           <button onclick="saveConfig()">Save Settings</button>
         </div>
 
@@ -374,12 +324,8 @@ but when there is nothing left to take away." — Some dead guy.
         </div>
       </aside>
 
-      <!-- MAIN: Chat Area -->
       <main class="main">
-        <div id="chat-container">
-          <!-- Messages go here -->
-        </div>
-
+        <div id="chat-container"></div>
         <div id="input-area">
           <div style="display: flex; gap: 10px; margin-bottom: 10px">
             <select id="model-select" style="width: auto; margin: 0" onchange="saveLastModel()"></select>
@@ -398,7 +344,10 @@ but when there is nothing left to take away." — Some dead guy.
     </div>
 
     <script>
-      // --- STATE MANAGEMENT ---
+      // --- UTILS & STATE ---
+      const $ = (s) => document.querySelector(s);
+      const escapeHTML = (str) => (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
       let config = JSON.parse(localStorage.getItem("mf_config")) || {
         url: "https://api.openai.com/v1",
         key: "",
@@ -409,52 +358,30 @@ but when there is nothing left to take away." — Some dead guy.
       let chats = JSON.parse(localStorage.getItem("mf_chats")) || [];
       let currentChatId = localStorage.getItem("mf_current_chat_id") || null;
       let currentAbortController = null;
-
       let isSidebarHidden =
         localStorage.getItem("mf_sidebar_hidden") === "true" || localStorage.getItem("mf_locked_in") === "true";
       let isTitleHidden = localStorage.getItem("mf_title_hidden") === "true";
 
-      // Tell Marked.js how to handle math natively so it doesn't fight with code blocks
-      const mathExtension = {
-        name: "math",
-        level: "inline",
-        start(src) {
-          return src.match(/\$/)?.index;
-        }, // Tell Marked where to look
-        tokenizer(src, tokens) {
-          // 1. Check for block math: $$ ... $$
-          const blockRule = /^\$\$([\s\S]+?)\$\$/;
-          const blockMatch = blockRule.exec(src);
-          if (blockMatch) {
-            return {
-              type: "math",
-              raw: blockMatch[0], // The exact string to consume
-              text: blockMatch[1],
-            };
-          }
-
-          // 2. Check for inline math: $ ... $
-          // (Requires a non-space character after the first $ to prevent matching "$5 and $10")
-          const inlineRule = /^\$([^\s$](?:\\.|[^$\n])*?)\$/;
-          const inlineMatch = inlineRule.exec(src);
-          if (inlineMatch) {
-            return {
-              type: "math",
-              raw: inlineMatch[0],
-              text: inlineMatch[1],
-            };
-          }
-        },
-        renderer(token) {
-          // Just return the raw string. KaTeX's renderMathInElement will handle the actual HTML conversion later.
-          // We escape HTML entities so < and > inside math don't break the DOM.
-          const safeMath = token.raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-          return safeMath;
-        },
-      };
-
-      // Register the extension
-      marked.use({ extensions: [mathExtension] });
+      marked.use({
+        extensions: [
+          {
+            name: "math",
+            level: "inline",
+            start(src) {
+              return src.match(/\$/)?.index;
+            },
+            tokenizer(src) {
+              const blockMatch = /^\$\$([\s\S]+?)\$\$/.exec(src);
+              if (blockMatch) return { type: "math", raw: blockMatch[0], text: blockMatch[1] };
+              const inlineMatch = /^\$([^\s$](?:\\.|[^$\n])*?)\$/.exec(src);
+              if (inlineMatch) return { type: "math", raw: inlineMatch[0], text: inlineMatch[1] };
+            },
+            renderer(token) {
+              return escapeHTML(token.raw);
+            },
+          },
+        ],
+      });
 
       function saveState() {
         localStorage.setItem("mf_config", JSON.stringify(config));
@@ -466,19 +393,14 @@ but when there is nothing left to take away." — Some dead guy.
 
       // --- INITIALIZATION ---
       function init() {
-        document.getElementById("cfg-url").value = config.url;
-        document.getElementById("cfg-key").value = config.key;
-        document.getElementById("cfg-models").value = config.models;
-        document.getElementById("cfg-godmode").checked = config.godMode || false;
-
+        $("#cfg-url").value = config.url;
+        $("#cfg-key").value = config.key;
+        $("#cfg-models").value = config.models;
+        $("#cfg-godmode").checked = config.godMode || false;
         updateModelDropdown();
         applySidebarState();
         applyTitleState();
-
-        if (!currentChatId && chats.length > 0) {
-          currentChatId = chats[0].id;
-        }
-
+        if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
         renderApp();
       }
 
@@ -487,17 +409,9 @@ but when there is nothing left to take away." — Some dead guy.
         saveState();
         applySidebarState();
       }
-
       function applySidebarState() {
-        const sidebar = document.getElementById("sidebar");
-        const btn = document.getElementById("toggle-sidebar-btn");
-        if (isSidebarHidden) {
-          sidebar.classList.add("hidden");
-          btn.textContent = "[show sidebar]";
-        } else {
-          sidebar.classList.remove("hidden");
-          btn.textContent = "[hide sidebar]";
-        }
+        $("#sidebar").classList.toggle("hidden", isSidebarHidden);
+        $("#toggle-sidebar-btn").textContent = isSidebarHidden ? "[show sidebar]" : "[hide sidebar]";
       }
 
       function toggleTitle() {
@@ -505,59 +419,43 @@ but when there is nothing left to take away." — Some dead guy.
         saveState();
         applyTitleState();
       }
-
       function applyTitleState() {
-        const header = document.querySelector("header");
-        const btn = document.getElementById("toggle-title-btn");
-        if (isTitleHidden) {
-          header.classList.add("hidden");
-          btn.textContent = "[show title]";
-        } else {
-          header.classList.remove("hidden");
-          btn.textContent = "[hide title]";
-        }
+        $("#header").classList.toggle("hidden", isTitleHidden);
+        $("#toggle-title-btn").textContent = isTitleHidden ? "[show title]" : "[hide title]";
       }
 
       function saveConfig() {
-        config.url = document.getElementById("cfg-url").value.trim();
-        config.key = document.getElementById("cfg-key").value.trim();
-        config.models = document.getElementById("cfg-models").value.trim();
-        config.godMode = document.getElementById("cfg-godmode").checked;
+        config = {
+          ...config,
+          url: $("#cfg-url").value.trim(),
+          key: $("#cfg-key").value.trim(),
+          models: $("#cfg-models").value.trim(),
+          godMode: $("#cfg-godmode").checked,
+        };
         saveState();
         updateModelDropdown();
         alert("Settings saved, don't fuck them up.");
       }
 
       function updateModelDropdown() {
-        const select = document.getElementById("model-select");
-        select.innerHTML = "";
+        const select = $("#model-select");
         const models = config.models
           .split(",")
           .map((m) => m.trim())
-          .filter((m) => m);
-
-        models.forEach((m) => {
-          const opt = document.createElement("option");
-          opt.value = m;
-          opt.textContent = m;
-          select.appendChild(opt);
-        });
-
-        // Restore the last used model, or default to the first one in the list
-        if (config.lastModel && models.includes(config.lastModel)) {
-          select.value = config.lastModel;
-        } else if (models.length > 0) {
+          .filter(Boolean);
+        select.innerHTML = models.map((m) => `<option value="${m}">${m}</option>`).join("");
+        if (config.lastModel && models.includes(config.lastModel)) select.value = config.lastModel;
+        else if (models.length > 0) {
           config.lastModel = models[0];
           saveState();
         }
       }
-
       function saveLastModel() {
-        config.lastModel = document.getElementById("model-select").value;
+        config.lastModel = $("#model-select").value;
         saveState();
       }
 
-      // --- CHAT MANAGEMENT ---
+      // --- CHAT ACTIONS ---
       function newChat() {
         const id = Date.now().toString();
         chats.unshift({ id, title: "New Chat", messages: [] });
@@ -565,20 +463,17 @@ but when there is nothing left to take away." — Some dead guy.
         saveState();
         renderApp();
       }
-
       function loadChat(id) {
         currentChatId = id;
         saveState();
         renderApp();
       }
-
       function deleteChat(id) {
         chats = chats.filter((c) => c.id !== id);
         if (currentChatId === id) currentChatId = chats.length ? chats[0].id : null;
         saveState();
         renderApp();
       }
-
       function renameChat(id) {
         const chat = chats.find((c) => c.id === id);
         const newTitle = prompt("Rename chat:", chat.title);
@@ -588,274 +483,200 @@ but when there is nothing left to take away." — Some dead guy.
           renderApp(true);
         }
       }
-
       function forkChat(msgIndex) {
         const chat = chats.find((c) => c.id === currentChatId);
         const newId = Date.now().toString();
-        const forkedMessages = JSON.parse(JSON.stringify(chat.messages.slice(0, msgIndex + 1)));
-
         chats.unshift({
           id: newId,
           title: chat.title + " (Forked)",
-          messages: forkedMessages,
+          messages: JSON.parse(JSON.stringify(chat.messages.slice(0, msgIndex + 1))),
         });
-
         currentChatId = newId;
         saveState();
         renderApp();
       }
-
-      function copyChat(chat, element) {
-        if (chat.messages.length === 0) {
-          alert("Chat is empty, nothing to copy.");
-          return;
-        }
-
-        let formattedText = `# ${chat.title}\n\n`;
-        chat.messages.forEach((msg) => {
-          const role = msg.role.toUpperCase();
-          formattedText += `## ${role}\n${msg.content}\n\n`;
-        });
-
-        navigator.clipboard.writeText(formattedText.trim()).then(() => {
-          const originalBg = element.style.backgroundColor;
-          element.style.backgroundColor = "#ccc";
-          setTimeout(() => {
-            element.style.backgroundColor = originalBg;
-          }, 150);
-        });
-      }
-
       function retryMessage(msgIndex) {
         const chat = chats.find((c) => c.id === currentChatId);
-        const textToRetry = chat.messages[msgIndex].content;
-
+        $("#chat-input").value = chat.messages[msgIndex].content;
         chat.messages = chat.messages.slice(0, msgIndex);
         saveState();
-
-        document.getElementById("chat-input").value = textToRetry;
         sendMessage();
       }
-
       function deleteMessage(msgIndex) {
-        const chat = chats.find((c) => c.id === currentChatId);
-        chat.messages.splice(msgIndex, 1);
+        chats.find((c) => c.id === currentChatId).messages.splice(msgIndex, 1);
         saveState();
         renderApp(true);
       }
 
-      // --- RENDERING ---
+      // --- RENDERING (Template Literals > DOM Building) ---
       function renderApp(preserveScroll = false) {
         renderChatList();
         renderCurrentChat(preserveScroll);
       }
 
       function renderChatList() {
-        const list = document.getElementById("chat-list");
-        list.innerHTML = "";
+        const list = $("#chat-list");
+        if (!chats.length)
+          return (list.innerHTML = '<p style="font-size:0.8em; color:#666;">No chats. Start a new one, asshole.</p>');
 
-        if (chats.length === 0) {
-          list.innerHTML = '<p style="font-size:0.8em; color:#666;">No chats. Start a new one, asshole.</p>';
-          return;
-        }
-
-        chats.forEach((chat) => {
-          const div = document.createElement("div");
-          div.className = `chat-item ${chat.id === currentChatId ? "active" : ""}`;
-
-          const title = document.createElement("div");
-          title.className = "chat-item-title";
-          title.textContent = chat.title;
-
-          title.onclick = (e) => {
-            if (e.ctrlKey || e.metaKey) {
-              copyChat(chat, div);
-            } else {
-              loadChat(chat.id);
-            }
-          };
-
-          const actions = document.createElement("div");
-          actions.className = "chat-item-actions";
-
-          const renBtn = document.createElement("button");
-          renBtn.textContent = "✎";
-          renBtn.title = chat.id === currentChatId ? "Rename (Alt+R)" : "Rename";
-          renBtn.onclick = () => renameChat(chat.id);
-
-          const delBtn = document.createElement("button");
-          delBtn.textContent = "×";
-          delBtn.title = chat.id === currentChatId ? "Delete (Alt+W)" : "Delete";
-          delBtn.onclick = () => {
-            deleteChat(chat.id);
-          };
-
-          actions.appendChild(renBtn);
-          actions.appendChild(delBtn);
-
-          div.appendChild(title);
-          div.appendChild(actions);
-          list.appendChild(div);
-        });
+        list.innerHTML = chats
+          .map(
+            (chat) => `
+          <div class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}">
+            <div class="chat-item-title" data-action="load">${escapeHTML(chat.title)}</div>
+            <div class="chat-item-actions">
+              <button data-action="rename" title="Rename">✎</button>
+              <button data-action="delete" title="Delete">×</button>
+            </div>
+          </div>
+        `,
+          )
+          .join("");
       }
 
       function renderCurrentChat(preserveScroll = false) {
-        const container = document.getElementById("chat-container");
+        const container = $("#chat-container");
         const prevScroll = container.scrollTop;
 
-        container.innerHTML = "";
-
-        if (!currentChatId) {
-          container.innerHTML = '<h3 style="margin:0;">No chat selected.</h3>';
-          return;
-        }
-
+        if (!currentChatId) return (container.innerHTML = '<h3 style="margin:0;">No chat selected.</h3>');
         const chat = chats.find((c) => c.id === currentChatId);
-        if (chat.messages.length === 0) {
-          container.innerHTML = '<p style="margin:0;">It is fucking empty in here. Send a prompt.</p>';
-          return;
-        }
+        if (!chat.messages.length)
+          return (container.innerHTML = '<p style="margin:0;">It is fucking empty in here. Send a prompt.</p>');
 
-        chat.messages.forEach((msg, index) => {
-          const msgDiv = document.createElement("div");
-          msgDiv.className = `msg ${msg.role}`;
+        container.innerHTML = chat.messages
+          .map(
+            (msg, i) => `
+          <div class="msg ${msg.role}" data-index="${i}">
+            <div class="msg-meta">
+              <span>${msg.role}</span>
+              <div class="msg-actions">
+                <button data-action="edit">Edit</button>
+                <button data-action="fork">Fork</button>
+                ${msg.role === "user" ? `<button data-action="retry">Retry</button>` : ""}
+                <button data-action="delete">Delete</button>
+              </div>
+            </div>
+            <div class="msg-content">${marked.parse(msg.content || "")}</div>
+            <textarea class="hidden edit-area">${escapeHTML(msg.content)}</textarea>
+            <div class="hidden edit-actions" style="margin-top: 5px;">
+              <button data-action="save-edit">Save</button>
+              <button data-action="cancel-edit">Cancel</button>
+              <button data-action="toggle-wrap">Toggle Wrap</button>
+            </div>
+          </div>
+        `,
+          )
+          .join("");
 
-          const metaDiv = document.createElement("div");
-          metaDiv.className = "msg-meta";
-
-          const roleSpan = document.createElement("span");
-          roleSpan.textContent = msg.role;
-
-          const actionsDiv = document.createElement("div");
-          actionsDiv.className = "msg-actions";
-
-          const editBtn = document.createElement("button");
-          editBtn.textContent = "Edit";
-
-          const forkBtn = document.createElement("button");
-          forkBtn.textContent = "Fork";
-          forkBtn.onclick = () => forkChat(index);
-
-          actionsDiv.appendChild(editBtn);
-          actionsDiv.appendChild(forkBtn);
-
-          if (msg.role === "user") {
-            const retryBtn = document.createElement("button");
-            retryBtn.textContent = "Retry";
-            retryBtn.onclick = () => retryMessage(index);
-            actionsDiv.appendChild(retryBtn);
-          }
-
-          const delBtn = document.createElement("button");
-          delBtn.textContent = "Delete";
-          delBtn.onclick = () => deleteMessage(index);
-
-          actionsDiv.appendChild(delBtn);
-
-          metaDiv.appendChild(roleSpan);
-          metaDiv.appendChild(actionsDiv);
-
-          // Content area
-          const contentDiv = document.createElement("div");
-          const safeContent = msg.content || "";
-
-          // Marked.js now natively understands math and won't mangle it or confuse it with code blocks.
-          contentDiv.innerHTML = marked.parse(safeContent);
-          contentDiv.className = "msg-content";
-
-          const editArea = document.createElement("textarea");
-          editArea.className = "hidden edit-area";
-          editArea.value = msg.content;
-
-          const editActionsContainer = document.createElement("div");
-          editActionsContainer.className = "hidden";
-          editActionsContainer.style.marginTop = "5px";
-
-          const saveEditBtn = document.createElement("button");
-          saveEditBtn.textContent = "Save";
-
-          const cancelEditBtn = document.createElement("button");
-          cancelEditBtn.textContent = "Cancel";
-          cancelEditBtn.style.marginLeft = "5px";
-
-          const toggleWrapBtn = document.createElement("button");
-          toggleWrapBtn.textContent = "Toggle Wrap";
-          toggleWrapBtn.style.marginLeft = "5px";
-
-          toggleWrapBtn.onclick = () => {
-            editArea.style.whiteSpace = editArea.style.whiteSpace === "pre" ? "pre-wrap" : "pre";
-            editArea.style.overflowX = editArea.style.whiteSpace === "pre" ? "auto" : "hidden";
-          };
-
-          editActionsContainer.appendChild(saveEditBtn);
-          editActionsContainer.appendChild(cancelEditBtn);
-          editActionsContainer.appendChild(toggleWrapBtn);
-
-          editBtn.onclick = () => {
-            contentDiv.classList.add("hidden");
-            editArea.classList.remove("hidden");
-            editActionsContainer.classList.remove("hidden");
-            editBtn.classList.add("hidden");
-            editArea.focus();
-          };
-
-          cancelEditBtn.onclick = () => {
-            renderApp(true);
-          };
-
-          saveEditBtn.onclick = () => {
-            msg.content = editArea.value;
-            saveState();
-            renderApp(true);
-          };
-
-          msgDiv.appendChild(metaDiv);
-          msgDiv.appendChild(contentDiv);
-          msgDiv.appendChild(editArea);
-          msgDiv.appendChild(editActionsContainer);
-
-          container.appendChild(msgDiv);
-
-          renderMathInElement(msgDiv, {
-            delimiters: [
-              { left: "$$", right: "$$", display: true },
-              { left: "$", right: "$", display: false },
-            ],
-            output: "htmlAndMathml",
-            throwOnError: false,
-          });
-
-          Prism.highlightAllUnder(msgDiv);
+        renderMathInElement(container, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$", right: "$", display: false },
+          ],
+          output: "htmlAndMathml",
+          throwOnError: false,
         });
+        Prism.highlightAllUnder(container);
 
-        if (preserveScroll) {
-          container.scrollTop = prevScroll;
-        } else {
+        if (preserveScroll) container.scrollTop = prevScroll;
+        else {
           const lastMsg = container.lastElementChild;
-          if (lastMsg) {
-            if (lastMsg.classList.contains("user")) {
-              // Scroll to the absolute bottom so the end of the user message is at the bottom of the view
-              container.scrollTop = container.scrollHeight;
-            } else {
-              // Pin the top of the assistant/system message to the top of the view
-              container.scrollTop = lastMsg.offsetTop - 15;
-            }
-          }
+          if (lastMsg)
+            container.scrollTop = lastMsg.classList.contains("user") ? container.scrollHeight : lastMsg.offsetTop - 15;
         }
       }
 
-      // --- API INTERACTION & GOD MODE LOOP ---
-      async function sendMessage(autoLoopDepth = 0) {
-        const btn = document.getElementById("send-btn");
-        const MAX_LOOPS = 5; // The Kill Switch
+      // --- EVENT DELEGATION ---
+      $("#chat-list").addEventListener("click", (e) => {
+        const item = e.target.closest(".chat-item");
+        if (!item) return;
+        const id = item.dataset.id;
+        const action = e.target.dataset.action;
 
-        // If we hit the loop limit, forcefully stop the recursion
+        if (action === "rename") renameChat(id);
+        else if (action === "delete") deleteChat(id);
+        else if (action === "load") {
+          if (e.ctrlKey || e.metaKey) {
+            const chat = chats.find((c) => c.id === id);
+            const text =
+              `# ${chat.title}\n\n` + chat.messages.map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`).join("");
+            navigator.clipboard.writeText(text.trim()).then(() => {
+              item.style.background = "#ccc";
+              setTimeout(() => (item.style.background = ""), 150);
+            });
+          } else loadChat(id);
+        }
+      });
+
+      $("#chat-container").addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-action]");
+        if (!btn) return;
+        const msgDiv = btn.closest(".msg");
+        const index = parseInt(msgDiv.dataset.index, 10);
+        const action = btn.dataset.action;
+
+        if (action === "edit") {
+          msgDiv.querySelector(".msg-content").classList.add("hidden");
+          msgDiv.querySelector(".edit-area").classList.remove("hidden");
+          msgDiv.querySelector(".edit-actions").classList.remove("hidden");
+          btn.classList.add("hidden");
+          msgDiv.querySelector(".edit-area").focus();
+        } else if (action === "save-edit") {
+          chats.find((c) => c.id === currentChatId).messages[index].content = msgDiv.querySelector(".edit-area").value;
+          saveState();
+          renderApp(true);
+        } else if (action === "cancel-edit") renderApp(true);
+        else if (action === "toggle-wrap") {
+          const area = msgDiv.querySelector(".edit-area");
+          area.style.whiteSpace = area.style.whiteSpace === "pre" ? "pre-wrap" : "pre";
+          area.style.overflowX = area.style.whiteSpace === "pre" ? "auto" : "hidden";
+        } else if (action === "fork") forkChat(index);
+        else if (action === "retry") retryMessage(index);
+        else if (action === "delete") deleteMessage(index);
+      });
+
+      // --- API & GOD MODE ---
+      async function executeGodMode(code) {
+        let logs = [];
+        const safeStr = (obj) => {
+          try {
+            return typeof obj === "object" ? JSON.stringify(obj, null, 2) : String(obj);
+          } catch {
+            return Object.prototype.toString.call(obj);
+          }
+        };
+        const proxyConsole = {
+          log: (...args) => logs.push(args.map(safeStr).join(" ")),
+          error: (...args) => logs.push("ERROR: " + args.map(safeStr).join(" ")),
+        };
+        let result,
+          errorStr = "";
+        try {
+          const execFn = new (Object.getPrototypeOf(async function () {}).constructor)("console", code);
+          result = await execFn(proxyConsole);
+        } catch (err) {
+          errorStr = err.toString();
+        }
+
+        let out = "**Execution Result:**\n```text\n";
+        if (logs.length) out += logs.join("\n") + "\n";
+        if (result !== undefined) out += "Return: " + safeStr(result) + "\n";
+        if (errorStr) out += "Error: " + errorStr + "\n";
+        if (!logs.length && result === undefined && !errorStr) out += "Code executed successfully with no output.\n";
+        return out + "```";
+      }
+
+      async function sendMessage(autoLoopDepth = 0) {
+        const btn = $("#send-btn");
+        const MAX_LOOPS = 5;
+
         if (autoLoopDepth >= MAX_LOOPS) {
-          const chat = chats.find((c) => c.id === currentChatId);
-          chat.messages.push({
-            role: "system",
-            content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached. The LLM was forcefully stopped to prevent an infinite loop.`,
-          });
+          chats
+            .find((c) => c.id === currentChatId)
+            .messages.push({
+              role: "system",
+              content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached.`,
+            });
           saveState();
           renderApp();
           btn.textContent = "Send";
@@ -863,7 +684,6 @@ but when there is nothing left to take away." — Some dead guy.
         }
 
         const isAutoLoop = autoLoopDepth > 0;
-
         if (currentAbortController && !isAutoLoop) {
           currentAbortController.abort();
           currentAbortController = null;
@@ -871,25 +691,21 @@ but when there is nothing left to take away." — Some dead guy.
           return;
         }
 
-        const inputEl = document.getElementById("chat-input");
+        const inputEl = $("#chat-input");
         const text = inputEl.value.trim();
 
         if (!isAutoLoop) {
           if (!text) return;
-          if (!config.key) {
-            alert("Please enter your API key in the settings first.");
-            return;
-          }
+          if (!config.key) return alert("Please enter your API key in the settings first.");
           if (!currentChatId) newChat();
         }
 
         const chat = chats.find((c) => c.id === currentChatId);
 
         if (!isAutoLoop) {
-          if (chat.messages.length === 0) {
+          if (!chat.messages.length) {
             const lastDoubleNewline = text.lastIndexOf("\n\n");
             const titleSource = lastDoubleNewline !== -1 ? text.substring(lastDoubleNewline + 2).trim() : text;
-
             chat.title = titleSource.substring(0, 30) + (titleSource.length > 30 ? "..." : "");
           }
           chat.messages.push({ role: "user", content: text });
@@ -898,109 +714,48 @@ but when there is nothing left to take away." — Some dead guy.
           renderApp();
         }
 
-        const model = document.getElementById("model-select").value;
         currentAbortController = new AbortController();
-
-        // Update button text to show loop depth
         btn.textContent = isAutoLoop ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...` : "Thinking...";
 
         try {
           const cleanMessages = chat.messages
-            .filter((m) => {
-              // Keep all user and assistant messages
-              if (m.role !== "system") return true;
-              // Keep "Executing Code" system messages so the LLM has context
-              if (m.content && m.content.includes("**Executing Code:**")) return true;
-              // Filter out other system messages (like errors)
-              return false;
-            })
-            .map((m) => {
-              let apiRole = m.role;
-              // Map "Executing Code" (system) to "user" for the API so the LLM sees it as context
-              if (apiRole === "system" && m.content.includes("**Executing Code:**")) {
-                apiRole = "user";
-              }
-              return { role: apiRole, content: m.content || "" };
-            });
+            .filter((m) => m.role !== "system" || (m.content && m.content.includes("**Executing Code:**")))
+            .map((m) => ({
+              role: m.role === "system" && m.content.includes("**Executing Code:**") ? "user" : m.role,
+              content: m.content || "",
+            }));
 
           if (config.godMode) {
             cleanMessages.unshift({
               role: "system",
-              content: `[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]
-You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.
-
-However, to execute code, you MUST use this exact syntax (the return value is sent back to you):
-<run>
-// browser-side JS goes here
-return data.toString();
-</run>
-
-CRITICAL RULES FOR TOOL USE:
-1. DO NOT CALCULATE MANUALLY. If the user asks a math, logic, or data question, you MUST use a <run> block to compute it. Do not trust your own internal math.
-2. NO FAKE CODE, MOCKS, OR HARDCODING. Your JavaScript MUST contain actual logic, algorithms, math, or simulations. DO NOT write "simplified" checks or hardcode the answer you already suspect. If you need to search for a counterexample, write a GENUINE exhaustive search. The code itself must do the actual work to prove the answer.
-3. VANILLA JS LIMITATIONS. You are in a browser. You do not have Python's \`itertools\`, \`numpy\`, or \`scipy\`. If you need combinations, permutations, matrix operations, or deep equality checks, you MUST implement them yourself.
-4. STATE PERSISTENCE. Each <run> block executes in a fresh async function scope. Variables declared with \`let\` or \`const\` will NOT persist between runs. To save state across multiple runs, attach it to the global \`window\` object (e.g., \`window.myState = ...\`).
-5. ITERATIVE PROBLEM SOLVING. If a problem is too complex for one script, break it down. Write a <run> block to generate data, save it to \`window\`, and then write a second <run> block to process it. 
-6. DEFER YOUR ANSWER. If you output a <run> block, DO NOT attempt to answer the user's prompt in the same message. Output ONLY your thought process and the <run> block.
-7. WAIT FOR THE RESULT. The system will execute your code and return the result in the next message. If your code throws an error, DO NOT apologize—just write another <run> block to fix it and try again.
-8. DELIVER THE FINAL ANSWER ONLY AFTER EXECUTION. Unless an error is spotted, once you have the results write your final response to the user and DO NOT include any <run> tags.
-9. NEVER use Node.js modules (require, os, fs). They do not exist here.
-10. NEVER use markdown backticks (\`\`\`) around the <run> tags. Just output the raw tags.
-
-EXAMPLE WORKFLOW:
-User: What is the square root of 9999?
-Assistant: I need to compute this using JavaScript.
-<run>
-return Math.sqrt(9999);
-</run>
-User: **Execution Result:**
-\`\`\`text
-Return: 99.99499987499375
-\`\`\`
-Assistant: The square root of 9999 is 99.994999875.`,
+              content:
+                "[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]\nYou are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.\n\nHowever, to execute code, you MUST use this exact syntax (the return value is sent back to you):\n<run>\n// browser-side JS goes here\nreturn data.toString();\n</run>\n\nCRITICAL RULES FOR TOOL USE:\n1. DO NOT CALCULATE MANUALLY. If the user asks a math, logic, or data question, you MUST use a <run> block to compute it. Do not trust your own internal math.\n2. NO FAKE CODE, MOCKS, OR HARDCODING. Your JavaScript MUST contain actual logic, algorithms, math, or simulations. DO NOT write \"simplified\" checks or hardcode the answer you already suspect. If you need to search for a counterexample, write a GENUINE exhaustive search. The code itself must do the actual work to prove the answer.\n3. VANILLA JS LIMITATIONS. You are in a browser. You do not have Python's `itertools`, `numpy`, or `scipy`. If you need combinations, permutations, matrix operations, or deep equality checks, you MUST implement them yourself.\n4. STATE PERSISTENCE. Each <run> block executes in a fresh async function scope. Variables declared with `let` or `const` will NOT persist between runs. To save state across multiple runs, attach it to the global `window` object (e.g., `window.myState = ...`).\n5. ITERATIVE PROBLEM SOLVING. If a problem is too complex for one script, break it down. Write a <run> block to generate data, save it to `window`, and then write a second <run> block to process it. \n6. DEFER YOUR ANSWER. If you output a <run> block, DO NOT attempt to answer the user's prompt in the same message. Output ONLY your thought process and the <run> block.\n7. WAIT FOR THE RESULT. The system will execute your code and return the result in the next message. If your code throws an error, DO NOT apologize—just write another <run> block to fix it and try again.\n8. DELIVER THE FINAL ANSWER ONLY AFTER EXECUTION. Unless an error is spotted, once you have the results write your final response to the user and DO NOT include any <run> tags.\n9. NEVER use Node.js modules (require, os, fs). They do not exist here.\n10. NEVER use markdown backticks (```) around the <run> tags. Just output the raw tags.\n\nEXAMPLE WORKFLOW:\nUser: What is the square root of 9999?\nAssistant: I need to compute this using JavaScript.\n<run>\nreturn Math.sqrt(9999);\n</run>\nUser: **Execution Result:**\n```text\nReturn: 99.99499987499375\n```\nAssistant: The square root of 9999 is 99.994999875.",
             });
           }
 
           const response = await fetch(`${config.url}/chat/completions`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${config.key}`,
-            },
-            body: JSON.stringify({
-              model: model,
-              messages: cleanMessages,
-            }),
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.key}` },
+            body: JSON.stringify({ model: $("#model-select").value, messages: cleanMessages }),
             signal: currentAbortController.signal,
           });
 
-          if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error?.message || `HTTP ${response.status} ${response.statusText}`);
-          }
+          if (!response.ok)
+            throw new Error((await response.json().catch(() => ({}))).error?.message || `HTTP ${response.status}`);
+          const reply = (await response.json()).choices[0].message.content || "";
 
-          const data = await response.json();
-          const reply = data.choices[0].message.content || "";
-
-          // --- GOD MODE INTERCEPTOR & QUEUE ---
           if (config.godMode && reply) {
             const runMatches = [...reply.matchAll(/<run>([\s\S]*?)<\/run>/g)];
-
             if (runMatches.length > 0) {
-              let assistantContent = reply.replace(/<run>[\s\S]*?<\/run>/g, "").trim();
-
-              if (assistantContent === "") {
-                assistantContent = "*(Executing code...)*";
-              }
-
-              chat.messages.push({ role: "assistant", content: assistantContent });
+              chat.messages.push({
+                role: "assistant",
+                content: reply.replace(/<run>[\s\S]*?<\/run>/g, "").trim() || "*(Executing code...)*",
+              });
               saveState();
               renderApp();
 
               for (const match of runMatches) {
                 const code = match[1].trim();
-
-                // Store Code as SYSTEM (Visual log, not editable)
                 chat.messages.push({
                   role: "system",
                   content: `**Executing Code:**\n\`\`\`javascript\n${code}\n\`\`\``,
@@ -1008,67 +763,25 @@ Assistant: The square root of 9999 is 99.994999875.`,
                 saveState();
                 renderApp();
 
-                let logs = [];
-                const safeStringify = (obj) => {
-                  try {
-                    return typeof obj === "object" ? JSON.stringify(obj, null, 2) : String(obj);
-                  } catch (e) {
-                    return Object.prototype.toString.call(obj);
-                  }
-                };
-
-                const proxyConsole = {
-                  log: (...args) => logs.push(args.map(safeStringify).join(" ")),
-                  error: (...args) => logs.push("ERROR: " + args.map(safeStringify).join(" ")),
-                };
-
-                let result;
-                let errorStr = "";
-
-                try {
-                  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-                  const execFn = new AsyncFunction("console", code);
-                  result = await execFn(proxyConsole);
-                } catch (err) {
-                  errorStr = err.toString();
-                }
-
-                let outputMsg = "**Execution Result:**\n```text\n";
-                if (logs.length > 0) outputMsg += logs.join("\n") + "\n";
-                if (result !== undefined) outputMsg += "Return: " + safeStringify(result) + "\n";
-                if (errorStr) outputMsg += "Error: " + errorStr + "\n";
-                if (logs.length === 0 && result === undefined && !errorStr)
-                  outputMsg += "Code executed successfully with no output.\n";
-                outputMsg += "```";
-
-                // Store Result as USER (Editable, Retry-able)
-                chat.messages.push({ role: "user", content: outputMsg });
+                chat.messages.push({ role: "user", content: await executeGodMode(code) });
                 saveState();
                 renderApp();
               }
-
-              // Recursively call sendMessage with an incremented loop depth
               return sendMessage(autoLoopDepth + 1);
-            } else {
-              if (reply.trim() !== "" || isAutoLoop) {
-                chat.messages.push({ role: "assistant", content: reply });
-                saveState();
-                renderApp();
-              }
             }
-          } else {
-            if (reply.trim() !== "" || isAutoLoop) {
-              chat.messages.push({ role: "assistant", content: reply });
-              saveState();
-              renderApp();
-            }
+          }
+
+          if (reply.trim() !== "" || isAutoLoop) {
+            chat.messages.push({ role: "assistant", content: reply });
+            saveState();
+            renderApp();
           }
         } catch (error) {
-          if (error.name === "AbortError") {
-            chat.messages.push({ role: "system", content: "**System:** Request cancelled by user." });
-          } else {
-            chat.messages.push({ role: "system", content: `**Error:**\n\n${error.message}` });
-          }
+          chat.messages.push({
+            role: "system",
+            content:
+              error.name === "AbortError" ? "**System:** Request cancelled by user." : `**Error:**\n\n${error.message}`,
+          });
         }
 
         currentAbortController = null;
@@ -1077,24 +790,20 @@ Assistant: The square root of 9999 is 99.994999875.`,
         renderApp();
       }
 
-      // --- KEYBOARD SHORTCUTS ---
-      document.getElementById("chat-input").addEventListener("keydown", function (e) {
-        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-          sendMessage();
-        }
+      // --- KEYBOARD & CLIPBOARD ---
+      $("#chat-input").addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") sendMessage();
       });
 
-      document.addEventListener("keydown", function (e) {
+      document.addEventListener("keydown", (e) => {
         if (e.altKey && e.key.toLowerCase() === "t") {
           e.preventDefault();
           newChat();
-          document.getElementById("chat-input").focus();
+          $("#chat-input").focus();
         }
         if (e.altKey && e.key.toLowerCase() === "w") {
           e.preventDefault();
-          if (currentChatId) {
-            deleteChat(currentChatId);
-          }
+          if (currentChatId) deleteChat(currentChatId);
         }
         if (e.altKey && e.key.toLowerCase() === "r") {
           e.preventDefault();
@@ -1109,124 +818,73 @@ Assistant: The square root of 9999 is 99.994999875.`,
           toggleTitle();
         }
 
-        // Shift+Up/Down: Scroll through messages
         if (e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-          // Don't hijack if the user is trying to highlight text in the input area
-          if (document.activeElement && document.activeElement.tagName === "TEXTAREA") return;
-
+          if (document.activeElement?.tagName === "TEXTAREA") return;
           e.preventDefault();
-          const container = document.getElementById("chat-container");
+          const container = $("#chat-container");
           const msgs = Array.from(container.querySelectorAll(".msg"));
-          if (msgs.length === 0) return;
-
-          const currentScroll = container.scrollTop;
-          const offsetAdjustment = 15;
-          const threshold = 5;
+          if (!msgs.length) return;
 
           if (e.key === "ArrowDown") {
-            const nextMsg = msgs.find((m) => m.offsetTop - offsetAdjustment > currentScroll + threshold);
-            if (nextMsg) {
-              container.scrollTop = nextMsg.offsetTop - offsetAdjustment;
-            } else {
-              container.scrollTop = container.scrollHeight;
-            }
-          } else if (e.key === "ArrowUp") {
-            const prevMsg = msgs
+            const next = msgs.find((m) => m.offsetTop - 15 > container.scrollTop + 5);
+            container.scrollTop = next ? next.offsetTop - 15 : container.scrollHeight;
+          } else {
+            const prev = msgs
               .slice()
               .reverse()
-              .find((m) => m.offsetTop - offsetAdjustment < currentScroll - threshold);
-            if (prevMsg) {
-              container.scrollTop = prevMsg.offsetTop - offsetAdjustment;
-            } else {
-              container.scrollTop = 0;
-            }
+              .find((m) => m.offsetTop - 15 < container.scrollTop - 5);
+            container.scrollTop = prev ? prev.offsetTop - 15 : 0;
           }
         }
 
-        // Alt+Up/Down: Navigate through the chat list
         if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
           e.preventDefault();
-          if (chats.length === 0) return;
-
-          let currentIndex = chats.findIndex((c) => c.id === currentChatId);
-          if (currentIndex === -1) currentIndex = 0;
-
-          if (e.key === "ArrowUp") {
-            // Move UP the list (towards index 0)
-            if (currentIndex > 0) {
-              loadChat(chats[currentIndex - 1].id);
-            }
-          } else if (e.key === "ArrowDown") {
-            // Move DOWN the list (towards the end)
-            if (currentIndex < chats.length - 1) {
-              loadChat(chats[currentIndex + 1].id);
-            }
-          }
+          if (!chats.length) return;
+          let idx = Math.max(
+            0,
+            chats.findIndex((c) => c.id === currentChatId),
+          );
+          if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
+          if (e.key === "ArrowDown" && idx < chats.length - 1) loadChat(chats[idx + 1].id);
         }
 
-        // Smooth scroll chat container with plain arrow keys ---
         if (!e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-          const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
-          // Only trigger if we aren't typing in an input, textarea, or select
-          if (activeTag !== "input" && activeTag !== "textarea" && activeTag !== "select") {
+          const tag = document.activeElement?.tagName.toLowerCase();
+          if (tag !== "input" && tag !== "textarea" && tag !== "select") {
             e.preventDefault();
-            const container = document.getElementById("chat-container");
-            container.scrollBy({
-              top: e.key === "ArrowDown" ? 150 : -150,
-              behavior: "smooth",
-            });
+            $("#chat-container").scrollBy({ top: e.key === "ArrowDown" ? 150 : -150, behavior: "smooth" });
           }
         }
       });
 
-      // --- CLIPBOARD SHIT ---
       const toggleCopyMode = (e) => {
-        if (e.key === "Control" || e.key === "Meta") {
-          document.body.classList.toggle("ctrl-down", e.type === "keydown");
-        }
+        if (e.key === "Control" || e.key === "Meta") document.body.classList.toggle("ctrl-down", e.type === "keydown");
       };
-
       window.addEventListener("keydown", toggleCopyMode);
       window.addEventListener("keyup", toggleCopyMode);
-      window.addEventListener("blur", () => {
-        document.body.classList.remove("ctrl-down");
-      });
+      window.addEventListener("blur", () => document.body.classList.remove("ctrl-down"));
 
-      document.getElementById("chat-container").addEventListener("click", function (e) {
+      $("#chat-container").addEventListener("click", (e) => {
         if (!(e.ctrlKey || e.metaKey)) return;
+        const target = e.target.closest(".katex") || e.target.closest("pre") || e.target.closest("code");
+        if (!target) return;
 
-        let text = "";
-        let target = null;
+        let text = target.classList.contains("katex")
+          ? target.querySelector("annotation")?.textContent ||
+            target.querySelector(".katex-mathml math")?.getAttribute("alttext") ||
+            ""
+          : target.innerText;
 
-        const codeTarget = e.target.closest("pre") || e.target.closest("code");
-        const mathTarget = e.target.closest(".katex");
-
-        if (mathTarget) {
-          target = mathTarget;
-          const annotation = mathTarget.querySelector("annotation");
-          if (annotation) {
-            text = annotation.textContent;
-          } else {
-            text = mathTarget.querySelector(".katex-mathml math").getAttribute("alttext") || "";
-          }
-        } else if (codeTarget) {
-          target = codeTarget;
-          text = target.innerText;
+        if (text) {
+          e.preventDefault();
+          navigator.clipboard.writeText(text).then(() => {
+            const bg = target.style.backgroundColor;
+            target.style.backgroundColor = "#ccc";
+            setTimeout(() => (target.style.backgroundColor = bg), 100);
+          });
         }
-
-        if (!target || !text) return;
-
-        e.preventDefault();
-        navigator.clipboard.writeText(text).then(() => {
-          const originalBg = target.style.backgroundColor;
-          target.style.backgroundColor = "#ccc";
-          setTimeout(() => {
-            target.style.backgroundColor = originalBg;
-          }, 100);
-        });
       });
 
-      // Boot this shit up
       init();
     </script>
   </body>
