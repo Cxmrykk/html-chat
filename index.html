@@ -645,9 +645,7 @@ but when there is nothing left to take away." — Some dead guy.
           delBtn.textContent = "×";
           delBtn.title = chat.id === currentChatId ? "Delete (Alt+W)" : "Delete";
           delBtn.onclick = () => {
-            if (confirm("Are you sure you want to nuke this chat?")) {
-              deleteChat(chat.id);
-            }
+            deleteChat(chat.id);
           };
 
           actions.appendChild(renBtn);
@@ -1059,9 +1057,7 @@ Assistant: The square root of 9999 is 99.994999875.`,
         if (e.altKey && e.key.toLowerCase() === "w") {
           e.preventDefault();
           if (currentChatId) {
-            if (confirm("Are you sure you want to nuke this chat?")) {
-              deleteChat(currentChatId);
-            }
+            deleteChat(currentChatId);
           }
         }
         if (e.altKey && e.key.toLowerCase() === "r") {
@@ -1076,7 +1072,12 @@ Assistant: The square root of 9999 is 99.994999875.`,
           e.preventDefault();
           toggleTitle();
         }
-        if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+
+        // Shift+Up/Down: Scroll through messages
+        if (e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          // Don't hijack if the user is trying to highlight text in the input area
+          if (document.activeElement && document.activeElement.tagName === "TEXTAREA") return;
+
           e.preventDefault();
           const container = document.getElementById("chat-container");
           const msgs = Array.from(container.querySelectorAll(".msg"));
@@ -1102,6 +1103,27 @@ Assistant: The square root of 9999 is 99.994999875.`,
               container.scrollTop = prevMsg.offsetTop - offsetAdjustment;
             } else {
               container.scrollTop = 0;
+            }
+          }
+        }
+
+        // Alt+Up/Down: Navigate through the chat list
+        if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          e.preventDefault();
+          if (chats.length === 0) return;
+
+          let currentIndex = chats.findIndex((c) => c.id === currentChatId);
+          if (currentIndex === -1) currentIndex = 0;
+
+          if (e.key === "ArrowUp") {
+            // Move UP the list (towards index 0)
+            if (currentIndex > 0) {
+              loadChat(chats[currentIndex - 1].id);
+            }
+          } else if (e.key === "ArrowDown") {
+            // Move DOWN the list (towards the end)
+            if (currentIndex < chats.length - 1) {
+              loadChat(chats[currentIndex + 1].id);
             }
           }
         }
