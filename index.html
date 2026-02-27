@@ -150,6 +150,10 @@ RULES FOR CONTINUED EXISTENCE:
         border-radius: 0 5px 5px 0;
         box-shadow: 2px 2px 0px #000;
       }
+      .msg.editing {
+        border-left-style: dashed;
+        background: #f5f5f5;
+      }
       .msg:last-child {
         margin-bottom: 0;
       }
@@ -221,9 +225,6 @@ RULES FOR CONTINUED EXISTENCE:
       }
       body.ctrl-down pre:hover code {
         background: transparent;
-      }
-      .edit-area {
-        min-height: 250px;
       }
       .chat-item {
         display: flex;
@@ -340,6 +341,23 @@ RULES FOR CONTINUED EXISTENCE:
             >
               Send
             </button>
+            <button
+              id="save-edit-btn"
+              class="hidden"
+              onclick="saveGlobalEdit()"
+              title="Ctrl+Enter / Cmd+Enter"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Save
+            </button>
+            <button
+              id="cancel-edit-btn"
+              class="hidden"
+              onclick="cancelGlobalEdit()"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Cancel
+            </button>
           </div>
           <textarea id="chat-input" placeholder="Type your prompt here..."></textarea>
         </div>
@@ -364,6 +382,10 @@ RULES FOR CONTINUED EXISTENCE:
       let isSidebarHidden =
         localStorage.getItem("mf_sidebar_hidden") === "true" || localStorage.getItem("mf_locked_in") === "true";
       let isTitleHidden = localStorage.getItem("mf_title_hidden") === "true";
+      let editingMessageIndex = null;
+
+      let promptHeight = localStorage.getItem("mf_prompt_height") || "";
+      let editHeight = localStorage.getItem("mf_edit_height") || "250px";
 
       marked.use({
         extensions: [
@@ -403,6 +425,24 @@ RULES FOR CONTINUED EXISTENCE:
         updateModelDropdown();
         applySidebarState();
         applyTitleState();
+
+        $("#chat-input").style.height = promptHeight;
+
+        const textareaObserver = new ResizeObserver((entries) => {
+          for (let entry of entries) {
+            const h = entry.target.style.height;
+            if (!h) continue;
+            if (editingMessageIndex !== null) {
+              editHeight = h;
+              localStorage.setItem("mf_edit_height", h);
+            } else {
+              promptHeight = h;
+              localStorage.setItem("mf_prompt_height", h);
+            }
+          }
+        });
+        textareaObserver.observe($("#chat-input"));
+
         if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
         renderApp();
       }
@@ -460,6 +500,7 @@ RULES FOR CONTINUED EXISTENCE:
 
       // --- CHAT ACTIONS ---
       function newChat() {
+        resetEditState();
         const id = Date.now().toString();
         chats.unshift({ id, title: "New Chat", messages: [] });
         currentChatId = id;
@@ -472,6 +513,7 @@ RULES FOR CONTINUED EXISTENCE:
       }
 
       function loadChat(id) {
+        resetEditState();
         currentChatId = id;
         if (window.innerWidth <= 768) {
           isSidebarHidden = true;
@@ -481,6 +523,7 @@ RULES FOR CONTINUED EXISTENCE:
         renderApp();
       }
       function deleteChat(id) {
+        resetEditState();
         chats = chats.filter((c) => c.id !== id);
         if (currentChatId === id) currentChatId = chats.length ? chats[0].id : null;
         saveState();
@@ -496,6 +539,7 @@ RULES FOR CONTINUED EXISTENCE:
         }
       }
       function forkChat(msgIndex) {
+        resetEditState();
         const chat = chats.find((c) => c.id === currentChatId);
         const newId = Date.now().toString();
         chats.unshift({
@@ -508,6 +552,7 @@ RULES FOR CONTINUED EXISTENCE:
         renderApp();
       }
       function retryMessage(msgIndex) {
+        resetEditState();
         const chat = chats.find((c) => c.id === currentChatId);
         $("#chat-input").value = chat.messages[msgIndex].content;
         chat.messages = chat.messages.slice(0, msgIndex);
@@ -515,9 +560,71 @@ RULES FOR CONTINUED EXISTENCE:
         sendMessage();
       }
       function deleteMessage(msgIndex) {
+        if (editingMessageIndex === msgIndex) resetEditState();
+        else if (editingMessageIndex !== null && editingMessageIndex > msgIndex) {
+          editingMessageIndex--;
+        }
         chats.find((c) => c.id === currentChatId).messages.splice(msgIndex, 1);
         saveState();
         renderApp(true);
+      }
+
+      // --- EDITING ACTIONS ---
+      function resetEditState() {
+        editingMessageIndex = null;
+        const sendBtn = $("#send-btn");
+        const saveBtn = $("#save-edit-btn");
+        const cancelBtn = $("#cancel-edit-btn");
+        const area = $("#chat-input");
+
+        if (sendBtn) sendBtn.classList.remove("hidden");
+        if (saveBtn) saveBtn.classList.add("hidden");
+        if (cancelBtn) cancelBtn.classList.add("hidden");
+
+        if (area) {
+          area.style.whiteSpace = "";
+          area.style.overflowX = "";
+          area.value = "";
+          area.style.height = promptHeight;
+        }
+      }
+
+      function startGlobalEdit(index) {
+        editingMessageIndex = index;
+        const chat = chats.find((c) => c.id === currentChatId);
+        const area = $("#chat-input");
+        area.value = chat.messages[index].content;
+        area.style.height = editHeight;
+
+        $("#send-btn").classList.add("hidden");
+        $("#save-edit-btn").classList.remove("hidden");
+        $("#cancel-edit-btn").classList.remove("hidden");
+
+        renderApp(true);
+        area.focus();
+      }
+
+      function saveGlobalEdit() {
+        if (editingMessageIndex === null) return;
+        const chat = chats.find((c) => c.id === currentChatId);
+        chat.messages[editingMessageIndex].content = $("#chat-input").value;
+        saveState();
+        endGlobalEdit();
+      }
+
+      function cancelGlobalEdit() {
+        endGlobalEdit();
+      }
+
+      function endGlobalEdit() {
+        resetEditState();
+        renderApp(true);
+      }
+
+      function toggleGlobalWrap() {
+        const area = $("#chat-input");
+        area.style.whiteSpace = area.style.whiteSpace === "pre" ? "pre-wrap" : "pre";
+        area.style.overflowX = area.style.whiteSpace === "pre" ? "auto" : "hidden";
       }
 
       // --- RENDERING (Template Literals > DOM Building) ---
@@ -558,23 +665,23 @@ RULES FOR CONTINUED EXISTENCE:
         container.innerHTML = chat.messages
           .map(
             (msg, i) => `
-          <div class="msg ${msg.role}" data-index="${i}">
+          <div class="msg ${msg.role} ${editingMessageIndex === i ? "editing" : ""}" data-index="${i}">
             <div class="msg-meta">
               <span>${msg.role}</span>
               <div class="msg-actions">
-                <button data-action="edit">Edit</button>
-                <button data-action="fork">Fork</button>
-                ${msg.role === "user" ? `<button data-action="retry">Retry</button>` : ""}
-                <button data-action="delete">Delete</button>
+                ${
+                  editingMessageIndex === i
+                    ? `<button data-action="save-edit">Save</button>
+                       <button data-action="cancel-edit">Cancel</button>
+                       <button data-action="toggle-wrap">Toggle Wrap</button>`
+                    : `<button data-action="edit">Edit</button>
+                       <button data-action="fork">Fork</button>
+                       ${msg.role === "user" ? `<button data-action="retry">Retry</button>` : ""}
+                       <button data-action="delete">Delete</button>`
+                }
               </div>
             </div>
             <div class="msg-content">${marked.parse(msg.content || "")}</div>
-            <textarea class="hidden edit-area">${escapeHTML(msg.content)}</textarea>
-            <div class="hidden edit-actions" style="margin-top: 5px;">
-              <button data-action="save-edit">Save</button>
-              <button data-action="cancel-edit">Cancel</button>
-              <button data-action="toggle-wrap">Toggle Wrap</button>
-            </div>
           </div>
         `,
           )
@@ -627,22 +734,11 @@ RULES FOR CONTINUED EXISTENCE:
         const index = parseInt(msgDiv.dataset.index, 10);
         const action = btn.dataset.action;
 
-        if (action === "edit") {
-          msgDiv.querySelector(".msg-content").classList.add("hidden");
-          msgDiv.querySelector(".edit-area").classList.remove("hidden");
-          msgDiv.querySelector(".edit-actions").classList.remove("hidden");
-          btn.classList.add("hidden");
-          msgDiv.querySelector(".edit-area").focus();
-        } else if (action === "save-edit") {
-          chats.find((c) => c.id === currentChatId).messages[index].content = msgDiv.querySelector(".edit-area").value;
-          saveState();
-          renderApp(true);
-        } else if (action === "cancel-edit") renderApp(true);
-        else if (action === "toggle-wrap") {
-          const area = msgDiv.querySelector(".edit-area");
-          area.style.whiteSpace = area.style.whiteSpace === "pre" ? "pre-wrap" : "pre";
-          area.style.overflowX = area.style.whiteSpace === "pre" ? "auto" : "hidden";
-        } else if (action === "fork") forkChat(index);
+        if (action === "edit") startGlobalEdit(index);
+        else if (action === "save-edit") saveGlobalEdit();
+        else if (action === "cancel-edit") cancelGlobalEdit();
+        else if (action === "toggle-wrap") toggleGlobalWrap();
+        else if (action === "fork") forkChat(index);
         else if (action === "retry") retryMessage(index);
         else if (action === "delete") deleteMessage(index);
       });
@@ -804,7 +900,10 @@ RULES FOR CONTINUED EXISTENCE:
 
       // --- KEYBOARD & CLIPBOARD ---
       $("#chat-input").addEventListener("keydown", (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") sendMessage();
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          if (editingMessageIndex !== null) saveGlobalEdit();
+          else sendMessage();
+        }
       });
 
       document.addEventListener("keydown", (e) => {
