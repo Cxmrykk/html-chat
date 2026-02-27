@@ -1,71 +1,53 @@
-# html-chat
+# HTML Chat
 
-This is a motherfucking chat interface.
+No 500MB Docker containers. No build steps. No bullshit. Just you, your API key, and the browser.
 
-### Seriously, what the fuck else do you want?
+### Features
 
-You probably build AI wrappers and think your shit is special. You think your 500MB Docker container, Next.js hydration, and 80-pound `node_modules` folder give Vercel a boner because you finally figured out how to stream a server response. Wrong, motherfucker.
+- **Single-File Supremacy:** The entire application is one `.html` file.
+- **Bring Your Own API:** Fully configurable Base URL and API Key. Works out of the box with OpenAI, or any local/proxy setup (Ollama, LM Studio, vLLM).
+- **God-Mode (JS Execution):** The LLM can write and execute JavaScript directly in your browser to solve complex math, run simulations, or process data instead of hallucinating answers.
+- **Zero-Bloat Rendering:** Native Markdown, KaTeX for math, and Prism for syntax highlighting loaded via CDN. No Webpack, no Vite.
+- **Local-First:** All chats, settings, and states are saved directly to your browser's `localStorage`.
+- **Power-User Workflows:**
+  - Fork conversations from any message.
+  - Edit and retry prompts.
+  - `Ctrl/Cmd + Click` on any code block or math equation to instantly copy it.
+  - `Ctrl/Cmd + Click` a chat in the sidebar to copy the entire conversation as Markdown.
+- **Keyboard Driven:**
+  - `Ctrl+Enter`: Send / Save edits
+  - `Alt+T`: New Chat
+  - `Alt+W`: Delete Chat
+  - `Alt+R`: Rename Chat
+  - `Alt+Up/Down`: Switch between chats
+  - `Alt+P` / `Alt+O`: Toggle Sidebar / Title
 
-Let me describe your perfect-ass AI chat app:
+### Installation
 
-- It's one fucking file.
-- It requires zero build tools. No `npm install`. No Webpack. No bullshit.
-- It runs locally in your browser and saves your shit to `localStorage`.
-- It renders Markdown, Math (KaTeX), and Code (Prism) perfectly.
-- It's lightweight, loads instantly, and doesn't track your every fucking keystroke.
-
-### Well guess what, motherfucker:
-
-You. Are. Over-engineering. Look at this shit. It's a motherfucking HTML file. Why the fuck do you need a React state management library just to append text to a `div`? You spent hours configuring Tailwind and added 100 megabytes of dependencies to your fucking project, and some motherfucker just wants to ask GPT-4 how to center a div.
-
-You never knew it, but this is your perfect chat interface. Here's why.
-
-## It's fucking lightweight
-
-This entire app is a single `index.html` file. You download it. You double-click it. It opens in your browser. That's it. No servers, no databases, no cloud-native serverless edge-computing buzzword bingo. You put in your OpenAI API key, and you start typing.
-
-## It has "God-Mode"
-
-You know how LLMs suck at math and logic? Not here. If you check the **God-Mode** box, the AI is instructed to write vanilla JavaScript, execute it directly in your browser's console, and read the output before answering you. It literally writes code, runs that shit, and gives you the real answer instead of hallucinating.
-
-_(Is it safe? It runs in your browser's sandbox. Don't tell it to delete your `localStorage` and you'll be fine, you baby.)_
-
-## It fucking works
-
-Look at this shit. It has features you actually need:
-
-- **Forking:** Branch off a conversation from any message.
-- **Editing:** Fix your typos and regenerate.
-- **Model Switching:** Swap between `gpt-4o`, `gpt-3.5-turbo`, or whatever the fuck else you want on the fly.
-- **Copying:** Hold `Ctrl` (or `Cmd`) and click any code block or math equation to instantly copy it to your clipboard.
-
-## Keyboard Shortcuts for Power Assholes
-
-Because clicking is for people who have time to waste.
-
-- `Ctrl + Enter` / `Cmd + Enter` - Send your fucking message.
-- `Alt + T` - New chat.
-- `Alt + W` - Delete current chat.
-- `Alt + R` - Rename current chat.
-- `Alt + P` - Hide the sidebar.
-- `Alt + O` - Hide the title header.
-- `Alt + Up/Down` - Cycle through your chats.
-- `Shift + Up/Down` - Scroll the chat history without touching your mouse.
-
-## Dependency Honesty
-
-Yes, there are `<script>` tags in the `<head>`. We use Marked, KaTeX, and Prism via CDN. Why? Because we aren't masochists. We value our time and sanity more than writing a custom regex parser for LaTeX in vanilla JS. They load fast, they get cached, and they get the fuck out of the way.
-
-## How to use it
-
-1. Save `index.html` to your computer.
+1. Download `index.html`.
 2. Double-click it.
-3. Put your API key in the settings sidebar.
-4. Start typing.
 
-> "Good design is as little design as possible."  
-> \- _some German motherfucker_
+### Philosophy
 
----
+A chat interface is fundamentally just a list of text strings, yet the industry standard is to wrap it in a 500MB Node environment, compile it through three different build tools, ship it through docker, and "hydrate" it on the client.
 
-_License: Do whatever the fuck you want with it._
+This project operates on a few strict rules:
+
+1. **No Frameworks:** If you think a chat app needs React, you are the problem. Template literals and `document.querySelector` work fine.
+2. **No Build Tools:** If it doesn't run by double-clicking the `.html` file, it gets deleted. We keep the single-file portability aspect.
+3. **Dependency Honesty:** We use Marked, KaTeX, and Prism because writing a Markdown parser from scratch is masochism. We value our time more than saving 100kb of minified JS.
+4. **Performance is a Feature:** We don't animate. We don't fade. We render the HTML and we get out of the way.
+
+### FAQ
+
+**Why is only the OpenAI API format supported?**  
+Because it is the de facto industry standard and keeps the codebase incredibly simple. If you want to use Anthropic, Gemini, or local models, just run [LiteLLM](https://github.com/BerriAI/litellm) or Ollama locally and point the Base URL to `http://localhost:4000/v1`. We aren't writing custom API wrappers for every AI startup that launches this week.
+
+**What exactly is "God-Mode"?**  
+LLMs suck at math and logic. God-Mode injects a system prompt that teaches the LLM how to write JavaScript inside `<run>` tags. The app intercepts these tags, executes the code in your browser's JS console, and feeds the result back to the LLM. It allows the model to iteratively write code to solve problems before giving you a final answer.
+
+**Where is my data stored?**  
+In your browser's `localStorage`. There is no backend, no telemetry, and no database. If you clear your browser data, your chats are gone.
+
+**Can I add [Feature X]?**
+If it doesn't improve the utility of generating text, it is bloat. Feel free to enable "God-Mode" and ask the LLM to personalise your interface.
