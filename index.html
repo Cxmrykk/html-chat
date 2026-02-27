@@ -427,6 +427,7 @@ RULES FOR CONTINUED EXISTENCE:
         applyTitleState();
 
         $("#chat-input").style.height = promptHeight;
+        $("#chat-input").addEventListener("input", updateTokenCount);
 
         const textareaObserver = new ResizeObserver((entries) => {
           for (let entry of entries) {
@@ -445,6 +446,42 @@ RULES FOR CONTINUED EXISTENCE:
 
         if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
         renderApp();
+      }
+
+      function updateTokenCount() {
+        const btn = $("#send-btn");
+        if (!btn) return;
+
+        // Don't overwrite state indicators
+        if (btn.textContent.includes("Thinking") || btn.classList.contains("hidden")) return;
+
+        const inputVal = $("#chat-input").value || "";
+        let context = "";
+
+        // Calculate context from the active chat data
+        if (currentChatId) {
+          const chat = chats.find((c) => c.id === currentChatId);
+          if (chat && chat.messages) {
+            context = chat.messages.map((m) => m.content).join(" ");
+          }
+        }
+
+        // Napkin math: 1 token ~= 4 chars
+        const totalChars = inputVal.length + context.length;
+        const tokens = Math.ceil(totalChars / 4);
+
+        // Logic: Hide if < 1k. Show k/M if > 1k. Remove .0
+        if (tokens < 1000) {
+          btn.textContent = "Send";
+        } else {
+          let label;
+          if (tokens >= 1000000) {
+            label = (tokens / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+          } else {
+            label = (tokens / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+          }
+          btn.textContent = `Send (${label} tokens)`;
+        }
       }
 
       function toggleSidebar() {
@@ -703,6 +740,8 @@ RULES FOR CONTINUED EXISTENCE:
           if (lastMsg)
             container.scrollTop = lastMsg.classList.contains("user") ? container.scrollHeight : lastMsg.offsetTop - 15;
         }
+
+        updateTokenCount();
       }
 
       // --- EVENT DELEGATION ---
@@ -785,9 +824,9 @@ RULES FOR CONTINUED EXISTENCE:
               role: "system",
               content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached.`,
             });
+          updateTokenCount();
           saveState();
           renderApp();
-          btn.textContent = "Send";
           return;
         }
 
