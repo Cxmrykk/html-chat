@@ -104,12 +104,15 @@ RULES FOR CONTINUED EXISTENCE:
         margin-top: 1rem;
       }
       @media (max-width: 768px) {
-        .grid {
-          flex-direction: column;
+        .sidebar:not(.hidden) + .main {
+          display: none;
+        }
+        .sidebar,
+        .main {
+          min-width: 0;
         }
         .sidebar {
-          flex: 0 0 30%;
-          min-height: 0;
+          padding-right: 0;
         }
       }
       .sidebar {
@@ -460,11 +463,20 @@ RULES FOR CONTINUED EXISTENCE:
         const id = Date.now().toString();
         chats.unshift({ id, title: "New Chat", messages: [] });
         currentChatId = id;
+        if (window.innerWidth <= 768) {
+          isSidebarHidden = true;
+          applySidebarState();
+        }
         saveState();
         renderApp();
       }
+
       function loadChat(id) {
         currentChatId = id;
+        if (window.innerWidth <= 768) {
+          isSidebarHidden = true;
+          applySidebarState();
+        }
         saveState();
         renderApp();
       }
