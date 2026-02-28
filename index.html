@@ -314,7 +314,7 @@ RULES FOR CONTINUED EXISTENCE:
           <input type="text" id="cfg-models" placeholder="gpt-4o,gpt-3.5-turbo" />
           <label class="checkbox-label">
             <input type="checkbox" id="cfg-godmode" />
-            <strong>God-Mode (JS Exec)</strong>
+            <strong>Execute JavaScript</strong>
           </label>
           <button onclick="saveConfig()">Save Settings</button>
         </div>
@@ -866,9 +866,17 @@ RULES FOR CONTINUED EXISTENCE:
 
         try {
           const cleanMessages = chat.messages
-            .filter((m) => m.role !== "system" || (m.content && m.content.includes("**Executing Code:**")))
+            .filter(
+              (m) =>
+                m.role !== "system" ||
+                m.content.includes("**Executing Code:**") ||
+                m.content.includes("**Execution Result:**"),
+            )
             .map((m) => ({
-              role: m.role === "system" && m.content.includes("**Executing Code:**") ? "user" : m.role,
+              role:
+                m.role === "system" && (m.content.includes("**Executing") || m.content.includes("**Execution"))
+                  ? "user"
+                  : m.role,
               content: m.content || "",
             }));
 
@@ -910,7 +918,8 @@ RULES FOR CONTINUED EXISTENCE:
                 saveState();
                 renderApp();
 
-                chat.messages.push({ role: "user", content: await executeGodMode(code) });
+                // We change the role to "system" for the UI
+                chat.messages.push({ role: "system", content: await executeGodMode(code) });
                 saveState();
                 renderApp();
               }
