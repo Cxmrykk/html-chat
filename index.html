@@ -985,7 +985,7 @@ RULES FOR CONTINUED EXISTENCE:
                 const result = await executeGodMode(code);
                 chat.messages.push({ role: "user", content: result });
                 saveState();
-                renderApp();
+                renderApp(true);
               }
               return sendMessage(autoLoopDepth + 1);
             }
