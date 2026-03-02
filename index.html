@@ -767,8 +767,17 @@ RULES FOR CONTINUED EXISTENCE:
           return (container.innerHTML = '<p style="margin:0;">It is fucking empty in here. Send a prompt.</p>');
 
         container.innerHTML = chat.messages
-          .map(
-            (msg, i) => `
+          .map((msg, i) => {
+            // Dynamically format <run> blocks for the UI without altering the saved state
+            let displayContent = msg.content || "";
+            if (msg.role === "assistant") {
+              displayContent = displayContent.replace(
+                /<run>([\s\S]*?)<\/run>/g,
+                (match, code) => `**Executing Code:**\n\`\`\`javascript\n${code.trim()}\n\`\`\``,
+              );
+            }
+
+            return `
           <div class="msg ${msg.role} ${editingMessageIndex === i ? "editing" : ""}" data-index="${i}">
             <div class="msg-meta">
               <span>${msg.role}</span>
@@ -785,10 +794,10 @@ RULES FOR CONTINUED EXISTENCE:
                 }
               </div>
             </div>
-            <div class="msg-content">${marked.parse(msg.content || "")}</div>
+            <div class="msg-content">${marked.parse(displayContent)}</div>
           </div>
-        `,
-          )
+        `;
+          })
           .join("");
 
         renderMathInElement(container, {
@@ -932,18 +941,11 @@ RULES FOR CONTINUED EXISTENCE:
         btn.textContent = isAutoLoop ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...` : "Thinking...";
 
         try {
+          // strip local system errors, keep user/assistant pure
           const cleanMessages = chat.messages
-            .filter(
-              (m) =>
-                m.role !== "system" ||
-                m.content.includes("**Executing Code:**") ||
-                m.content.includes("**Execution Result:**"),
-            )
+            .filter((m) => m.role !== "system")
             .map((m) => ({
-              role:
-                m.role === "system" && (m.content.includes("**Executing") || m.content.includes("**Execution"))
-                  ? "user"
-                  : m.role,
+              role: m.role,
               content: m.content || "",
             }));
 
@@ -969,24 +971,19 @@ RULES FOR CONTINUED EXISTENCE:
           if (config.godMode && reply) {
             const runMatches = [...reply.matchAll(/<run>([\s\S]*?)<\/run>/g)];
             if (runMatches.length > 0) {
+              // Push the raw assistant reply containing the <run> tags
               chat.messages.push({
                 role: "assistant",
-                content: reply.replace(/<run>[\s\S]*?<\/run>/g, "").trim() || "*(Executing code...)*",
+                content: reply,
               });
               saveState();
               renderApp();
 
+              // Execute each block and push the result as a user message
               for (const match of runMatches) {
                 const code = match[1].trim();
-                chat.messages.push({
-                  role: "system",
-                  content: `**Executing Code:**\n\`\`\`javascript\n${code}\n\`\`\``,
-                });
-                saveState();
-                renderApp();
-
-                // We change the role to "system" for the UI
-                chat.messages.push({ role: "system", content: await executeGodMode(code) });
+                const result = await executeGodMode(code);
+                chat.messages.push({ role: "user", content: result });
                 saveState();
                 renderApp();
               }
