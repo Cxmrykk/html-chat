@@ -330,7 +330,7 @@ RULES FOR CONTINUED EXISTENCE:
         <div>
           <div style="display: flex; justify-content: space-between; align-items: center">
             <h3>Your Chats</h3>
-            <button onclick="newChat()" title="Alt+T">+ New</button>
+            <button onclick="handleNewChatClick(event)" title="New / Import: Alt+T / Alt+Click">+ New</button>
           </div>
           <div id="chat-list"></div>
         </div>
@@ -560,6 +560,24 @@ RULES FOR CONTINUED EXISTENCE:
         URL.revokeObjectURL(url);
       }
 
+      function exportSingleChat(id) {
+        const chat = chats.find((c) => c.id === id);
+        if (!chat) return;
+
+        const dataStr = JSON.stringify([chat], null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+
+        a.download = `chat-timestamp-${chat.id}.json`;
+
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
       function importChats() {
         const input = document.createElement("input");
         input.type = "file";
@@ -603,6 +621,15 @@ RULES FOR CONTINUED EXISTENCE:
       }
 
       // --- CHAT ACTIONS ---
+      function handleNewChatClick(e) {
+        if (e.altKey) {
+          e.preventDefault();
+          importChats();
+        } else {
+          newChat();
+        }
+      }
+
       function newChat() {
         resetEditState();
         const id = Date.now().toString();
@@ -747,7 +774,7 @@ RULES FOR CONTINUED EXISTENCE:
           .map(
             (chat) => `
           <div class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}">
-            <div class="chat-item-title" data-action="load">${escapeHTML(chat.title)}</div>
+            <div class="chat-item-title" data-action="load" title="Export: Alt+Click">${escapeHTML(chat.title)}</div>
             <div class="chat-item-actions">
               <button data-action="rename" title="Rename">r</button>
               <button data-action="delete" title="Delete">d</button>
@@ -831,7 +858,10 @@ RULES FOR CONTINUED EXISTENCE:
         if (action === "rename") renameChat(id);
         else if (action === "delete") deleteChat(id);
         else if (action === "load") {
-          if (e.ctrlKey || e.metaKey) {
+          if (e.altKey) {
+            e.preventDefault();
+            exportSingleChat(id);
+          } else if (e.ctrlKey || e.metaKey) {
             const chat = chats.find((c) => c.id === id);
             const text =
               `# ${chat.title}\n\n` + chat.messages.map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`).join("");
