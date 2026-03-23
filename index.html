@@ -173,6 +173,10 @@ RULES FOR CONTINUED EXISTENCE:
         border-color: #ffaa00;
         background: #fff8e6;
       }
+      .msg.error {
+        border-color: #c00000;
+        background: #ffeeee;
+      }
       .msg-meta {
         font-size: 0.85em;
         text-transform: uppercase;
@@ -835,6 +839,7 @@ RULES FOR CONTINUED EXISTENCE:
                 <option value="user" ${msg.role === "user" ? "selected" : ""}>user</option>
                 <option value="assistant" ${msg.role === "assistant" ? "selected" : ""}>assistant</option>
                 <option value="system" ${msg.role === "system" ? "selected" : ""}>system</option>
+                ${msg.role === "error" ? `<option value="error" selected>error</option>` : ""}
               </select>
               <div class="msg-actions">
                 ${
@@ -967,7 +972,7 @@ RULES FOR CONTINUED EXISTENCE:
           chats
             .find((c) => c.id === currentChatId)
             .messages.push({
-              role: "system",
+              role: "error",
               content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached.`,
             });
           updateTokenCount();
@@ -1015,9 +1020,9 @@ RULES FOR CONTINUED EXISTENCE:
         btn.textContent = isAutoLoop ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...` : "Thinking...";
 
         try {
-          // strip local system errors, keep user/assistant pure
+          // strip local error errors, keep user/assistant/system pure
           const cleanMessages = chat.messages
-            .filter((m) => m.role !== "system")
+            .filter((m) => m.role !== "error")
             .map((m) => ({
               role: m.role,
               content: m.content || "",
@@ -1072,7 +1077,7 @@ RULES FOR CONTINUED EXISTENCE:
           }
         } catch (error) {
           chat.messages.push({
-            role: "system",
+            role: "error",
             content:
               error.name === "AbortError" ? "**System:** Request cancelled by user." : `**Error:**\n\n${error.message}`,
           });
