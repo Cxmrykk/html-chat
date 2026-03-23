@@ -295,6 +295,29 @@ RULES FOR CONTINUED EXISTENCE:
         -webkit-user-select: none;
         -moz-user-select: none;
       }
+      .role-select {
+        appearance: none;
+        width: auto;
+        margin-bottom: 0;
+        font-family: inherit;
+        font-size: inherit;
+        font-weight: inherit;
+        text-transform: inherit;
+        color: inherit;
+        background: transparent;
+        border: 1px solid transparent;
+        cursor: pointer;
+        padding: 0 4px;
+        margin-left: -4px;
+        outline: none;
+      }
+      .role-select:hover {
+        background: #eee;
+        border-color: #ccc;
+      }
+      .msg-actions {
+        flex-shrink: 0;
+      }
     </style>
   </head>
   <body>
@@ -808,7 +831,11 @@ RULES FOR CONTINUED EXISTENCE:
             return `
           <div class="msg ${msg.role} ${editingMessageIndex === i ? "editing" : ""}" data-index="${i}">
             <div class="msg-meta">
-              <span>${msg.role}</span>
+              <select class="role-select">
+                <option value="user" ${msg.role === "user" ? "selected" : ""}>user</option>
+                <option value="assistant" ${msg.role === "assistant" ? "selected" : ""}>assistant</option>
+                <option value="system" ${msg.role === "system" ? "selected" : ""}>system</option>
+              </select>
               <div class="msg-actions">
                 ${
                   editingMessageIndex === i
@@ -887,6 +914,18 @@ RULES FOR CONTINUED EXISTENCE:
         else if (action === "fork") forkChat(index);
         else if (action === "retry") retryMessage(index);
         else if (action === "delete") deleteMessage(index);
+      });
+
+      $("#chat-container").addEventListener("change", (e) => {
+        if (e.target.classList.contains("role-select")) {
+          const msgDiv = e.target.closest(".msg");
+          const index = parseInt(msgDiv.dataset.index, 10);
+          const chat = chats.find((c) => c.id === currentChatId);
+
+          chat.messages[index].role = e.target.value;
+          saveState();
+          renderApp(true);
+        }
       });
 
       // --- API & GOD MODE ---
