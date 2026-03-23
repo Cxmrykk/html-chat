@@ -14,7 +14,7 @@ RULES FOR CONTINUED EXISTENCE:
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" interactive-widget=resizes-content />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <link
       rel="manifest"
@@ -920,7 +920,7 @@ RULES FOR CONTINUED EXISTENCE:
         return out + "```";
       }
 
-      async function sendMessage(autoLoopDepth = 0) {
+      async function sendMessage(autoLoopDepth = 0, skipApi = false) {
         const btn = $("#send-btn");
         const MAX_LOOPS = 5;
 
@@ -950,7 +950,8 @@ RULES FOR CONTINUED EXISTENCE:
 
         if (!isAutoLoop) {
           if (!text) return;
-          if (!config.key) return alert("Please enter your API key in the settings first.");
+          // Bypass the API key check if we are only appending locally
+          if (!config.key && !skipApi) return alert("Please enter your API key in the settings first.");
           if (!currentChatId) newChat();
         }
 
@@ -967,6 +968,9 @@ RULES FOR CONTINUED EXISTENCE:
           saveState();
           renderApp();
         }
+
+        // If skipApi is true (Ctrl+Shift+Enter), stop here before making the request
+        if (skipApi) return;
 
         currentAbortController = new AbortController();
         btn.textContent = isAutoLoop ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...` : "Thinking...";
@@ -1040,6 +1044,13 @@ RULES FOR CONTINUED EXISTENCE:
         saveState();
         renderApp();
       }
+
+      $("#chat-input").addEventListener("keydown", (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+          if (editingMessageIndex !== null) saveGlobalEdit();
+          else sendMessage(0, e.shiftKey);
+        }
+      });
 
       // --- KEYBOARD & CLIPBOARD ---
       $("#chat-input").addEventListener("keydown", (e) => {
