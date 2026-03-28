@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link
+      rel="manifest"
+      href='data:application/json,{"name":"HTML Chat","display":"standalone","icons":[{"src":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTIwIDJINGMtMS4xIDAtMiAuOS0yIDJ2MThsNC00aDE0YzEuMSAwIDItLjkgMi0yVjRjMC0xLjEtLjktMi0yLTJ6Ii8+PC9zdmc+","sizes":"512x512","type":"image/svg+xml"}]}'
+    />
+
+    <title>HTML Chat</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex/dist/contrib/auto-render.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/prismjs/themes/prism.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/prismjs/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs/plugins/autoloader/prism-autoloader.min.js"></script>
+
+    <style>
+      /* %%% styles.css %%% */
+    </style>
+  </head>
+  <body>
+    <div class="top-actions">
+      <a id="toggle-title-btn" class="top-btn" title="Alt+O" onclick="toggleTitle()">[show title]</a>
+      <a id="toggle-sidebar-btn" class="top-btn" title="Alt+P" onclick="toggleSidebar()">[hide sidebar]</a>
+    </div>
+
+    <header id="header" class="hidden">
+      <h1>HTML Chat</h1>
+      <p>No 500MB Docker containers. No bullshit. Just you, your API key, and the fucking browser.</p>
+    </header>
+
+    <div class="grid">
+      <aside class="sidebar" id="sidebar">
+        <div class="config-box">
+          <h3>Settings</h3>
+          <label>Base URL</label>
+          <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1" />
+          <label>API Key</label>
+          <input type="password" id="cfg-key" placeholder="sk-..." />
+          <label>Models (use commas)</label>
+          <input type="text" id="cfg-models" placeholder="gpt-4o,gpt-3.5-turbo" />
+          <label class="checkbox-label">
+            <input type="checkbox" id="cfg-godmode" />
+            <strong>Execute JavaScript</strong>
+          </label>
+          <button onclick="saveConfig()">Save</button>
+          <button onclick="importChats()">Import</button>
+          <button onclick="exportChats()">Export</button>
+        </div>
+
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <h3>Your Chats</h3>
+            <button onclick="handleNewChatClick(event)" title="New: Alt+T ↔ Import: Alt+Click">+ New</button>
+          </div>
+          <div id="chat-list"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div id="chat-container"></div>
+        <div id="input-area">
+          <div style="display: flex; gap: 10px; margin-bottom: 10px">
+            <select id="model-select" style="width: auto; margin: 0" onchange="saveLastModel()"></select>
+            <button
+              id="send-btn"
+              onclick="sendMessage()"
+              title="Ctrl+Enter / Cmd+Enter"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Send
+            </button>
+            <button
+              id="save-edit-btn"
+              class="hidden"
+              onclick="saveGlobalEdit()"
+              title="Ctrl+Enter / Cmd+Enter"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Save
+            </button>
+            <button
+              id="cancel-edit-btn"
+              class="hidden"
+              onclick="cancelGlobalEdit()"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Cancel
+            </button>
+          </div>
+          <textarea id="chat-input" placeholder="Type your prompt here..."></textarea>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      /* %%% scripts %%% */
+    </script>
+  </body>
+</html>

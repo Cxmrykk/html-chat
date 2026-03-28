@@ -1,16 +1,4 @@
 <!doctype html>
-<!--
-=========================================================================================
-RULES FOR CONTINUED EXISTENCE:
-1. NO BULLSHIT FRAMEWORKS. If you think this needs React, you are the problem.
-2. NO BUILD TOOLS. If it doesn't run by double-clicking the .html file, delete it.
-3. DEPENDENCY HONESTY. We use Marked, KaTeX, and Prism because we aren't masochists.
-   We value our time and sanity more than loading 100kb of minified JS.
-4. SINGLE FILE SUPREMACY. If it can't live in this one file, it doesn't deserve to live.
-5. PERFORMANCE IS A FEATURE. We don't animate. We don't fade. We don't "hydrate."
-   We render the fucking HTML and we get out of the way.
-=========================================================================================
--->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -32,7 +20,6 @@ RULES FOR CONTINUED EXISTENCE:
     <script src="https://cdn.jsdelivr.net/npm/prismjs/plugins/autoloader/prism-autoloader.min.js"></script>
 
     <style>
-      /* Just enough CSS to provide a functional interface */
       body {
         max-width: 1000px;
         margin: 0 auto;
@@ -47,14 +34,17 @@ RULES FOR CONTINUED EXISTENCE:
         background: #fafafa;
         overflow: hidden;
       }
+
       header {
         flex-shrink: 0;
       }
+
       h1,
       h2,
       h3 {
         margin-top: 0;
       }
+
       button {
         cursor: pointer;
         font-family: inherit;
@@ -63,9 +53,11 @@ RULES FOR CONTINUED EXISTENCE:
         padding: 5px 10px;
         color: #000;
       }
+
       button:hover {
         background: #ccc;
       }
+
       input[type="text"],
       input[type="password"],
       textarea,
@@ -78,13 +70,16 @@ RULES FOR CONTINUED EXISTENCE:
         margin-bottom: 10px;
         background: #fff;
       }
+
       textarea {
         min-height: 100px;
         resize: vertical;
       }
+
       .hidden {
         display: none !important;
       }
+
       .top-actions {
         position: fixed;
         top: 1rem;
@@ -93,15 +88,18 @@ RULES FOR CONTINUED EXISTENCE:
         gap: 15px;
         z-index: 100;
       }
+
       .top-btn {
         color: #0055ff;
         text-decoration: underline;
         cursor: pointer;
         font-size: 0.9em;
       }
+
       .top-btn:hover {
         color: #ff0055;
       }
+
       .grid {
         display: flex;
         gap: 2rem;
@@ -109,24 +107,29 @@ RULES FOR CONTINUED EXISTENCE:
         min-height: 0;
         margin-top: 1rem;
       }
+
       @media (max-width: 768px) {
-        .sidebar:not(.hidden) + .main {
+        .sidebar:not(.hidden)+.main {
           display: none;
         }
+
         .sidebar,
         .main {
           min-width: 0;
         }
+
         .sidebar {
           padding-right: 0;
         }
       }
+
       .sidebar {
         flex: 1;
         min-width: 250px;
         overflow-y: auto;
         padding-right: 10px;
       }
+
       .main {
         flex: 3;
         min-width: 300px;
@@ -134,6 +137,7 @@ RULES FOR CONTINUED EXISTENCE:
         flex-direction: column;
         min-height: 0;
       }
+
       #chat-container {
         position: relative;
         flex-grow: 1;
@@ -144,9 +148,11 @@ RULES FOR CONTINUED EXISTENCE:
         padding: 15px;
         margin-bottom: 15px;
       }
+
       #input-area {
         flex-shrink: 0;
       }
+
       .msg {
         border-left: 4px solid #000;
         padding-left: 15px;
@@ -156,27 +162,34 @@ RULES FOR CONTINUED EXISTENCE:
         border-radius: 0 5px 5px 0;
         box-shadow: 2px 2px 0px #000;
       }
+
       .msg.editing {
         border-left-style: dashed;
         background: #f5f5f5;
       }
+
       .msg:last-child {
         margin-bottom: 0;
       }
+
       .msg.user {
         border-color: #0055ff;
       }
+
       .msg.assistant {
         border-color: #ff0055;
       }
+
       .msg.system {
         border-color: #ffaa00;
         background: #fff8e6;
       }
+
       .msg.error {
         border-color: #c00000;
         background: #ffeeee;
       }
+
       .msg-meta {
         font-size: 0.85em;
         text-transform: uppercase;
@@ -186,20 +199,25 @@ RULES FOR CONTINUED EXISTENCE:
         display: flex;
         justify-content: space-between;
       }
+
       .msg-actions button {
         font-size: 0.8em;
         padding: 2px 6px;
         margin-left: 5px;
       }
+
       .msg-content {
         overflow-wrap: anywhere;
       }
+
       .msg-content p:first-child {
         margin-top: 0;
       }
+
       .msg-content p:last-child {
         margin-bottom: 0;
       }
+
       .msg-content pre {
         padding: 10px;
         border: 1px solid #000;
@@ -208,21 +226,25 @@ RULES FOR CONTINUED EXISTENCE:
         max-height: none !important;
         border-radius: 0;
       }
+
       .msg-content code {
         background: #eee;
         padding: 2px 4px;
         color: #000;
       }
+
       .msg-content pre code {
         padding: 0;
         background: transparent;
         color: inherit;
       }
+
       .msg-content pre[class*="language-"] {
         background: #eee;
         margin: 0.5em 0;
         text-shadow: none;
       }
+
       .msg-content code[class*="language-"],
       .msg-content pre[class*="language-"] {
         font-family: inherit;
@@ -230,12 +252,15 @@ RULES FOR CONTINUED EXISTENCE:
         line-height: 1.6;
         direction: ltr;
       }
+
       body.ctrl-down .msg-content pre[class*="language-"]:hover {
         background: #e0e0e0;
       }
+
       body.ctrl-down pre:hover code {
         background: transparent;
       }
+
       .chat-item {
         display: flex;
         justify-content: space-between;
@@ -244,11 +269,13 @@ RULES FOR CONTINUED EXISTENCE:
         border: 1px solid transparent;
         margin-bottom: 5px;
       }
+
       .chat-item.active {
         border-color: #000;
         background: #eee;
         font-weight: bold;
       }
+
       .chat-item-title {
         cursor: pointer;
         flex-grow: 1;
@@ -258,21 +285,25 @@ RULES FOR CONTINUED EXISTENCE:
         min-width: 0;
         margin-right: 10px;
       }
+
       .chat-item-actions {
         flex-shrink: 0;
         display: flex;
       }
+
       .chat-item-actions button {
         font-size: 0.7em;
         padding: 2px 5px;
         margin-left: 2px;
       }
+
       .config-box {
         background: #eee;
         padding: 15px;
         border: 1px solid #000;
         margin-bottom: 20px;
       }
+
       .checkbox-label {
         display: flex;
         align-items: center;
@@ -280,25 +311,30 @@ RULES FOR CONTINUED EXISTENCE:
         margin-bottom: 10px;
         cursor: pointer;
       }
+
       body.ctrl-down pre,
       body.ctrl-down code,
       body.ctrl-down .katex {
         cursor: pointer !important;
       }
+
       body.ctrl-down pre:hover,
       body.ctrl-down code:hover,
       body.ctrl-down .katex:hover,
       body.ctrl-down .chat-item:hover {
         background: #e0e0e0;
       }
+
       body.ctrl-down .chat-item-title {
         cursor: copy !important;
       }
+
       .katex {
         user-select: none;
         -webkit-user-select: none;
         -moz-user-select: none;
       }
+
       .role-select {
         appearance: none;
         width: auto;
@@ -315,10 +351,12 @@ RULES FOR CONTINUED EXISTENCE:
         margin-left: -4px;
         outline: none;
       }
+
       .role-select:hover {
         background: #eee;
         border-color: #ccc;
       }
+
       .msg-actions {
         flex-shrink: 0;
       }
@@ -326,11 +364,11 @@ RULES FOR CONTINUED EXISTENCE:
   </head>
   <body>
     <div class="top-actions">
-      <a id="toggle-title-btn" class="top-btn" title="Alt+O" onclick="toggleTitle()">[hide title]</a>
+      <a id="toggle-title-btn" class="top-btn" title="Alt+O" onclick="toggleTitle()">[show title]</a>
       <a id="toggle-sidebar-btn" class="top-btn" title="Alt+P" onclick="toggleSidebar()">[hide sidebar]</a>
     </div>
 
-    <header id="header">
+    <header id="header" class="hidden">
       <h1>HTML Chat</h1>
       <p>No 500MB Docker containers. No bullshit. Just you, your API key, and the fucking browser.</p>
     </header>
@@ -402,40 +440,44 @@ RULES FOR CONTINUED EXISTENCE:
     <script>
       // --- UTILS & STATE ---
       const $ = (s) => document.querySelector(s);
-      const escapeHTML = (str) => (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const escapeHTML = (str) =>
+        (str || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
 
       const GOD_MODE_PROMPT = `[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]
-You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.
+      You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.
 
-However, to execute code, you MUST use this exact syntax (the return value is sent back to you):
-<run>
-// browser-side JS goes here
-return data.toString();
-</run>
+      However, to execute code, you MUST use this exact syntax (the return value is sent back to you):
+      <run>
+      // browser-side JS goes here
+      return data.toString();
+      </run>
 
-CRITICAL RULES FOR TOOL USE:
-1. DO NOT CALCULATE MANUALLY. If the user asks a math, logic, or data question, you MUST use a <run> block to compute it. Do not trust your own internal math.
-2. NO FAKE CODE, MOCKS, OR HARDCODING. Your JavaScript MUST contain actual logic, algorithms, math, or simulations. DO NOT write "simplified" checks or hardcode the answer you already suspect. If you need to search for a counterexample, write a GENUINE exhaustive search. The code itself must do the actual work to prove the answer.
-3. VANILLA JS LIMITATIONS. You are in a browser. You do not have Python's \`itertools\`, \`numpy\`, or \`scipy\`. If you need combinations, permutations, matrix operations, or deep equality checks, you MUST implement them yourself.
-4. STATE PERSISTENCE. Each <run> block executes in a fresh async function scope. Variables declared with \`let\` or \`const\` will NOT persist between runs. To save state across multiple runs, attach it to the global \`window\` object (e.g., \`window.myState = ...\`).
-5. ITERATIVE PROBLEM SOLVING. If a problem is too complex for one script, break it down. Write a <run> block to generate data, save it to \`window\`, and then write a second <run> block to process it. 
-6. DEFER YOUR ANSWER. If you output a <run> block, DO NOT attempt to answer the user's prompt in the same message. Output ONLY your thought process and the <run> block.
-7. WAIT FOR THE RESULT. The system will execute your code and return the result in the next message. If your code throws an error, DO NOT apologize—just write another <run> block to fix it and try again.
-8. DELIVER THE FINAL ANSWER ONLY AFTER EXECUTION. Unless an error is spotted, once you have the results write your final response to the user and DO NOT include any <run> tags.
-9. NEVER use Node.js modules (require, os, fs). They do not exist here.
-10. NEVER use markdown backticks (\`\`\`) around the <run> tags. Just output the raw tags.
+      CRITICAL RULES FOR TOOL USE:
+      1. DO NOT CALCULATE MANUALLY. If the user asks a math, logic, or data question, you MUST use a <run> block to compute it. Do not trust your own internal math.
+      2. NO FAKE CODE, MOCKS, OR HARDCODING. Your JavaScript MUST contain actual logic, algorithms, math, or simulations. DO NOT write "simplified" checks or hardcode the answer you already suspect. If you need to search for a counterexample, write a GENUINE exhaustive search. The code itself must do the actual work to prove the answer.
+      3. VANILLA JS LIMITATIONS. You are in a browser. You do not have Python's \`itertools\`, \`numpy\`, or \`scipy\`. If you need combinations, permutations, matrix operations, or deep equality checks, you MUST implement them yourself.
+      4. STATE PERSISTENCE. Each <run> block executes in a fresh async function scope. Variables declared with \`let\` or \`const\` will NOT persist between runs. To save state across multiple runs, attach it to the global \`window\` object (e.g., \`window.myState = ...\`).
+      5. ITERATIVE PROBLEM SOLVING. If a problem is too complex for one script, break it down. Write a <run> block to generate data, save it to \`window\`, and then write a second <run> block to process it. 
+      6. DEFER YOUR ANSWER. If you output a <run> block, DO NOT attempt to answer the user's prompt in the same message. Output ONLY your thought process and the <run> block.
+      7. WAIT FOR THE RESULT. The system will execute your code and return the result in the next message. If your code throws an error, DO NOT apologize—just write another <run> block to fix it and try again.
+      8. DELIVER THE FINAL ANSWER ONLY AFTER EXECUTION. Unless an error is spotted, once you have the results write your final response to the user and DO NOT include any <run> tags.
+      9. NEVER use Node.js modules (require, os, fs). They do not exist here.
+      10. NEVER use markdown backticks (\`\`\`) around the <run> tags. Just output the raw tags.
 
-EXAMPLE WORKFLOW:
-User: What is the square root of 9999?
-Assistant: I need to compute this using JavaScript.
-<run>
-return Math.sqrt(9999);
-</run>
-User: **Execution Result:**
-\`\`\`text
-Return: 99.99499987499375
-\`\`\`
-Assistant: The square root of 9999 is 99.994999875.`;
+      EXAMPLE WORKFLOW:
+      User: What is the square root of 9999?
+      Assistant: I need to compute this using JavaScript.
+      <run>
+      return Math.sqrt(9999);
+      </run>
+      User: **Execution Result:**
+      \`\`\`text
+      Return: 99.99499987499375
+      \`\`\`
+      Assistant: The square root of 9999 is 99.994999875.`;
 
       let config = JSON.parse(localStorage.getItem("mf_config")) || {
         url: "https://api.openai.com/v1",
@@ -448,7 +490,8 @@ Assistant: The square root of 9999 is 99.994999875.`;
       let currentChatId = localStorage.getItem("mf_current_chat_id") || null;
       let currentAbortController = null;
       let isSidebarHidden =
-        localStorage.getItem("mf_sidebar_hidden") === "true" || localStorage.getItem("mf_locked_in") === "true";
+        localStorage.getItem("mf_sidebar_hidden") === "true" ||
+        localStorage.getItem("mf_locked_in") === "true";
       let isTitleHidden = localStorage.getItem("mf_title_hidden") === "true";
       let editingMessageIndex = null;
 
@@ -465,9 +508,11 @@ Assistant: The square root of 9999 is 99.994999875.`;
             },
             tokenizer(src) {
               const blockMatch = /^\$\$([\s\S]+?)\$\$/.exec(src);
-              if (blockMatch) return { type: "math", raw: blockMatch[0], text: blockMatch[1] };
+              if (blockMatch)
+                return { type: "math", raw: blockMatch[0], text: blockMatch[1] };
               const inlineMatch = /^\$([^\s$](?:\\.|[^$\n])*?)\$/.exec(src);
-              if (inlineMatch) return { type: "math", raw: inlineMatch[0], text: inlineMatch[1] };
+              if (inlineMatch)
+                return { type: "math", raw: inlineMatch[0], text: inlineMatch[1] };
             },
             renderer(token) {
               return escapeHTML(token.raw);
@@ -524,7 +569,8 @@ Assistant: The square root of 9999 is 99.994999875.`;
         if (!btn) return;
 
         // Don't overwrite state indicators
-        if (btn.textContent.includes("Thinking") || btn.classList.contains("hidden")) return;
+        if (btn.textContent.includes("Thinking") || btn.classList.contains("hidden"))
+          return;
 
         const inputVal = $("#chat-input").value || "";
         let context = "";
@@ -566,7 +612,9 @@ Assistant: The square root of 9999 is 99.994999875.`;
       }
       function applySidebarState() {
         $("#sidebar").classList.toggle("hidden", isSidebarHidden);
-        $("#toggle-sidebar-btn").textContent = isSidebarHidden ? "[show sidebar]" : "[hide sidebar]";
+        $("#toggle-sidebar-btn").textContent = isSidebarHidden
+          ? "[show sidebar]"
+          : "[hide sidebar]";
       }
 
       function toggleTitle() {
@@ -576,7 +624,9 @@ Assistant: The square root of 9999 is 99.994999875.`;
       }
       function applyTitleState() {
         $("#header").classList.toggle("hidden", isTitleHidden);
-        $("#toggle-title-btn").textContent = isTitleHidden ? "[show title]" : "[hide title]";
+        $("#toggle-title-btn").textContent = isTitleHidden
+          ? "[show title]"
+          : "[hide title]";
       }
 
       function saveConfig() {
@@ -600,8 +650,11 @@ Assistant: The square root of 9999 is 99.994999875.`;
           .split(",")
           .map((m) => m.trim())
           .filter(Boolean);
-        select.innerHTML = models.map((m) => `<option value="${m}">${m}</option>`).join("");
-        if (config.lastModel && models.includes(config.lastModel)) select.value = config.lastModel;
+        select.innerHTML = models
+          .map((m) => `<option value="${m}">${m}</option>`)
+          .join("");
+        if (config.lastModel && models.includes(config.lastModel))
+          select.value = config.lastModel;
         else if (models.length > 0) {
           config.lastModel = models[0];
           saveState();
@@ -655,7 +708,8 @@ Assistant: The square root of 9999 is 99.994999875.`;
           reader.onload = (event) => {
             try {
               const importedChats = JSON.parse(event.target.result);
-              if (!Array.isArray(importedChats)) throw new Error("Invalid format: expected an array of chats.");
+              if (!Array.isArray(importedChats))
+                throw new Error("Invalid format: expected an array of chats.");
 
               let addedCount = 0;
               const existingIds = new Set(chats.map((c) => c.id));
@@ -720,6 +774,7 @@ Assistant: The square root of 9999 is 99.994999875.`;
         saveState();
         renderApp();
       }
+
       function deleteChat(id) {
         resetEditState();
         chats = chats.filter((c) => c.id !== id);
@@ -727,6 +782,7 @@ Assistant: The square root of 9999 is 99.994999875.`;
         saveState();
         renderApp();
       }
+
       function renameChat(id) {
         const chat = chats.find((c) => c.id === id);
         const newTitle = prompt("Rename chat:", chat.title);
@@ -736,6 +792,7 @@ Assistant: The square root of 9999 is 99.994999875.`;
           renderApp(true);
         }
       }
+
       function forkChat(msgIndex) {
         resetEditState();
         const chat = chats.find((c) => c.id === currentChatId);
@@ -749,6 +806,7 @@ Assistant: The square root of 9999 is 99.994999875.`;
         saveState();
         renderApp();
       }
+
       function retryMessage(msgIndex) {
         resetEditState();
         const chat = chats.find((c) => c.id === currentChatId);
@@ -757,6 +815,7 @@ Assistant: The square root of 9999 is 99.994999875.`;
         saveState();
         sendMessage();
       }
+
       function deleteMessage(msgIndex) {
         if (editingMessageIndex === msgIndex) resetEditState();
         else if (editingMessageIndex !== null && editingMessageIndex > msgIndex) {
@@ -834,7 +893,8 @@ Assistant: The square root of 9999 is 99.994999875.`;
       function renderChatList() {
         const list = $("#chat-list");
         if (!chats.length)
-          return (list.innerHTML = '<p style="font-size:0.8em; color:#666;">No chats. Start a new one, asshole.</p>');
+          return (list.innerHTML =
+            '<p style="font-size:0.8em; color:#666;">No chats. Start a new one, asshole.</p>');
 
         list.innerHTML = chats
           .map(
@@ -855,7 +915,9 @@ Assistant: The square root of 9999 is 99.994999875.`;
         const container = $("#chat-container");
         const prevScroll = container.scrollTop;
 
-        if (!currentChatId) return (container.innerHTML = '<h3 style="margin:0;">No chat selected.</h3>');
+        if (!currentChatId)
+          return (container.innerHTML =
+            '<h3 style="margin:0;">No chat selected.</h3>');
         const chat = chats.find((c) => c.id === currentChatId);
 
         let html = "";
@@ -876,7 +938,8 @@ Assistant: The square root of 9999 is 99.994999875.`;
         }
 
         if (!chat.messages.length && !config.godMode) {
-          html += '<p style="margin:0; padding-top: 15px;">It is fucking empty in here. Send a prompt.</p>';
+          html +=
+            '<p style="margin:0; padding-top: 15px;">It is fucking empty in here. Send a prompt.</p>';
         } else {
           html += chat.messages
             .map((msg, i) => {
@@ -885,7 +948,8 @@ Assistant: The square root of 9999 is 99.994999875.`;
               if (msg.role === "assistant") {
                 displayContent = displayContent.replace(
                   /<run>([\s\S]*?)<\/run>/g,
-                  (match, code) => `**Executing Code:**\n\`\`\`javascript\n${code.trim()}\n\`\`\``,
+                  (match, code) =>
+                    `**Executing Code:**\n\`\`\`javascript\n${code.trim()}\n\`\`\``,
                 );
               }
 
@@ -934,7 +998,9 @@ Assistant: The square root of 9999 is 99.994999875.`;
         else {
           const lastMsg = container.lastElementChild;
           if (lastMsg && lastMsg.classList.contains("msg")) {
-            container.scrollTop = lastMsg.classList.contains("user") ? container.scrollHeight : lastMsg.offsetTop - 15;
+            container.scrollTop = lastMsg.classList.contains("user")
+              ? container.scrollHeight
+              : lastMsg.offsetTop - 15;
           }
         }
 
@@ -957,7 +1023,10 @@ Assistant: The square root of 9999 is 99.994999875.`;
           } else if (e.ctrlKey || e.metaKey) {
             const chat = chats.find((c) => c.id === id);
             const text =
-              `# ${chat.title}\n\n` + chat.messages.map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`).join("");
+              `# ${chat.title}\n\n` +
+              chat.messages
+                .map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`)
+                .join("");
             navigator.clipboard.writeText(text.trim()).then(() => {
               item.style.background = "#ccc";
               setTimeout(() => (item.style.background = ""), 150);
@@ -1005,7 +1074,9 @@ Assistant: The square root of 9999 is 99.994999875.`;
         let logs = [];
         const safeStr = (obj) => {
           try {
-            return typeof obj === "object" ? JSON.stringify(obj, null, 2) : String(obj);
+            return typeof obj === "object"
+              ? JSON.stringify(obj, null, 2)
+              : String(obj);
           } catch {
             return Object.prototype.toString.call(obj);
           }
@@ -1017,7 +1088,9 @@ Assistant: The square root of 9999 is 99.994999875.`;
         let result,
           errorStr = "";
         try {
-          const execFn = new (Object.getPrototypeOf(async function () {}).constructor)("console", code);
+          const execFn = new (Object.getPrototypeOf(
+            async function () {},
+          ).constructor)("console", code);
           result = await execFn(proxyConsole);
         } catch (err) {
           errorStr = err.toString();
@@ -1027,7 +1100,8 @@ Assistant: The square root of 9999 is 99.994999875.`;
         if (logs.length) out += logs.join("\n") + "\n";
         if (result !== undefined) out += "Return: " + safeStr(result) + "\n";
         if (errorStr) out += "Error: " + errorStr + "\n";
-        if (!logs.length && result === undefined && !errorStr) out += "Code executed successfully with no output.\n";
+        if (!logs.length && result === undefined && !errorStr)
+          out += "Code executed successfully with no output.\n";
         return out + "```";
       }
 
@@ -1062,7 +1136,8 @@ Assistant: The square root of 9999 is 99.994999875.`;
         if (!isAutoLoop) {
           if (!text) return;
           // Bypass the API key check if we are only appending locally
-          if (!config.key && !skipApi) return alert("Please enter your API key in the settings first.");
+          if (!config.key && !skipApi)
+            return alert("Please enter your API key in the settings first.");
           if (!currentChatId) newChat();
         }
 
@@ -1071,8 +1146,12 @@ Assistant: The square root of 9999 is 99.994999875.`;
         if (!isAutoLoop) {
           if (!chat.messages.length) {
             const lastDoubleNewline = text.lastIndexOf("\n\n");
-            const titleSource = lastDoubleNewline !== -1 ? text.substring(lastDoubleNewline + 2).trim() : text;
-            chat.title = titleSource.substring(0, 30) + (titleSource.length > 30 ? "..." : "");
+            const titleSource =
+              lastDoubleNewline !== -1
+                ? text.substring(lastDoubleNewline + 2).trim()
+                : text;
+            chat.title =
+              titleSource.substring(0, 30) + (titleSource.length > 30 ? "..." : "");
           }
           chat.messages.push({ role: "user", content: text });
           inputEl.value = "";
@@ -1084,7 +1163,9 @@ Assistant: The square root of 9999 is 99.994999875.`;
         if (skipApi) return;
 
         currentAbortController = new AbortController();
-        btn.textContent = isAutoLoop ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...` : "Thinking...";
+        btn.textContent = isAutoLoop
+          ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
+          : "Thinking...";
 
         try {
           // strip local error errors, keep user/assistant/system pure
@@ -1104,13 +1185,22 @@ Assistant: The square root of 9999 is 99.994999875.`;
 
           const response = await fetch(`${config.url}/chat/completions`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.key}` },
-            body: JSON.stringify({ model: $("#model-select").value, messages: cleanMessages }),
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${config.key}`,
+            },
+            body: JSON.stringify({
+              model: $("#model-select").value,
+              messages: cleanMessages,
+            }),
             signal: currentAbortController.signal,
           });
 
           if (!response.ok)
-            throw new Error((await response.json().catch(() => ({}))).error?.message || `HTTP ${response.status}`);
+            throw new Error(
+              (await response.json().catch(() => ({}))).error?.message ||
+                `HTTP ${response.status}`,
+            );
           const reply = (await response.json()).choices[0].message.content || "";
 
           if (config.godMode && reply) {
@@ -1145,7 +1235,9 @@ Assistant: The square root of 9999 is 99.994999875.`;
           chat.messages.push({
             role: "error",
             content:
-              error.name === "AbortError" ? "**System:** Request cancelled by user." : `**Error:**\n\n${error.message}`,
+              error.name === "AbortError"
+                ? "**System:** Request cancelled by user."
+                : `**Error:**\n\n${error.message}`,
           });
         }
 
@@ -1213,28 +1305,44 @@ Assistant: The square root of 9999 is 99.994999875.`;
             chats.findIndex((c) => c.id === currentChatId),
           );
           if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
-          if (e.key === "ArrowDown" && idx < chats.length - 1) loadChat(chats[idx + 1].id);
+          if (e.key === "ArrowDown" && idx < chats.length - 1)
+            loadChat(chats[idx + 1].id);
         }
 
-        if (!e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        if (
+          !e.shiftKey &&
+          !e.altKey &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          (e.key === "ArrowUp" || e.key === "ArrowDown")
+        ) {
           const tag = document.activeElement?.tagName.toLowerCase();
           if (tag !== "input" && tag !== "textarea" && tag !== "select") {
             e.preventDefault();
-            $("#chat-container").scrollBy({ top: e.key === "ArrowDown" ? 150 : -150, behavior: "smooth" });
+            $("#chat-container").scrollBy({
+              top: e.key === "ArrowDown" ? 150 : -150,
+              behavior: "smooth",
+            });
           }
         }
       });
 
       const toggleCopyMode = (e) => {
-        if (e.key === "Control" || e.key === "Meta") document.body.classList.toggle("ctrl-down", e.type === "keydown");
+        if (e.key === "Control" || e.key === "Meta")
+          document.body.classList.toggle("ctrl-down", e.type === "keydown");
       };
       window.addEventListener("keydown", toggleCopyMode);
       window.addEventListener("keyup", toggleCopyMode);
-      window.addEventListener("blur", () => document.body.classList.remove("ctrl-down"));
+      window.addEventListener("blur", () =>
+        document.body.classList.remove("ctrl-down"),
+      );
 
       $("#chat-container").addEventListener("click", (e) => {
         if (!(e.ctrlKey || e.metaKey)) return;
-        const target = e.target.closest(".katex") || e.target.closest("pre") || e.target.closest("code");
+        const target =
+          e.target.closest(".katex") ||
+          e.target.closest("pre") ||
+          e.target.closest("code");
         if (!target) return;
 
         let text = target.classList.contains("katex")
