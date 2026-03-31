@@ -39,24 +39,53 @@ Return: 99.99499987499375
 \`\`\`
 Assistant: The square root of 9999 is 99.994999875.`;
 
-let config = JSON.parse(localStorage.getItem("mf_config")) || {
-  url: "https://api.openai.com/v1",
-  key: "",
-  models: "gpt-4o, gpt-4-turbo, gpt-3.5-turbo",
-  godMode: false,
-  lastModel: "",
-};
-let chats = JSON.parse(localStorage.getItem("mf_chats")) || [];
-let currentChatId = localStorage.getItem("mf_current_chat_id") || null;
-let currentAbortController = null;
-let isSidebarHidden =
-  localStorage.getItem("mf_sidebar_hidden") === "true" ||
-  localStorage.getItem("mf_locked_in") === "true";
-let isTitleHidden = localStorage.getItem("mf_title_hidden") === "true";
-let editingMessageIndex = null;
+// --- INDEXEDDB WRAPPER ---
+const DB_NAME = "HTMLChatDB";
+const STORE_NAME = "keyval";
 
-let promptHeight = localStorage.getItem("mf_prompt_height") || "";
-let editHeight = localStorage.getItem("mf_edit_height") || "250px";
+function getDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (e) => {
+      e.target.result.createObjectStore(STORE_NAME);
+    };
+  });
+}
+
+async function dbGet(key) {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readonly");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.get(key);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function dbSet(key, val) {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.put(val, key);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// Global state variables
+let config = {};
+let chats = [];
+let currentChatId = null;
+let currentAbortController = null;
+let isSidebarHidden = false;
+let isTitleHidden = false;
+let editingMessageIndex = null;
+let promptHeight = "";
+let editHeight = "250px";
 
 marked.use({
   extensions: [
@@ -82,19 +111,38 @@ marked.use({
 });
 
 function saveState() {
-  localStorage.setItem("mf_config", JSON.stringify(config));
-  localStorage.setItem("mf_chats", JSON.stringify(chats));
-  localStorage.setItem("mf_current_chat_id", currentChatId || "");
-  localStorage.setItem("mf_sidebar_hidden", isSidebarHidden);
-  localStorage.setItem("mf_title_hidden", isTitleHidden);
+  dbSet("mf_config", config);
+  dbSet("mf_chats", chats);
+  dbSet("mf_current_chat_id", currentChatId || "");
+  dbSet("mf_sidebar_hidden", isSidebarHidden);
+  dbSet("mf_title_hidden", isTitleHidden);
+  dbSet("mf_prompt_height", promptHeight);
+  dbSet("mf_edit_height", editHeight);
 }
 
 // --- INITIALIZATION ---
-function init() {
+async function init() {
+  // Load data from IndexedDB
+  config = (await dbGet("mf_config")) || {
+    url: "https://api.openai.com/v1",
+    key: "",
+    models: "gpt-4o, gpt-4-turbo, gpt-3.5-turbo",
+    godMode: false,
+    lastModel: "",
+  };
+  chats = (await dbGet("mf_chats")) || [];
+  currentChatId = (await dbGet("mf_current_chat_id")) || null;
+  isSidebarHidden = (await dbGet("mf_sidebar_hidden")) === true;
+  isTitleHidden = (await dbGet("mf_title_hidden")) === true;
+  promptHeight = (await dbGet("mf_prompt_height")) || "";
+  editHeight = (await dbGet("mf_edit_height")) || "250px";
+
+  // UI Setup
   $("#cfg-url").value = config.url;
   $("#cfg-key").value = config.key;
   $("#cfg-models").value = config.models;
   $("#cfg-godmode").checked = config.godMode || false;
+
   updateModelDropdown();
   applySidebarState();
   applyTitleState();
@@ -108,16 +156,14 @@ function init() {
       if (!h) continue;
       if (editingMessageIndex !== null) {
         editHeight = h;
-        localStorage.setItem("mf_edit_height", h);
       } else {
         promptHeight = h;
-        localStorage.setItem("mf_prompt_height", h);
       }
+      saveState();
     }
   });
   textareaObserver.observe($("#chat-input"));
 
-  // Enforce sorting by date (newest first) based on Unix epoch ID
   chats.sort((a, b) => Number(b.id) - Number(a.id));
 
   if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
@@ -128,14 +174,12 @@ function updateTokenCount() {
   const btn = $("#send-btn");
   if (!btn) return;
 
-  // Don't overwrite state indicators
   if (btn.textContent.includes("Thinking") || btn.classList.contains("hidden"))
     return;
 
   const inputVal = $("#chat-input").value || "";
   let context = "";
 
-  // Calculate context from the active chat data
   if (currentChatId) {
     const chat = chats.find((c) => c.id === currentChatId);
     if (chat && chat.messages) {
@@ -147,11 +191,9 @@ function updateTokenCount() {
     context += " " + GOD_MODE_PROMPT;
   }
 
-  // Napkin math: 1 token ~= 4 chars
   const totalChars = inputVal.length + context.length;
   const tokens = Math.ceil(totalChars / 4);
 
-  // Logic: Hide if < 1k. Show k/M if > 1k. Remove .0
   if (tokens < 1000) {
     btn.textContent = "Send";
   } else {
@@ -224,3 +266,5 @@ function saveLastModel() {
   config.lastModel = $("#model-select").value;
   saveState();
 }
+
+init();

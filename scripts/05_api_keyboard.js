@@ -64,7 +64,6 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
 
   if (!isAutoLoop) {
     if (!text) return;
-    // Bypass the API key check if we are only appending locally
     if (!config.key && !skipApi)
       return alert("Please enter your API key in the settings first.");
     if (!currentChatId) newChat();
@@ -88,7 +87,6 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     renderApp();
   }
 
-  // If skipApi is true (Ctrl+Shift+Enter), stop here before making the request
   if (skipApi) return;
 
   currentAbortController = new AbortController();
@@ -97,7 +95,6 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     : "Thinking...";
 
   try {
-    // strip local error errors, keep user/assistant/system pure
     const cleanMessages = chat.messages
       .filter((m) => m.role !== "error")
       .map((m) => ({
@@ -135,7 +132,6 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     if (config.godMode && reply) {
       const runMatches = [...reply.matchAll(/<run>([\s\S]*?)<\/run>/g)];
       if (runMatches.length > 0) {
-        // Push the raw assistant reply containing the <run> tags
         chat.messages.push({
           role: "assistant",
           content: reply,
@@ -143,7 +139,6 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
         saveState();
         renderApp();
 
-        // Execute each block and push the result as a user message
         for (const match of runMatches) {
           const code = match[1].trim();
           const result = await executeGodMode(code);
@@ -289,5 +284,3 @@ $("#chat-container").addEventListener("click", (e) => {
     });
   }
 });
-
-init();
