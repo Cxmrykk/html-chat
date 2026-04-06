@@ -58,6 +58,13 @@
         background: #ccc;
       }
 
+      button:disabled {
+        background: #e0e0e0;
+        color: #888;
+        border-color: #ccc;
+        cursor: not-allowed;
+      }
+
       input[type="text"],
       input[type="password"],
       textarea,
@@ -74,6 +81,13 @@
       textarea {
         min-height: 100px;
         resize: vertical;
+      }
+
+      textarea:disabled {
+        background: #e0e0e0;
+        color: #555;
+        border-color: #999;
+        cursor: not-allowed;
       }
 
       .hidden {
@@ -381,6 +395,12 @@
       .msg-content th {
         background: #eee;
       }
+
+      .active-setting {
+        background: #ccc !important;
+        border-color: #000 !important;
+        font-weight: bold;
+      }
     </style>
   </head>
   <body>
@@ -452,6 +472,31 @@
             >
               Cancel
             </button>
+            <button
+              id="secret-save-btn"
+              class="hidden"
+              onclick="saveSuperSecretSetting()"
+              title="Ctrl+Enter / Cmd+Enter"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Save
+            </button>
+            <button
+              id="secret-reset-btn"
+              class="hidden"
+              onclick="resetSuperSecretSetting()"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Reset
+            </button>
+            <button
+              id="secret-cancel-btn"
+              class="hidden"
+              onclick="cancelSuperSecretSetting()"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Cancel
+            </button>
           </div>
           <textarea id="chat-input" placeholder="Type your prompt here..."></textarea>
         </div>
@@ -467,38 +512,40 @@
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
 
-      const DEFAULT_GOD_MODE_PROMPT = `[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]
-      You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.
-
-      However, to execute code, you MUST use this exact syntax (the return value is sent back to you):
-      <run>
-      // browser-side JS goes here
-      return data.toString();
-      </run>
-
-      CRITICAL RULES FOR TOOL USE:
-      1. DO NOT CALCULATE MANUALLY. If the user asks a math, logic, or data question, you MUST use a <run> block to compute it. Do not trust your own internal math.
-      2. NO FAKE CODE, MOCKS, OR HARDCODING. Your JavaScript MUST contain actual logic, algorithms, math, or simulations. DO NOT write "simplified" checks or hardcode the answer you already suspect. If you need to search for a counterexample, write a GENUINE exhaustive search. The code itself must do the actual work to prove the answer.
-      3. VANILLA JS LIMITATIONS. You are in a browser. You do not have Python's \`itertools\`, \`numpy\`, or \`scipy\`. If you need combinations, permutations, matrix operations, or deep equality checks, you MUST implement them yourself.
-      4. STATE PERSISTENCE. Each <run> block executes in a fresh async function scope. Variables declared with \`let\` or \`const\` will NOT persist between runs. To save state across multiple runs, attach it to the global \`window\` object (e.g., \`window.myState = ...\`).
-      5. ITERATIVE PROBLEM SOLVING. If a problem is too complex for one script, break it down. Write a <run> block to generate data, save it to \`window\`, and then write a second <run> block to process it. 
-      6. DEFER YOUR ANSWER. If you output a <run> block, DO NOT attempt to answer the user's prompt in the same message. Output ONLY your thought process and the <run> block.
-      7. WAIT FOR THE RESULT. The system will execute your code and return the result in the next message. If your code throws an error, DO NOT apologize—just write another <run> block to fix it and try again.
-      8. DELIVER THE FINAL ANSWER ONLY AFTER EXECUTION. Unless an error is spotted, once you have the results write your final response to the user and DO NOT include any <run> tags.
-      9. NEVER use Node.js modules (require, os, fs). They do not exist here.
-      10. NEVER use markdown backticks (\`\`\`) around the <run> tags. Just output the raw tags.
-
-      EXAMPLE WORKFLOW:
-      User: What is the square root of 9999?
-      Assistant: I need to compute this using JavaScript.
-      <run>
-      return Math.sqrt(9999);
-      </run>
-      User: **Execution Result:**
-      \`\`\`text
-      Return: 99.99499987499375
-      \`\`\`
-      Assistant: The square root of 9999 is 99.994999875.`;
+      const DEFAULT_GOD_MODE_PROMPT = [
+        "[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]",
+        "You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.",
+        "",
+        "However, to execute code, you MUST use this exact syntax (the return value is sent back to you):",
+        "<run>",
+        "// browser-side JS goes here",
+        "return data.toString();",
+        "</run>",
+        "",
+        "CRITICAL RULES FOR TOOL USE:",
+        "1. DO NOT CALCULATE MANUALLY. If the user asks a math, logic, or data question, you MUST use a <run> block to compute it. Do not trust your own internal math.",
+        '2. NO FAKE CODE, MOCKS, OR HARDCODING. Your JavaScript MUST contain actual logic, algorithms, math, or simulations. DO NOT write "simplified" checks or hardcode the answer you already suspect. If you need to search for a counterexample, write a GENUINE exhaustive search. The code itself must do the actual work to prove the answer.',
+        "3. VANILLA JS LIMITATIONS. You are in a browser. You do not have Python's `itertools`, `numpy`, or `scipy`. If you need combinations, permutations, matrix operations, or deep equality checks, you MUST implement them yourself.",
+        "4. STATE PERSISTENCE. Each <run> block executes in a fresh async function scope. Variables declared with `let` or `const` will NOT persist between runs. To save state across multiple runs, attach it to the global `window` object (e.g., `window.myState = ...`).",
+        "5. ITERATIVE PROBLEM SOLVING. If a problem is too complex for one script, break it down. Write a <run> block to generate data, save it to `window`, and then write a second <run> block to process it. ",
+        "6. DEFER YOUR ANSWER. If you output a <run> block, DO NOT attempt to answer the user's prompt in the same message. Output ONLY your thought process and the <run> block.",
+        "7. WAIT FOR THE RESULT. The system will execute your code and return the result in the next message. If your code throws an error, DO NOT apologize—just write another <run> block to fix it and try again.",
+        "8. DELIVER THE FINAL ANSWER ONLY AFTER EXECUTION. Unless an error is spotted, once you have the results write your final response to the user and DO NOT include any <run> tags.",
+        "9. NEVER use Node.js modules (require, os, fs). They do not exist here.",
+        "10. NEVER use markdown backticks (```) around the <run> tags. Just output the raw tags.",
+        "",
+        "EXAMPLE WORKFLOW:",
+        "User: What is the square root of 9999?",
+        "Assistant: I need to compute this using JavaScript.",
+        "<run>",
+        "return Math.sqrt(9999);",
+        "</run>",
+        "User: **Execution Result:**",
+        "```text",
+        "Return: 99.99499987499375",
+        "```",
+        "Assistant: The square root of 9999 is 99.994999875.",
+      ].join("\n");
 
       // --- INDEXEDDB WRAPPER ---
       const DB_NAME = "HTMLChatDB";
@@ -547,7 +594,39 @@
       let editingMessageIndex = null;
       let promptHeight = "";
       let editHeight = "250px";
+
+      // Super Secret Settings State
       let isSuperSecretSettingsOpen = false;
+      let activeSuperSecretSetting = null;
+      let uncommittedSuperSecretValue = null;
+
+      const SETTING_DEFAULTS = {
+        godModePrompt: {
+          default: DEFAULT_GOD_MODE_PROMPT,
+          tooltip: "Enter the system prompt used when God Mode is enabled.",
+        },
+        temperature: {
+          default: "",
+          tooltip: "Controls randomness (0.0 to 2.0). Leave empty for API default.",
+        },
+        top_p: {
+          default: "",
+          tooltip: "Nucleus sampling (0.0 to 1.0). Leave empty for API default.",
+        },
+        max_tokens: {
+          default: "",
+          tooltip:
+            "Maximum number of tokens to generate. Leave empty for API default.",
+        },
+        frequency_penalty: {
+          default: "",
+          tooltip: "Penalizes new tokens (-2.0 to 2.0). Leave empty for API default.",
+        },
+        presence_penalty: {
+          default: "",
+          tooltip: "Penalizes new tokens (-2.0 to 2.0). Leave empty for API default.",
+        },
+      };
 
       marked.use({
         extensions: [
@@ -591,21 +670,20 @@
           models: "gpt-4o, gpt-4-turbo, gpt-3.5-turbo",
           godMode: false,
           lastModel: "",
-          godModePrompt: DEFAULT_GOD_MODE_PROMPT,
-          temperature: 1.0,
-          top_p: 1.0,
-          max_tokens: "",
-          frequency_penalty: 0.0,
-          presence_penalty: 0.0,
         };
 
+        // Seed default super secret settings if missing
         if (config.godModePrompt === undefined)
-          config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
-        if (config.temperature === undefined) config.temperature = 1.0;
-        if (config.top_p === undefined) config.top_p = 1.0;
-        if (config.max_tokens === undefined) config.max_tokens = "";
-        if (config.frequency_penalty === undefined) config.frequency_penalty = 0.0;
-        if (config.presence_penalty === undefined) config.presence_penalty = 0.0;
+          config.godModePrompt = SETTING_DEFAULTS.godModePrompt.default;
+        if (config.temperature === undefined)
+          config.temperature = SETTING_DEFAULTS.temperature.default;
+        if (config.top_p === undefined) config.top_p = SETTING_DEFAULTS.top_p.default;
+        if (config.max_tokens === undefined)
+          config.max_tokens = SETTING_DEFAULTS.max_tokens.default;
+        if (config.frequency_penalty === undefined)
+          config.frequency_penalty = SETTING_DEFAULTS.frequency_penalty.default;
+        if (config.presence_penalty === undefined)
+          config.presence_penalty = SETTING_DEFAULTS.presence_penalty.default;
 
         chats = (await dbGet("mf_chats")) || [];
         currentChatId = (await dbGet("mf_current_chat_id")) || null;
@@ -723,38 +801,6 @@
         alert("Settings saved, don't fuck them up.");
       }
 
-      function editSetting(key) {
-        let val = prompt(`Enter new value for ${key}:`, config[key]);
-        if (val !== null) {
-          if (key === "max_tokens" && val.trim() === "") {
-            config[key] = "";
-          } else if (key !== "godModePrompt" && key !== "max_tokens") {
-            config[key] = parseFloat(val) || 0;
-          } else if (key === "max_tokens") {
-            config[key] = parseInt(val) || "";
-          } else {
-            config[key] = val;
-          }
-          saveState();
-          renderApp();
-        }
-      }
-
-      function resetSuperSecretSettings() {
-        if (confirm("Reset Advanced parameters to default?")) {
-          config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
-          config.temperature = 1.0;
-          config.top_p = 1.0;
-          config.max_tokens = "";
-          config.frequency_penalty = 0.0;
-          config.presence_penalty = 0.0;
-          saveState();
-          isSuperSecretSettingsOpen = false;
-          renderApp();
-          updateTokenCount();
-        }
-      }
-
       function updateModelDropdown() {
         const select = $("#model-select");
         const models = config.models
@@ -774,6 +820,77 @@
       function saveLastModel() {
         config.lastModel = $("#model-select").value;
         saveState();
+      }
+
+      // --- SUPER SECRET SETTINGS ACTIONS ---
+      function selectSuperSecretSetting(key) {
+        activeSuperSecretSetting = key;
+        uncommittedSuperSecretValue = null;
+        const area = $("#chat-input");
+        area.value =
+          config[key] !== undefined && config[key] !== ""
+            ? config[key]
+            : SETTING_DEFAULTS[key].default;
+        renderApp(true);
+        area.focus();
+      }
+
+      function saveSuperSecretSetting() {
+        if (!activeSuperSecretSetting) return;
+        let val = $("#chat-input").value;
+        const key = activeSuperSecretSetting;
+
+        if (key === "godModePrompt") {
+          config[key] = val;
+        } else {
+          if (val.trim() === "") {
+            config[key] = "";
+          } else {
+            const parsed = parseFloat(val);
+            config[key] = isNaN(parsed) ? "" : parsed;
+          }
+        }
+
+        saveState();
+        activeSuperSecretSetting = null;
+        uncommittedSuperSecretValue = null;
+        renderApp(true);
+        updateTokenCount();
+      }
+
+      function resetSuperSecretSetting() {
+        if (!activeSuperSecretSetting) return;
+        const key = activeSuperSecretSetting;
+        config[key] = SETTING_DEFAULTS[key].default;
+        saveState();
+        activeSuperSecretSetting = null;
+        uncommittedSuperSecretValue = null;
+        renderApp(true);
+        updateTokenCount();
+      }
+
+      function cancelSuperSecretSetting() {
+        activeSuperSecretSetting = null;
+        uncommittedSuperSecretValue = null;
+        renderApp(true);
+      }
+
+      function resetAllSuperSecretSettings() {
+        if (confirm("Reset ALL Advanced parameters to default?")) {
+          for (let key in SETTING_DEFAULTS) {
+            config[key] = SETTING_DEFAULTS[key].default;
+          }
+          saveState();
+          if (activeSuperSecretSetting) {
+            uncommittedSuperSecretValue = null;
+            $("#chat-input").value =
+              config[activeSuperSecretSetting] !== undefined
+                ? config[activeSuperSecretSetting]
+                : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+          }
+          renderApp(true);
+          updateTokenCount();
+        }
       }
 
       init();
@@ -854,6 +971,15 @@
       }
 
       // --- CHAT ACTIONS ---
+      function suspendSuperSecretSettings() {
+        if (isSuperSecretSettingsOpen) {
+          if (activeSuperSecretSetting) {
+            uncommittedSuperSecretValue = $("#chat-input").value;
+          }
+          isSuperSecretSettingsOpen = false;
+        }
+      }
+
       function handleNewChatClick(e) {
         if (e.altKey) {
           e.preventDefault();
@@ -864,6 +990,7 @@
       }
 
       function newChat() {
+        suspendSuperSecretSettings();
         resetEditState();
         const id = Date.now().toString();
         chats.unshift({ id, title: "New Chat", messages: [] });
@@ -878,6 +1005,7 @@
       }
 
       function loadChat(id) {
+        suspendSuperSecretSettings();
         resetEditState();
         currentChatId = id;
         if (window.innerWidth <= 768) {
@@ -889,6 +1017,7 @@
       }
 
       function deleteChat(id) {
+        suspendSuperSecretSettings();
         resetEditState();
         chats = chats.filter((c) => c.id !== id);
         if (currentChatId === id) currentChatId = chats.length ? chats[0].id : null;
@@ -907,6 +1036,7 @@
       }
 
       function forkChat(msgIndex) {
+        suspendSuperSecretSettings();
         resetEditState();
         const chat = chats.find((c) => c.id === currentChatId);
         const newId = Date.now().toString();
@@ -942,20 +1072,15 @@
       // --- EDITING ACTIONS ---
       function resetEditState() {
         editingMessageIndex = null;
-        const sendBtn = $("#send-btn");
-        const saveBtn = $("#save-edit-btn");
-        const cancelBtn = $("#cancel-edit-btn");
         const area = $("#chat-input");
-
-        if (sendBtn) sendBtn.classList.remove("hidden");
-        if (saveBtn) saveBtn.classList.add("hidden");
-        if (cancelBtn) cancelBtn.classList.add("hidden");
 
         if (area) {
           area.style.whiteSpace = "";
           area.style.overflowX = "";
-          area.value = "";
-          area.style.height = promptHeight;
+          if (!isSuperSecretSettingsOpen) {
+            area.value = "";
+            area.style.height = promptHeight;
+          }
         }
       }
 
@@ -964,11 +1089,6 @@
         const chat = chats.find((c) => c.id === currentChatId);
         const area = $("#chat-input");
         area.value = chat.messages[index].content;
-        area.style.height = editHeight;
-
-        $("#send-btn").classList.add("hidden");
-        $("#save-edit-btn").classList.remove("hidden");
-        $("#cancel-edit-btn").classList.remove("hidden");
 
         renderApp(true);
         area.focus();
@@ -1001,6 +1121,62 @@
       function renderApp(preserveScroll = false) {
         renderChatList();
         renderCurrentChat(preserveScroll);
+        applyInputAreaState();
+      }
+
+      function applyInputAreaState() {
+        const area = $("#chat-input");
+        if (!area) return;
+        const modelSel = $("#model-select");
+        const sendBtn = $("#send-btn");
+        const saveBtn = $("#save-edit-btn");
+        const cancelBtn = $("#cancel-edit-btn");
+        const secSaveBtn = $("#secret-save-btn");
+        const secResetBtn = $("#secret-reset-btn");
+        const secCancelBtn = $("#secret-cancel-btn");
+
+        // Reset visibilities
+        modelSel.classList.add("hidden");
+        sendBtn.classList.add("hidden");
+        saveBtn.classList.add("hidden");
+        cancelBtn.classList.add("hidden");
+        secSaveBtn.classList.add("hidden");
+        secResetBtn.classList.add("hidden");
+        secCancelBtn.classList.add("hidden");
+
+        if (isSuperSecretSettingsOpen) {
+          secSaveBtn.classList.remove("hidden");
+          secResetBtn.classList.remove("hidden");
+          secCancelBtn.classList.remove("hidden");
+          area.style.height = promptHeight;
+
+          if (!activeSuperSecretSetting) {
+            area.disabled = true;
+            if (area.value !== "") area.value = "";
+            area.placeholder = "Select a setting above to edit...";
+            secSaveBtn.disabled = true;
+            secResetBtn.disabled = true;
+            secCancelBtn.disabled = true;
+          } else {
+            area.disabled = false;
+            secSaveBtn.disabled = false;
+            secResetBtn.disabled = false;
+            secCancelBtn.disabled = false;
+            area.placeholder = SETTING_DEFAULTS[activeSuperSecretSetting].tooltip;
+          }
+        } else if (editingMessageIndex !== null) {
+          saveBtn.classList.remove("hidden");
+          cancelBtn.classList.remove("hidden");
+          area.disabled = false;
+          area.placeholder = "";
+          area.style.height = editHeight;
+        } else {
+          modelSel.classList.remove("hidden");
+          sendBtn.classList.remove("hidden");
+          area.disabled = false;
+          area.placeholder = "Type your prompt here...";
+          area.style.height = promptHeight;
+        }
       }
 
       function renderChatList() {
@@ -1029,23 +1205,39 @@
         const prevScroll = container.scrollTop;
 
         if (isSuperSecretSettingsOpen) {
+          const getSettingDisplay = (k) => {
+            if (k === "godModePrompt")
+              return config[k] === SETTING_DEFAULTS[k].default ? "Default" : "Custom";
+            return config[k] === "" || config[k] === undefined
+              ? "API Default"
+              : config[k];
+          };
+
+          const settingNames = {
+            godModePrompt: "God Mode Prompt",
+            temperature: "Temperature",
+            top_p: "Top P",
+            max_tokens: "Max Tokens",
+            frequency_penalty: "Frequency Penalty",
+            presence_penalty: "Presence Penalty",
+          };
+
+          const buttonsHTML = Object.keys(SETTING_DEFAULTS)
+            .map((k) => {
+              return `<button class="${activeSuperSecretSetting === k ? "active-setting" : ""}" onclick="selectSuperSecretSetting('${k}')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit ${settingNames[k]} (Current: ${getSettingDisplay(k)})</button>`;
+            })
+            .join("");
+
           container.innerHTML = `
             <div style="height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
-              <h2 style="margin-top: 0; flex-shrink: 0;">Super Secret Settings</h2>
-              <p style="flex-shrink: 0; margin-top: 0; font-size: 0.9em; color: #555;">Warning: Changing these modifies core API behaviors and JavaScript execution context.</p>
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                <h2 style="margin: 0;">Super Secret Settings</h2>
+                <button onclick="resetAllSuperSecretSettings()">Reset All to Default</button>
+              </div>
+              <p style="flex-shrink: 0; margin-top: 5px; font-size: 0.9em; color: #555;">Warning: Changes may vary based on LLM provider (i.e. LiteLLM users). Settings are not guaranteed to work for every provider.</p>
 
               <div style="flex-grow: 1; overflow-y: auto; margin: 10px 0;">
-                <button onclick="editSetting('godModePrompt')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit God Mode Prompt (Currently: ${config.godModePrompt === DEFAULT_GOD_MODE_PROMPT ? "Default" : "Custom"})</button>
-                <button onclick="editSetting('temperature')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Temperature (Current: ${config.temperature})</button>
-                <button onclick="editSetting('top_p')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Top P (Current: ${config.top_p})</button>
-                <button onclick="editSetting('max_tokens')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Max Tokens (Current: ${config.max_tokens || "API Default"})</button>
-                <button onclick="editSetting('frequency_penalty')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Frequency Penalty (Current: ${config.frequency_penalty})</button>
-                <button onclick="editSetting('presence_penalty')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Presence Penalty (Current: ${config.presence_penalty})</button>
-              </div>
-
-              <div style="display: flex; gap: 10px; flex-shrink: 0;">
-                <button onclick="resetSuperSecretSettings()" style="flex-grow: 1;">Reset to Default</button>
-                <button onclick="isSuperSecretSettingsOpen = false; renderApp();" style="flex-grow: 1;">Close Settings</button>
+                ${buttonsHTML}
               </div>
             </div>
           `;
@@ -1149,6 +1341,26 @@
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
           isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
+          if (!isSuperSecretSettingsOpen) {
+            // User explicitly toggled settings closed, intentionally lose context
+            activeSuperSecretSetting = null;
+            uncommittedSuperSecretValue = null;
+            $("#chat-input").value = "";
+          } else {
+            // Restoring context (if suspended earlier by clicking a chat)
+            if (activeSuperSecretSetting) {
+              const area = $("#chat-input");
+              if (uncommittedSuperSecretValue !== null) {
+                area.value = uncommittedSuperSecretValue;
+              } else {
+                area.value =
+                  config[activeSuperSecretSetting] !== "" &&
+                  config[activeSuperSecretSetting] !== undefined
+                    ? config[activeSuperSecretSetting]
+                    : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+              }
+            }
+          }
           renderApp();
         }
       });
@@ -1328,15 +1540,21 @@
           const payload = {
             model: $("#model-select").value,
             messages: cleanMessages,
-            temperature: parseFloat(config.temperature) || 1.0,
-            top_p: parseFloat(config.top_p) || 1.0,
-            frequency_penalty: parseFloat(config.frequency_penalty) || 0.0,
-            presence_penalty: parseFloat(config.presence_penalty) || 0.0,
           };
 
-          if (config.max_tokens) {
+          if (config.temperature !== "" && config.temperature !== undefined)
+            payload.temperature = parseFloat(config.temperature);
+          if (config.top_p !== "" && config.top_p !== undefined)
+            payload.top_p = parseFloat(config.top_p);
+          if (
+            config.frequency_penalty !== "" &&
+            config.frequency_penalty !== undefined
+          )
+            payload.frequency_penalty = parseFloat(config.frequency_penalty);
+          if (config.presence_penalty !== "" && config.presence_penalty !== undefined)
+            payload.presence_penalty = parseFloat(config.presence_penalty);
+          if (config.max_tokens !== "" && config.max_tokens !== undefined)
             payload.max_tokens = parseInt(config.max_tokens, 10);
-          }
 
           const response = await fetch(`${config.url}/chat/completions`, {
             method: "POST",
@@ -1399,8 +1617,13 @@
 
       $("#chat-input").addEventListener("keydown", (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-          if (editingMessageIndex !== null) saveGlobalEdit();
-          else sendMessage(0, e.shiftKey);
+          if (isSuperSecretSettingsOpen && activeSuperSecretSetting) {
+            saveSuperSecretSetting();
+          } else if (editingMessageIndex !== null) {
+            saveGlobalEdit();
+          } else {
+            sendMessage(0, e.shiftKey);
+          }
         }
       });
 

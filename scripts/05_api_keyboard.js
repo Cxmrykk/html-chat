@@ -112,15 +112,21 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     const payload = {
       model: $("#model-select").value,
       messages: cleanMessages,
-      temperature: parseFloat(config.temperature) || 1.0,
-      top_p: parseFloat(config.top_p) || 1.0,
-      frequency_penalty: parseFloat(config.frequency_penalty) || 0.0,
-      presence_penalty: parseFloat(config.presence_penalty) || 0.0,
     };
 
-    if (config.max_tokens) {
+    if (config.temperature !== "" && config.temperature !== undefined)
+      payload.temperature = parseFloat(config.temperature);
+    if (config.top_p !== "" && config.top_p !== undefined)
+      payload.top_p = parseFloat(config.top_p);
+    if (
+      config.frequency_penalty !== "" &&
+      config.frequency_penalty !== undefined
+    )
+      payload.frequency_penalty = parseFloat(config.frequency_penalty);
+    if (config.presence_penalty !== "" && config.presence_penalty !== undefined)
+      payload.presence_penalty = parseFloat(config.presence_penalty);
+    if (config.max_tokens !== "" && config.max_tokens !== undefined)
       payload.max_tokens = parseInt(config.max_tokens, 10);
-    }
 
     const response = await fetch(`${config.url}/chat/completions`, {
       method: "POST",
@@ -183,8 +189,13 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
 
 $("#chat-input").addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-    if (editingMessageIndex !== null) saveGlobalEdit();
-    else sendMessage(0, e.shiftKey);
+    if (isSuperSecretSettingsOpen && activeSuperSecretSetting) {
+      saveSuperSecretSetting();
+    } else if (editingMessageIndex !== null) {
+      saveGlobalEdit();
+    } else {
+      sendMessage(0, e.shiftKey);
+    }
   }
 });
 

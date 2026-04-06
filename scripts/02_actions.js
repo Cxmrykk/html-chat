@@ -74,6 +74,15 @@ function importChats() {
 }
 
 // --- CHAT ACTIONS ---
+function suspendSuperSecretSettings() {
+  if (isSuperSecretSettingsOpen) {
+    if (activeSuperSecretSetting) {
+      uncommittedSuperSecretValue = $("#chat-input").value;
+    }
+    isSuperSecretSettingsOpen = false;
+  }
+}
+
 function handleNewChatClick(e) {
   if (e.altKey) {
     e.preventDefault();
@@ -84,6 +93,7 @@ function handleNewChatClick(e) {
 }
 
 function newChat() {
+  suspendSuperSecretSettings();
   resetEditState();
   const id = Date.now().toString();
   chats.unshift({ id, title: "New Chat", messages: [] });
@@ -98,6 +108,7 @@ function newChat() {
 }
 
 function loadChat(id) {
+  suspendSuperSecretSettings();
   resetEditState();
   currentChatId = id;
   if (window.innerWidth <= 768) {
@@ -109,6 +120,7 @@ function loadChat(id) {
 }
 
 function deleteChat(id) {
+  suspendSuperSecretSettings();
   resetEditState();
   chats = chats.filter((c) => c.id !== id);
   if (currentChatId === id) currentChatId = chats.length ? chats[0].id : null;
@@ -127,6 +139,7 @@ function renameChat(id) {
 }
 
 function forkChat(msgIndex) {
+  suspendSuperSecretSettings();
   resetEditState();
   const chat = chats.find((c) => c.id === currentChatId);
   const newId = Date.now().toString();
@@ -162,20 +175,15 @@ function deleteMessage(msgIndex) {
 // --- EDITING ACTIONS ---
 function resetEditState() {
   editingMessageIndex = null;
-  const sendBtn = $("#send-btn");
-  const saveBtn = $("#save-edit-btn");
-  const cancelBtn = $("#cancel-edit-btn");
   const area = $("#chat-input");
-
-  if (sendBtn) sendBtn.classList.remove("hidden");
-  if (saveBtn) saveBtn.classList.add("hidden");
-  if (cancelBtn) cancelBtn.classList.add("hidden");
 
   if (area) {
     area.style.whiteSpace = "";
     area.style.overflowX = "";
-    area.value = "";
-    area.style.height = promptHeight;
+    if (!isSuperSecretSettingsOpen) {
+      area.value = "";
+      area.style.height = promptHeight;
+    }
   }
 }
 
@@ -184,11 +192,6 @@ function startGlobalEdit(index) {
   const chat = chats.find((c) => c.id === currentChatId);
   const area = $("#chat-input");
   area.value = chat.messages[index].content;
-  area.style.height = editHeight;
-
-  $("#send-btn").classList.add("hidden");
-  $("#save-edit-btn").classList.remove("hidden");
-  $("#cancel-edit-btn").classList.remove("hidden");
 
   renderApp(true);
   area.focus();

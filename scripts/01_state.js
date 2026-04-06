@@ -6,38 +6,40 @@ const escapeHTML = (str) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-const DEFAULT_GOD_MODE_PROMPT = `[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]
-You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.
-
-However, to execute code, you MUST use this exact syntax (the return value is sent back to you):
-<run>
-// browser-side JS goes here
-return data.toString();
-</run>
-
-CRITICAL RULES FOR TOOL USE:
-1. DO NOT CALCULATE MANUALLY. If the user asks a math, logic, or data question, you MUST use a <run> block to compute it. Do not trust your own internal math.
-2. NO FAKE CODE, MOCKS, OR HARDCODING. Your JavaScript MUST contain actual logic, algorithms, math, or simulations. DO NOT write "simplified" checks or hardcode the answer you already suspect. If you need to search for a counterexample, write a GENUINE exhaustive search. The code itself must do the actual work to prove the answer.
-3. VANILLA JS LIMITATIONS. You are in a browser. You do not have Python's \`itertools\`, \`numpy\`, or \`scipy\`. If you need combinations, permutations, matrix operations, or deep equality checks, you MUST implement them yourself.
-4. STATE PERSISTENCE. Each <run> block executes in a fresh async function scope. Variables declared with \`let\` or \`const\` will NOT persist between runs. To save state across multiple runs, attach it to the global \`window\` object (e.g., \`window.myState = ...\`).
-5. ITERATIVE PROBLEM SOLVING. If a problem is too complex for one script, break it down. Write a <run> block to generate data, save it to \`window\`, and then write a second <run> block to process it. 
-6. DEFER YOUR ANSWER. If you output a <run> block, DO NOT attempt to answer the user's prompt in the same message. Output ONLY your thought process and the <run> block.
-7. WAIT FOR THE RESULT. The system will execute your code and return the result in the next message. If your code throws an error, DO NOT apologize—just write another <run> block to fix it and try again.
-8. DELIVER THE FINAL ANSWER ONLY AFTER EXECUTION. Unless an error is spotted, once you have the results write your final response to the user and DO NOT include any <run> tags.
-9. NEVER use Node.js modules (require, os, fs). They do not exist here.
-10. NEVER use markdown backticks (\`\`\`) around the <run> tags. Just output the raw tags.
-
-EXAMPLE WORKFLOW:
-User: What is the square root of 9999?
-Assistant: I need to compute this using JavaScript.
-<run>
-return Math.sqrt(9999);
-</run>
-User: **Execution Result:**
-\`\`\`text
-Return: 99.99499987499375
-\`\`\`
-Assistant: The square root of 9999 is 99.994999875.`;
+const DEFAULT_GOD_MODE_PROMPT = [
+  "[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]",
+  "You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.",
+  "",
+  "However, to execute code, you MUST use this exact syntax (the return value is sent back to you):",
+  "<run>",
+  "// browser-side JS goes here",
+  "return data.toString();",
+  "</run>",
+  "",
+  "CRITICAL RULES FOR TOOL USE:",
+  "1. DO NOT CALCULATE MANUALLY. If the user asks a math, logic, or data question, you MUST use a <run> block to compute it. Do not trust your own internal math.",
+  '2. NO FAKE CODE, MOCKS, OR HARDCODING. Your JavaScript MUST contain actual logic, algorithms, math, or simulations. DO NOT write "simplified" checks or hardcode the answer you already suspect. If you need to search for a counterexample, write a GENUINE exhaustive search. The code itself must do the actual work to prove the answer.',
+  "3. VANILLA JS LIMITATIONS. You are in a browser. You do not have Python's `itertools`, `numpy`, or `scipy`. If you need combinations, permutations, matrix operations, or deep equality checks, you MUST implement them yourself.",
+  "4. STATE PERSISTENCE. Each <run> block executes in a fresh async function scope. Variables declared with `let` or `const` will NOT persist between runs. To save state across multiple runs, attach it to the global `window` object (e.g., `window.myState = ...`).",
+  "5. ITERATIVE PROBLEM SOLVING. If a problem is too complex for one script, break it down. Write a <run> block to generate data, save it to `window`, and then write a second <run> block to process it. ",
+  "6. DEFER YOUR ANSWER. If you output a <run> block, DO NOT attempt to answer the user's prompt in the same message. Output ONLY your thought process and the <run> block.",
+  "7. WAIT FOR THE RESULT. The system will execute your code and return the result in the next message. If your code throws an error, DO NOT apologize—just write another <run> block to fix it and try again.",
+  "8. DELIVER THE FINAL ANSWER ONLY AFTER EXECUTION. Unless an error is spotted, once you have the results write your final response to the user and DO NOT include any <run> tags.",
+  "9. NEVER use Node.js modules (require, os, fs). They do not exist here.",
+  "10. NEVER use markdown backticks (```) around the <run> tags. Just output the raw tags.",
+  "",
+  "EXAMPLE WORKFLOW:",
+  "User: What is the square root of 9999?",
+  "Assistant: I need to compute this using JavaScript.",
+  "<run>",
+  "return Math.sqrt(9999);",
+  "</run>",
+  "User: **Execution Result:**",
+  "```text",
+  "Return: 99.99499987499375",
+  "```",
+  "Assistant: The square root of 9999 is 99.994999875.",
+].join("\n");
 
 // --- INDEXEDDB WRAPPER ---
 const DB_NAME = "HTMLChatDB";
@@ -86,7 +88,39 @@ let isTitleHidden = false;
 let editingMessageIndex = null;
 let promptHeight = "";
 let editHeight = "250px";
+
+// Super Secret Settings State
 let isSuperSecretSettingsOpen = false;
+let activeSuperSecretSetting = null;
+let uncommittedSuperSecretValue = null;
+
+const SETTING_DEFAULTS = {
+  godModePrompt: {
+    default: DEFAULT_GOD_MODE_PROMPT,
+    tooltip: "Enter the system prompt used when God Mode is enabled.",
+  },
+  temperature: {
+    default: "",
+    tooltip: "Controls randomness (0.0 to 2.0). Leave empty for API default.",
+  },
+  top_p: {
+    default: "",
+    tooltip: "Nucleus sampling (0.0 to 1.0). Leave empty for API default.",
+  },
+  max_tokens: {
+    default: "",
+    tooltip:
+      "Maximum number of tokens to generate. Leave empty for API default.",
+  },
+  frequency_penalty: {
+    default: "",
+    tooltip: "Penalizes new tokens (-2.0 to 2.0). Leave empty for API default.",
+  },
+  presence_penalty: {
+    default: "",
+    tooltip: "Penalizes new tokens (-2.0 to 2.0). Leave empty for API default.",
+  },
+};
 
 marked.use({
   extensions: [
@@ -130,21 +164,20 @@ async function init() {
     models: "gpt-4o, gpt-4-turbo, gpt-3.5-turbo",
     godMode: false,
     lastModel: "",
-    godModePrompt: DEFAULT_GOD_MODE_PROMPT,
-    temperature: 1.0,
-    top_p: 1.0,
-    max_tokens: "",
-    frequency_penalty: 0.0,
-    presence_penalty: 0.0,
   };
 
+  // Seed default super secret settings if missing
   if (config.godModePrompt === undefined)
-    config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
-  if (config.temperature === undefined) config.temperature = 1.0;
-  if (config.top_p === undefined) config.top_p = 1.0;
-  if (config.max_tokens === undefined) config.max_tokens = "";
-  if (config.frequency_penalty === undefined) config.frequency_penalty = 0.0;
-  if (config.presence_penalty === undefined) config.presence_penalty = 0.0;
+    config.godModePrompt = SETTING_DEFAULTS.godModePrompt.default;
+  if (config.temperature === undefined)
+    config.temperature = SETTING_DEFAULTS.temperature.default;
+  if (config.top_p === undefined) config.top_p = SETTING_DEFAULTS.top_p.default;
+  if (config.max_tokens === undefined)
+    config.max_tokens = SETTING_DEFAULTS.max_tokens.default;
+  if (config.frequency_penalty === undefined)
+    config.frequency_penalty = SETTING_DEFAULTS.frequency_penalty.default;
+  if (config.presence_penalty === undefined)
+    config.presence_penalty = SETTING_DEFAULTS.presence_penalty.default;
 
   chats = (await dbGet("mf_chats")) || [];
   currentChatId = (await dbGet("mf_current_chat_id")) || null;
@@ -262,38 +295,6 @@ function saveConfig() {
   alert("Settings saved, don't fuck them up.");
 }
 
-function editSetting(key) {
-  let val = prompt(`Enter new value for ${key}:`, config[key]);
-  if (val !== null) {
-    if (key === "max_tokens" && val.trim() === "") {
-      config[key] = "";
-    } else if (key !== "godModePrompt" && key !== "max_tokens") {
-      config[key] = parseFloat(val) || 0;
-    } else if (key === "max_tokens") {
-      config[key] = parseInt(val) || "";
-    } else {
-      config[key] = val;
-    }
-    saveState();
-    renderApp();
-  }
-}
-
-function resetSuperSecretSettings() {
-  if (confirm("Reset Advanced parameters to default?")) {
-    config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
-    config.temperature = 1.0;
-    config.top_p = 1.0;
-    config.max_tokens = "";
-    config.frequency_penalty = 0.0;
-    config.presence_penalty = 0.0;
-    saveState();
-    isSuperSecretSettingsOpen = false;
-    renderApp();
-    updateTokenCount();
-  }
-}
-
 function updateModelDropdown() {
   const select = $("#model-select");
   const models = config.models
@@ -313,6 +314,77 @@ function updateModelDropdown() {
 function saveLastModel() {
   config.lastModel = $("#model-select").value;
   saveState();
+}
+
+// --- SUPER SECRET SETTINGS ACTIONS ---
+function selectSuperSecretSetting(key) {
+  activeSuperSecretSetting = key;
+  uncommittedSuperSecretValue = null;
+  const area = $("#chat-input");
+  area.value =
+    config[key] !== undefined && config[key] !== ""
+      ? config[key]
+      : SETTING_DEFAULTS[key].default;
+  renderApp(true);
+  area.focus();
+}
+
+function saveSuperSecretSetting() {
+  if (!activeSuperSecretSetting) return;
+  let val = $("#chat-input").value;
+  const key = activeSuperSecretSetting;
+
+  if (key === "godModePrompt") {
+    config[key] = val;
+  } else {
+    if (val.trim() === "") {
+      config[key] = "";
+    } else {
+      const parsed = parseFloat(val);
+      config[key] = isNaN(parsed) ? "" : parsed;
+    }
+  }
+
+  saveState();
+  activeSuperSecretSetting = null;
+  uncommittedSuperSecretValue = null;
+  renderApp(true);
+  updateTokenCount();
+}
+
+function resetSuperSecretSetting() {
+  if (!activeSuperSecretSetting) return;
+  const key = activeSuperSecretSetting;
+  config[key] = SETTING_DEFAULTS[key].default;
+  saveState();
+  activeSuperSecretSetting = null;
+  uncommittedSuperSecretValue = null;
+  renderApp(true);
+  updateTokenCount();
+}
+
+function cancelSuperSecretSetting() {
+  activeSuperSecretSetting = null;
+  uncommittedSuperSecretValue = null;
+  renderApp(true);
+}
+
+function resetAllSuperSecretSettings() {
+  if (confirm("Reset ALL Advanced parameters to default?")) {
+    for (let key in SETTING_DEFAULTS) {
+      config[key] = SETTING_DEFAULTS[key].default;
+    }
+    saveState();
+    if (activeSuperSecretSetting) {
+      uncommittedSuperSecretValue = null;
+      $("#chat-input").value =
+        config[activeSuperSecretSetting] !== undefined
+          ? config[activeSuperSecretSetting]
+          : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+    }
+    renderApp(true);
+    updateTokenCount();
+  }
 }
 
 init();

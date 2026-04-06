@@ -36,6 +36,13 @@ button:hover {
   background: #ccc;
 }
 
+button:disabled {
+  background: #e0e0e0;
+  color: #888;
+  border-color: #ccc;
+  cursor: not-allowed;
+}
+
 input[type="text"],
 input[type="password"],
 textarea,
@@ -52,6 +59,13 @@ select {
 textarea {
   min-height: 100px;
   resize: vertical;
+}
+
+textarea:disabled {
+  background: #e0e0e0;
+  color: #555;
+  border-color: #999;
+  cursor: not-allowed;
 }
 
 .hidden {
@@ -358,4 +372,10 @@ body.ctrl-down .chat-item-title {
 
 .msg-content th {
   background: #eee;
+}
+
+.active-setting {
+  background: #ccc !important;
+  border-color: #000 !important;
+  font-weight: bold;
 }

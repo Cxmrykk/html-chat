@@ -3,6 +3,26 @@ $("#settings-heading").addEventListener("click", (e) => {
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault();
     isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
+    if (!isSuperSecretSettingsOpen) {
+      // User explicitly toggled settings closed, intentionally lose context
+      activeSuperSecretSetting = null;
+      uncommittedSuperSecretValue = null;
+      $("#chat-input").value = "";
+    } else {
+      // Restoring context (if suspended earlier by clicking a chat)
+      if (activeSuperSecretSetting) {
+        const area = $("#chat-input");
+        if (uncommittedSuperSecretValue !== null) {
+          area.value = uncommittedSuperSecretValue;
+        } else {
+          area.value =
+            config[activeSuperSecretSetting] !== "" &&
+            config[activeSuperSecretSetting] !== undefined
+              ? config[activeSuperSecretSetting]
+              : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+        }
+      }
+    }
     renderApp();
   }
 });

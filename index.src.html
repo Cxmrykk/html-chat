@@ -92,6 +92,31 @@
             >
               Cancel
             </button>
+            <button
+              id="secret-save-btn"
+              class="hidden"
+              onclick="saveSuperSecretSetting()"
+              title="Ctrl+Enter / Cmd+Enter"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Save
+            </button>
+            <button
+              id="secret-reset-btn"
+              class="hidden"
+              onclick="resetSuperSecretSetting()"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Reset
+            </button>
+            <button
+              id="secret-cancel-btn"
+              class="hidden"
+              onclick="cancelSuperSecretSetting()"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Cancel
+            </button>
           </div>
           <textarea id="chat-input" placeholder="Type your prompt here..."></textarea>
         </div>
