@@ -6,7 +6,7 @@ const escapeHTML = (str) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-const GOD_MODE_PROMPT = `[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]
+const DEFAULT_GOD_MODE_PROMPT = `[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]
 You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.
 
 However, to execute code, you MUST use this exact syntax (the return value is sent back to you):
@@ -86,6 +86,7 @@ let isTitleHidden = false;
 let editingMessageIndex = null;
 let promptHeight = "";
 let editHeight = "250px";
+let isSuperSecretSettingsOpen = false;
 
 marked.use({
   extensions: [
@@ -129,7 +130,10 @@ async function init() {
     models: "gpt-4o, gpt-4-turbo, gpt-3.5-turbo",
     godMode: false,
     lastModel: "",
+    godModePrompt: DEFAULT_GOD_MODE_PROMPT,
   };
+  if (!config.godModePrompt) config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+
   chats = (await dbGet("mf_chats")) || [];
   currentChatId = (await dbGet("mf_current_chat_id")) || null;
   isSidebarHidden = (await dbGet("mf_sidebar_hidden")) === true;
@@ -188,7 +192,7 @@ function updateTokenCount() {
   }
 
   if (config.godMode) {
-    context += " " + GOD_MODE_PROMPT;
+    context += " " + (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT);
   }
 
   const totalChars = inputVal.length + context.length;
@@ -244,6 +248,27 @@ function saveConfig() {
   renderApp(true);
   updateTokenCount();
   alert("Settings saved, don't fuck them up.");
+}
+
+function saveSuperSecretSettings() {
+  const area = $("#cfg-godmode-prompt");
+  if (area) {
+    config.godModePrompt = area.value.trim() || DEFAULT_GOD_MODE_PROMPT;
+    saveState();
+  }
+  isSuperSecretSettingsOpen = false;
+  renderApp();
+  updateTokenCount();
+}
+
+function resetSuperSecretSettings() {
+  if (confirm("Reset God Mode prompt to default?")) {
+    config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+    saveState();
+    isSuperSecretSettingsOpen = false;
+    renderApp();
+    updateTokenCount();
+  }
 }
 
 function updateModelDropdown() {

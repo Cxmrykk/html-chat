@@ -329,6 +329,10 @@
         cursor: copy !important;
       }
 
+      body.alt-down #settings-heading {
+        cursor: pointer;
+      }
+
       .katex {
         user-select: none;
         -webkit-user-select: none;
@@ -395,7 +399,7 @@
     <div class="grid">
       <aside class="sidebar" id="sidebar">
         <div class="config-box">
-          <h3>Settings</h3>
+          <h3 id="settings-heading" title="Alt+Click for Super Secret Settings">Settings</h3>
           <label>Base URL</label>
           <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1" />
           <label>API Key</label>
@@ -465,7 +469,7 @@
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
 
-      const GOD_MODE_PROMPT = `[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]
+      const DEFAULT_GOD_MODE_PROMPT = `[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]
       You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.
 
       However, to execute code, you MUST use this exact syntax (the return value is sent back to you):
@@ -545,6 +549,7 @@
       let editingMessageIndex = null;
       let promptHeight = "";
       let editHeight = "250px";
+      let isSuperSecretSettingsOpen = false;
 
       marked.use({
         extensions: [
@@ -588,7 +593,10 @@
           models: "gpt-4o, gpt-4-turbo, gpt-3.5-turbo",
           godMode: false,
           lastModel: "",
+          godModePrompt: DEFAULT_GOD_MODE_PROMPT,
         };
+        if (!config.godModePrompt) config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+
         chats = (await dbGet("mf_chats")) || [];
         currentChatId = (await dbGet("mf_current_chat_id")) || null;
         isSidebarHidden = (await dbGet("mf_sidebar_hidden")) === true;
@@ -647,7 +655,7 @@
         }
 
         if (config.godMode) {
-          context += " " + GOD_MODE_PROMPT;
+          context += " " + (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT);
         }
 
         const totalChars = inputVal.length + context.length;
@@ -703,6 +711,27 @@
         renderApp(true);
         updateTokenCount();
         alert("Settings saved, don't fuck them up.");
+      }
+
+      function saveSuperSecretSettings() {
+        const area = $("#cfg-godmode-prompt");
+        if (area) {
+          config.godModePrompt = area.value.trim() || DEFAULT_GOD_MODE_PROMPT;
+          saveState();
+        }
+        isSuperSecretSettingsOpen = false;
+        renderApp();
+        updateTokenCount();
+      }
+
+      function resetSuperSecretSettings() {
+        if (confirm("Reset God Mode prompt to default?")) {
+          config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+          saveState();
+          isSuperSecretSettingsOpen = false;
+          renderApp();
+          updateTokenCount();
+        }
       }
 
       function updateModelDropdown() {
@@ -978,6 +1007,23 @@
         const container = $("#chat-container");
         const prevScroll = container.scrollTop;
 
+        if (isSuperSecretSettingsOpen) {
+          container.innerHTML = `
+            <div style="height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
+              <h2 style="margin-top: 0; flex-shrink: 0;">Super Secret Settings</h2>
+              <p style="flex-shrink: 0; margin-top: 0; font-size: 0.9em; color: #555;">Warning: Changing this modifies how JavaScript execution behaves. Proceed with caution.</p>
+              <label style="flex-shrink: 0; font-weight: bold;">God Mode System Prompt</label>
+              <textarea id="cfg-godmode-prompt" style="flex-grow: 1; min-height: 200px; margin: 10px 0; font-family: monospace; resize: none;">${escapeHTML(config.godModePrompt || DEFAULT_GOD_MODE_PROMPT)}</textarea>
+              <div style="display: flex; gap: 10px; flex-shrink: 0;">
+                <button onclick="saveSuperSecretSettings()" style="font-weight: bold; flex-grow: 1;">Save & Close</button>
+                <button onclick="resetSuperSecretSettings()" style="flex-grow: 1;">Reset to Default</button>
+                <button onclick="isSuperSecretSettingsOpen = false; renderApp();" style="flex-grow: 1;">Cancel</button>
+              </div>
+            </div>
+          `;
+          return;
+        }
+
         if (!currentChatId)
           return (container.innerHTML =
             '<h3 style="margin:0;">No chat selected.</h3>');
@@ -1071,6 +1117,14 @@
       }
 
       // --- EVENT DELEGATION ---
+      $("#settings-heading").addEventListener("click", (e) => {
+        if (e.altKey) {
+          e.preventDefault();
+          isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
+          renderApp();
+        }
+      });
+
       $("#chat-list").addEventListener("click", (e) => {
         const item = e.target.closest(".chat-item");
         if (!item) return;
@@ -1239,7 +1293,7 @@
           if (config.godMode) {
             cleanMessages.unshift({
               role: "system",
-              content: GOD_MODE_PROMPT,
+              content: config.godModePrompt || DEFAULT_GOD_MODE_PROMPT,
             });
           }
 
@@ -1385,15 +1439,18 @@
         }
       });
 
-      const toggleCopyMode = (e) => {
+      const toggleModifierMode = (e) => {
         if (e.key === "Control" || e.key === "Meta")
           document.body.classList.toggle("ctrl-down", e.type === "keydown");
+        if (e.key === "Alt")
+          document.body.classList.toggle("alt-down", e.type === "keydown");
       };
-      window.addEventListener("keydown", toggleCopyMode);
-      window.addEventListener("keyup", toggleCopyMode);
-      window.addEventListener("blur", () =>
-        document.body.classList.remove("ctrl-down"),
-      );
+      window.addEventListener("keydown", toggleModifierMode);
+      window.addEventListener("keyup", toggleModifierMode);
+      window.addEventListener("blur", () => {
+        document.body.classList.remove("ctrl-down");
+        document.body.classList.remove("alt-down");
+      });
 
       $("#chat-container").addEventListener("click", (e) => {
         if (!(e.ctrlKey || e.metaKey)) return;

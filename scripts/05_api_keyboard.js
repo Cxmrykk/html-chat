@@ -105,7 +105,7 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     if (config.godMode) {
       cleanMessages.unshift({
         role: "system",
-        content: GOD_MODE_PROMPT,
+        content: config.godModePrompt || DEFAULT_GOD_MODE_PROMPT,
       });
     }
 
@@ -251,15 +251,18 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-const toggleCopyMode = (e) => {
+const toggleModifierMode = (e) => {
   if (e.key === "Control" || e.key === "Meta")
     document.body.classList.toggle("ctrl-down", e.type === "keydown");
+  if (e.key === "Alt")
+    document.body.classList.toggle("alt-down", e.type === "keydown");
 };
-window.addEventListener("keydown", toggleCopyMode);
-window.addEventListener("keyup", toggleCopyMode);
-window.addEventListener("blur", () =>
-  document.body.classList.remove("ctrl-down"),
-);
+window.addEventListener("keydown", toggleModifierMode);
+window.addEventListener("keyup", toggleModifierMode);
+window.addEventListener("blur", () => {
+  document.body.classList.remove("ctrl-down");
+  document.body.classList.remove("alt-down");
+});
 
 $("#chat-container").addEventListener("click", (e) => {
   if (!(e.ctrlKey || e.metaKey)) return;

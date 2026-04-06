@@ -1,4 +1,12 @@
 // --- EVENT DELEGATION ---
+$("#settings-heading").addEventListener("click", (e) => {
+  if (e.altKey) {
+    e.preventDefault();
+    isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
+    renderApp();
+  }
+});
+
 $("#chat-list").addEventListener("click", (e) => {
   const item = e.target.closest(".chat-item");
   if (!item) return;

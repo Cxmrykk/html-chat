@@ -29,6 +29,23 @@ function renderCurrentChat(preserveScroll = false) {
   const container = $("#chat-container");
   const prevScroll = container.scrollTop;
 
+  if (isSuperSecretSettingsOpen) {
+    container.innerHTML = `
+      <div style="height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
+        <h2 style="margin-top: 0; flex-shrink: 0;">Super Secret Settings</h2>
+        <p style="flex-shrink: 0; margin-top: 0; font-size: 0.9em; color: #555;">Warning: Changing this modifies how JavaScript execution behaves. Proceed with caution.</p>
+        <label style="flex-shrink: 0; font-weight: bold;">God Mode System Prompt</label>
+        <textarea id="cfg-godmode-prompt" style="flex-grow: 1; min-height: 200px; margin: 10px 0; font-family: monospace; resize: none;">${escapeHTML(config.godModePrompt || DEFAULT_GOD_MODE_PROMPT)}</textarea>
+        <div style="display: flex; gap: 10px; flex-shrink: 0;">
+          <button onclick="saveSuperSecretSettings()" style="font-weight: bold; flex-grow: 1;">Save & Close</button>
+          <button onclick="resetSuperSecretSettings()" style="flex-grow: 1;">Reset to Default</button>
+          <button onclick="isSuperSecretSettingsOpen = false; renderApp();" style="flex-grow: 1;">Cancel</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
   if (!currentChatId)
     return (container.innerHTML =
       '<h3 style="margin:0;">No chat selected.</h3>');
