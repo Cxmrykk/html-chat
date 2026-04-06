@@ -4,11 +4,11 @@ A zero-dependency, single-file AI chat interface that runs entirely in your brow
 
 ## Features
 
-- **God Mode**: Execute JavaScript directly in the browser console
-- **Local-First Storage**: All data persists in `localStorage`
+- **Local-First Storage**: All data persists in the browser
+- **Code Execution**: Execute JavaScript directly in the browser
 - **Rich Content**: Markdown, LaTeX (KaTeX), and code highlighting via CDN
 - **Keyboard Shortcuts**: Optimized for power users
-- **Portable**: Single HTML file with no external build dependencies
+- **Portable**: Single HTML file with no external build dependencies (just a python script)
 - **Import/Export**: JSON chat history management
 
 ## Usage
@@ -50,6 +50,8 @@ Click the message role ("Assistant", "User", etc.) to change it. You can also cr
 ## Configuration
 
 Set your API endpoint and key in the sidebar settings. Supports any OpenAI-compatible API endpoint (e.g. LiteLLM).
+
+More configuration options are available in the "Super Secret Settings" (CTRL-Click the "Settings" text).
 
 ## Development
 
