@@ -109,16 +109,26 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
       });
     }
 
+    const payload = {
+      model: $("#model-select").value,
+      messages: cleanMessages,
+      temperature: parseFloat(config.temperature) || 1.0,
+      top_p: parseFloat(config.top_p) || 1.0,
+      frequency_penalty: parseFloat(config.frequency_penalty) || 0.0,
+      presence_penalty: parseFloat(config.presence_penalty) || 0.0,
+    };
+
+    if (config.max_tokens) {
+      payload.max_tokens = parseInt(config.max_tokens, 10);
+    }
+
     const response = await fetch(`${config.url}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.key}`,
       },
-      body: JSON.stringify({
-        model: $("#model-select").value,
-        messages: cleanMessages,
-      }),
+      body: JSON.stringify(payload),
       signal: currentAbortController.signal,
     });
 

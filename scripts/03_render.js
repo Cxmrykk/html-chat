@@ -33,13 +33,20 @@ function renderCurrentChat(preserveScroll = false) {
     container.innerHTML = `
       <div style="height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
         <h2 style="margin-top: 0; flex-shrink: 0;">Super Secret Settings</h2>
-        <p style="flex-shrink: 0; margin-top: 0; font-size: 0.9em; color: #555;">Warning: Changing this modifies how JavaScript execution behaves. Proceed with caution.</p>
-        <label style="flex-shrink: 0; font-weight: bold;">God Mode System Prompt</label>
-        <textarea id="cfg-godmode-prompt" style="flex-grow: 1; min-height: 200px; margin: 10px 0; font-family: monospace; resize: none;">${escapeHTML(config.godModePrompt || DEFAULT_GOD_MODE_PROMPT)}</textarea>
+        <p style="flex-shrink: 0; margin-top: 0; font-size: 0.9em; color: #555;">Warning: Changing these modifies core API behaviors and JavaScript execution context.</p>
+        
+        <div style="flex-grow: 1; overflow-y: auto; margin: 10px 0;">
+          <button onclick="editSetting('godModePrompt')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit God Mode Prompt (Currently: ${config.godModePrompt === DEFAULT_GOD_MODE_PROMPT ? "Default" : "Custom"})</button>
+          <button onclick="editSetting('temperature')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Temperature (Current: ${config.temperature})</button>
+          <button onclick="editSetting('top_p')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Top P (Current: ${config.top_p})</button>
+          <button onclick="editSetting('max_tokens')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Max Tokens (Current: ${config.max_tokens || "API Default"})</button>
+          <button onclick="editSetting('frequency_penalty')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Frequency Penalty (Current: ${config.frequency_penalty})</button>
+          <button onclick="editSetting('presence_penalty')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Presence Penalty (Current: ${config.presence_penalty})</button>
+        </div>
+
         <div style="display: flex; gap: 10px; flex-shrink: 0;">
-          <button onclick="saveSuperSecretSettings()" style="font-weight: bold; flex-grow: 1;">Save & Close</button>
           <button onclick="resetSuperSecretSettings()" style="flex-grow: 1;">Reset to Default</button>
-          <button onclick="isSuperSecretSettingsOpen = false; renderApp();" style="flex-grow: 1;">Cancel</button>
+          <button onclick="isSuperSecretSettingsOpen = false; renderApp();" style="flex-grow: 1;">Close Settings</button>
         </div>
       </div>
     `;

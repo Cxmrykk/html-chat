@@ -1,6 +1,6 @@
 // --- EVENT DELEGATION ---
 $("#settings-heading").addEventListener("click", (e) => {
-  if (e.altKey) {
+  if (e.ctrlKey || e.metaKey) {
     e.preventDefault();
     isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
     renderApp();

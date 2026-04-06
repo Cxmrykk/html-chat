@@ -131,8 +131,20 @@ async function init() {
     godMode: false,
     lastModel: "",
     godModePrompt: DEFAULT_GOD_MODE_PROMPT,
+    temperature: 1.0,
+    top_p: 1.0,
+    max_tokens: "",
+    frequency_penalty: 0.0,
+    presence_penalty: 0.0,
   };
-  if (!config.godModePrompt) config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+
+  if (config.godModePrompt === undefined)
+    config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+  if (config.temperature === undefined) config.temperature = 1.0;
+  if (config.top_p === undefined) config.top_p = 1.0;
+  if (config.max_tokens === undefined) config.max_tokens = "";
+  if (config.frequency_penalty === undefined) config.frequency_penalty = 0.0;
+  if (config.presence_penalty === undefined) config.presence_penalty = 0.0;
 
   chats = (await dbGet("mf_chats")) || [];
   currentChatId = (await dbGet("mf_current_chat_id")) || null;
@@ -250,20 +262,31 @@ function saveConfig() {
   alert("Settings saved, don't fuck them up.");
 }
 
-function saveSuperSecretSettings() {
-  const area = $("#cfg-godmode-prompt");
-  if (area) {
-    config.godModePrompt = area.value.trim() || DEFAULT_GOD_MODE_PROMPT;
+function editSetting(key) {
+  let val = prompt(`Enter new value for ${key}:`, config[key]);
+  if (val !== null) {
+    if (key === "max_tokens" && val.trim() === "") {
+      config[key] = "";
+    } else if (key !== "godModePrompt" && key !== "max_tokens") {
+      config[key] = parseFloat(val) || 0;
+    } else if (key === "max_tokens") {
+      config[key] = parseInt(val) || "";
+    } else {
+      config[key] = val;
+    }
     saveState();
+    renderApp();
   }
-  isSuperSecretSettingsOpen = false;
-  renderApp();
-  updateTokenCount();
 }
 
 function resetSuperSecretSettings() {
-  if (confirm("Reset God Mode prompt to default?")) {
+  if (confirm("Reset Advanced parameters to default?")) {
     config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+    config.temperature = 1.0;
+    config.top_p = 1.0;
+    config.max_tokens = "";
+    config.frequency_penalty = 0.0;
+    config.presence_penalty = 0.0;
     saveState();
     isSuperSecretSettingsOpen = false;
     renderApp();

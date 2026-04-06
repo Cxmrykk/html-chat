@@ -314,23 +314,21 @@
 
       body.ctrl-down pre,
       body.ctrl-down code,
-      body.ctrl-down .katex {
+      body.ctrl-down .katex,
+      body.ctrl-down #settings-heading {
         cursor: pointer !important;
       }
 
       body.ctrl-down pre:hover,
       body.ctrl-down code:hover,
       body.ctrl-down .katex:hover,
-      body.ctrl-down .chat-item:hover {
+      body.ctrl-down .chat-item:hover,
+      body.ctrl-down #settings-heading:hover {
         background: #e0e0e0;
       }
 
       body.ctrl-down .chat-item-title {
         cursor: copy !important;
-      }
-
-      body.alt-down #settings-heading {
-        cursor: pointer;
       }
 
       .katex {
@@ -399,7 +397,7 @@
     <div class="grid">
       <aside class="sidebar" id="sidebar">
         <div class="config-box">
-          <h3 id="settings-heading" title="Alt+Click for Super Secret Settings">Settings</h3>
+          <h3 id="settings-heading" title="Ctrl+Click for Super Secret Settings">Settings</h3>
           <label>Base URL</label>
           <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1" />
           <label>API Key</label>
@@ -594,8 +592,20 @@
           godMode: false,
           lastModel: "",
           godModePrompt: DEFAULT_GOD_MODE_PROMPT,
+          temperature: 1.0,
+          top_p: 1.0,
+          max_tokens: "",
+          frequency_penalty: 0.0,
+          presence_penalty: 0.0,
         };
-        if (!config.godModePrompt) config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+
+        if (config.godModePrompt === undefined)
+          config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+        if (config.temperature === undefined) config.temperature = 1.0;
+        if (config.top_p === undefined) config.top_p = 1.0;
+        if (config.max_tokens === undefined) config.max_tokens = "";
+        if (config.frequency_penalty === undefined) config.frequency_penalty = 0.0;
+        if (config.presence_penalty === undefined) config.presence_penalty = 0.0;
 
         chats = (await dbGet("mf_chats")) || [];
         currentChatId = (await dbGet("mf_current_chat_id")) || null;
@@ -713,20 +723,31 @@
         alert("Settings saved, don't fuck them up.");
       }
 
-      function saveSuperSecretSettings() {
-        const area = $("#cfg-godmode-prompt");
-        if (area) {
-          config.godModePrompt = area.value.trim() || DEFAULT_GOD_MODE_PROMPT;
+      function editSetting(key) {
+        let val = prompt(`Enter new value for ${key}:`, config[key]);
+        if (val !== null) {
+          if (key === "max_tokens" && val.trim() === "") {
+            config[key] = "";
+          } else if (key !== "godModePrompt" && key !== "max_tokens") {
+            config[key] = parseFloat(val) || 0;
+          } else if (key === "max_tokens") {
+            config[key] = parseInt(val) || "";
+          } else {
+            config[key] = val;
+          }
           saveState();
+          renderApp();
         }
-        isSuperSecretSettingsOpen = false;
-        renderApp();
-        updateTokenCount();
       }
 
       function resetSuperSecretSettings() {
-        if (confirm("Reset God Mode prompt to default?")) {
+        if (confirm("Reset Advanced parameters to default?")) {
           config.godModePrompt = DEFAULT_GOD_MODE_PROMPT;
+          config.temperature = 1.0;
+          config.top_p = 1.0;
+          config.max_tokens = "";
+          config.frequency_penalty = 0.0;
+          config.presence_penalty = 0.0;
           saveState();
           isSuperSecretSettingsOpen = false;
           renderApp();
@@ -1011,13 +1032,20 @@
           container.innerHTML = `
             <div style="height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
               <h2 style="margin-top: 0; flex-shrink: 0;">Super Secret Settings</h2>
-              <p style="flex-shrink: 0; margin-top: 0; font-size: 0.9em; color: #555;">Warning: Changing this modifies how JavaScript execution behaves. Proceed with caution.</p>
-              <label style="flex-shrink: 0; font-weight: bold;">God Mode System Prompt</label>
-              <textarea id="cfg-godmode-prompt" style="flex-grow: 1; min-height: 200px; margin: 10px 0; font-family: monospace; resize: none;">${escapeHTML(config.godModePrompt || DEFAULT_GOD_MODE_PROMPT)}</textarea>
+              <p style="flex-shrink: 0; margin-top: 0; font-size: 0.9em; color: #555;">Warning: Changing these modifies core API behaviors and JavaScript execution context.</p>
+
+              <div style="flex-grow: 1; overflow-y: auto; margin: 10px 0;">
+                <button onclick="editSetting('godModePrompt')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit God Mode Prompt (Currently: ${config.godModePrompt === DEFAULT_GOD_MODE_PROMPT ? "Default" : "Custom"})</button>
+                <button onclick="editSetting('temperature')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Temperature (Current: ${config.temperature})</button>
+                <button onclick="editSetting('top_p')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Top P (Current: ${config.top_p})</button>
+                <button onclick="editSetting('max_tokens')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Max Tokens (Current: ${config.max_tokens || "API Default"})</button>
+                <button onclick="editSetting('frequency_penalty')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Frequency Penalty (Current: ${config.frequency_penalty})</button>
+                <button onclick="editSetting('presence_penalty')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit Presence Penalty (Current: ${config.presence_penalty})</button>
+              </div>
+
               <div style="display: flex; gap: 10px; flex-shrink: 0;">
-                <button onclick="saveSuperSecretSettings()" style="font-weight: bold; flex-grow: 1;">Save & Close</button>
                 <button onclick="resetSuperSecretSettings()" style="flex-grow: 1;">Reset to Default</button>
-                <button onclick="isSuperSecretSettingsOpen = false; renderApp();" style="flex-grow: 1;">Cancel</button>
+                <button onclick="isSuperSecretSettingsOpen = false; renderApp();" style="flex-grow: 1;">Close Settings</button>
               </div>
             </div>
           `;
@@ -1118,7 +1146,7 @@
 
       // --- EVENT DELEGATION ---
       $("#settings-heading").addEventListener("click", (e) => {
-        if (e.altKey) {
+        if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
           isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
           renderApp();
@@ -1297,16 +1325,26 @@
             });
           }
 
+          const payload = {
+            model: $("#model-select").value,
+            messages: cleanMessages,
+            temperature: parseFloat(config.temperature) || 1.0,
+            top_p: parseFloat(config.top_p) || 1.0,
+            frequency_penalty: parseFloat(config.frequency_penalty) || 0.0,
+            presence_penalty: parseFloat(config.presence_penalty) || 0.0,
+          };
+
+          if (config.max_tokens) {
+            payload.max_tokens = parseInt(config.max_tokens, 10);
+          }
+
           const response = await fetch(`${config.url}/chat/completions`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${config.key}`,
             },
-            body: JSON.stringify({
-              model: $("#model-select").value,
-              messages: cleanMessages,
-            }),
+            body: JSON.stringify(payload),
             signal: currentAbortController.signal,
           });
 

@@ -292,23 +292,21 @@ body.ctrl-down pre:hover code {
 
 body.ctrl-down pre,
 body.ctrl-down code,
-body.ctrl-down .katex {
+body.ctrl-down .katex,
+body.ctrl-down #settings-heading {
   cursor: pointer !important;
 }
 
 body.ctrl-down pre:hover,
 body.ctrl-down code:hover,
 body.ctrl-down .katex:hover,
-body.ctrl-down .chat-item:hover {
+body.ctrl-down .chat-item:hover,
+body.ctrl-down #settings-heading:hover {
   background: #e0e0e0;
 }
 
 body.ctrl-down .chat-item-title {
   cursor: copy !important;
-}
-
-body.alt-down #settings-heading {
-  cursor: pointer;
 }
 
 .katex {
