@@ -1,6 +1,6 @@
 # HTML Chat
 
-A zero-dependency, single-file AI chat interface that runs entirely in your browser. No Docker, no Node.js, no backend required.
+A single-file AI chat interface that runs entirely in your browser. No Docker, no Node.js, no backend required.
 
 ## Features
 
@@ -32,7 +32,7 @@ A zero-dependency, single-file AI chat interface that runs entirely in your brow
 
 ## God Mode
 
-Enable in settings to allow LLMs to execute JavaScript in your browser. Use with caution - executes real code in your environment (no sandbox).
+Enable in settings to allow LLMs to execute JavaScript in your browser. Use with caution - any data stored on the browser can be accessed (limited to current site).
 
 ```js
 <run>
