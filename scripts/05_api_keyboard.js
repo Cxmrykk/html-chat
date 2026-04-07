@@ -64,10 +64,11 @@ async function fetchEmbeddings(texts) {
   return data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }
 
-async function processRAG(promptText, requiredFiles, fileContents) {
+async function processRAG(promptText, requiredFiles, fileContents, btnEl) {
   const queryText = promptText.replace(/\[file:\s*(.*?)\]/g, "").trim();
   let queryEmb = null;
   if (queryText) {
+    if (btnEl) btnEl.textContent = "Embedding query...";
     queryEmb = (await fetchEmbeddings([queryText]))[0];
   }
 
@@ -100,9 +101,15 @@ async function processRAG(promptText, requiredFiles, fileContents) {
     if (chunks.length === 0) continue;
 
     const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
-
     let fileEmbs = [];
+
     for (let i = 0; i < chunks.length; i += MAX_BATCH) {
+      if (btnEl) {
+        const currentChunk = Math.min(i + MAX_BATCH, chunks.length);
+        const percent = Math.round((currentChunk / chunks.length) * 100);
+        btnEl.textContent = `Embedding ${filename} (${percent}%)`;
+      }
+
       const batchTexts = chunks.slice(i, i + MAX_BATCH).map((c) => c.text);
       const batchEmbs = await fetchEmbeddings(batchTexts);
       fileEmbs.push(...batchEmbs);
@@ -186,11 +193,15 @@ async function resolveAllMessages(cleanMessages, btnEl, preSelectedFiles = []) {
     }
   }
 
-  btnEl.textContent = "Embedding...";
   for (let i = 0; i < cleanMessages.length; i++) {
     const msg = cleanMessages[i];
     if (/\[file:\s*(.*?)\]/.test(msg.content)) {
-      msg.content = await processRAG(msg.content, reqArray, fileContents);
+      msg.content = await processRAG(
+        msg.content,
+        reqArray,
+        fileContents,
+        btnEl,
+      );
     }
   }
 
