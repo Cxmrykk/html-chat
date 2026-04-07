@@ -87,7 +87,7 @@ function renderCurrentChat(preserveScroll = false) {
 
   if (isSuperSecretSettingsOpen) {
     const getSettingDisplay = (k) => {
-      if (k === "godModePrompt")
+      if (k === "godModePrompt" || k === "embeddingsModel")
         return config[k] === SETTING_DEFAULTS[k].default ? "Default" : "Custom";
       return config[k] === "" || config[k] === undefined
         ? "API Default"
@@ -101,6 +101,11 @@ function renderCurrentChat(preserveScroll = false) {
       max_tokens: "Max Tokens",
       frequency_penalty: "Frequency Penalty",
       presence_penalty: "Presence Penalty",
+      embeddingsModel: "Embeddings Model",
+      chunkSize: "Chunk Size",
+      chunkOverlap: "Chunk Overlap",
+      topK: "Top K Chunks",
+      chunkBatchSize: "Chunk Batch Size",
     };
 
     const buttonsHTML = Object.keys(SETTING_DEFAULTS)

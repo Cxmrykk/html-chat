@@ -120,6 +120,27 @@ const SETTING_DEFAULTS = {
     default: "",
     tooltip: "Penalizes new tokens (-2.0 to 2.0). Leave empty for API default.",
   },
+  embeddingsModel: {
+    default: "text-embedding-3-small",
+    tooltip: "Model used for processing local RAG \\embed commands.",
+  },
+  chunkSize: {
+    default: "1000",
+    tooltip: "Character size for file chunking.",
+  },
+  chunkOverlap: {
+    default: "200",
+    tooltip: "Character overlap to maintain document continuity.",
+  },
+  topK: {
+    default: "5",
+    tooltip: "Number of matched chunks to inject into the prompt per file.",
+  },
+  chunkBatchSize: {
+    default: "100",
+    tooltip:
+      "Max chunks sent to Embeddings API at once. Lower this if you get batch size errors.",
+  },
 };
 
 marked.use({
@@ -157,7 +178,6 @@ function saveState() {
 
 // --- INITIALIZATION ---
 async function init() {
-  // Load data from IndexedDB
   config = (await dbGet("mf_config")) || {
     url: "https://api.openai.com/v1",
     key: "",
@@ -166,18 +186,11 @@ async function init() {
     lastModel: "",
   };
 
-  // Seed default super secret settings if missing
-  if (config.godModePrompt === undefined)
-    config.godModePrompt = SETTING_DEFAULTS.godModePrompt.default;
-  if (config.temperature === undefined)
-    config.temperature = SETTING_DEFAULTS.temperature.default;
-  if (config.top_p === undefined) config.top_p = SETTING_DEFAULTS.top_p.default;
-  if (config.max_tokens === undefined)
-    config.max_tokens = SETTING_DEFAULTS.max_tokens.default;
-  if (config.frequency_penalty === undefined)
-    config.frequency_penalty = SETTING_DEFAULTS.frequency_penalty.default;
-  if (config.presence_penalty === undefined)
-    config.presence_penalty = SETTING_DEFAULTS.presence_penalty.default;
+  for (const key in SETTING_DEFAULTS) {
+    if (config[key] === undefined) {
+      config[key] = SETTING_DEFAULTS[key].default;
+    }
+  }
 
   chats = (await dbGet("mf_chats")) || [];
   currentChatId = (await dbGet("mf_current_chat_id")) || null;
@@ -334,7 +347,7 @@ function saveSuperSecretSetting() {
   let val = $("#chat-input").value;
   const key = activeSuperSecretSetting;
 
-  if (key === "godModePrompt") {
+  if (key === "godModePrompt" || key === "embeddingsModel") {
     config[key] = val;
   } else {
     if (val.trim() === "") {
