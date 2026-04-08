@@ -87,8 +87,10 @@ function renderCurrentChat(preserveScroll = false) {
 
   if (isSuperSecretSettingsOpen) {
     const getSettingDisplay = (k) => {
-      if (k === "godModePrompt" || k === "embeddingsModel")
+      if (k === "godModePrompt")
         return config[k] === SETTING_DEFAULTS[k].default ? "Default" : "Custom";
+      if (k === "embeddingsKey") return config[k] ? "Custom" : "API Default";
+
       return config[k] === "" || config[k] === undefined
         ? "API Default"
         : config[k];
@@ -101,6 +103,8 @@ function renderCurrentChat(preserveScroll = false) {
       max_tokens: "Max Tokens",
       frequency_penalty: "Frequency Penalty",
       presence_penalty: "Presence Penalty",
+      embeddingsUrl: "Embeddings Base URL",
+      embeddingsKey: "Embeddings API Key",
       embeddingsModel: "Embeddings Model",
       chunkSize: "Chunk Size",
       chunkOverlap: "Chunk Overlap",

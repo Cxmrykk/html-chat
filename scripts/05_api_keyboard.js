@@ -35,16 +35,25 @@ function cosSim(a, b) {
 }
 
 async function fetchEmbeddings(texts) {
-  let base = config.url.replace(/\/+$/, "");
+  let base =
+    config.embeddingsUrl && config.embeddingsUrl.trim() !== ""
+      ? config.embeddingsUrl.trim().replace(/\/+$/, "")
+      : config.url.replace(/\/+$/, "");
+
   if (base.endsWith("/chat/completions"))
     base = base.replace("/chat/completions", "");
   const endpoint = base + "/embeddings";
+
+  const apiKey =
+    config.embeddingsKey && config.embeddingsKey.trim() !== ""
+      ? config.embeddingsKey.trim()
+      : config.key;
 
   const res = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${config.key}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: config.embeddingsModel || "text-embedding-3-small",

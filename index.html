@@ -626,6 +626,16 @@
           default: "",
           tooltip: "Penalizes new tokens (-2.0 to 2.0). Leave empty for API default.",
         },
+        embeddingsUrl: {
+          default: "",
+          tooltip:
+            "Custom base URL for embeddings (e.g., http://localhost:11434/v1). Leave empty to use main API URL.",
+        },
+        embeddingsKey: {
+          default: "",
+          tooltip:
+            "API Key for the custom embeddings URL. Leave empty to use main API key.",
+        },
         embeddingsModel: {
           default: "text-embedding-3-small",
           tooltip: "Model used for processing local RAG \\embed commands.",
@@ -853,7 +863,12 @@
         let val = $("#chat-input").value;
         const key = activeSuperSecretSetting;
 
-        if (key === "godModePrompt" || key === "embeddingsModel") {
+        if (
+          key === "godModePrompt" ||
+          key === "embeddingsModel" ||
+          key === "embeddingsUrl" ||
+          key === "embeddingsKey"
+        ) {
           config[key] = val;
         } else {
           if (val.trim() === "") {
@@ -1219,8 +1234,10 @@
 
         if (isSuperSecretSettingsOpen) {
           const getSettingDisplay = (k) => {
-            if (k === "godModePrompt" || k === "embeddingsModel")
+            if (k === "godModePrompt")
               return config[k] === SETTING_DEFAULTS[k].default ? "Default" : "Custom";
+            if (k === "embeddingsKey") return config[k] ? "Custom" : "API Default";
+
             return config[k] === "" || config[k] === undefined
               ? "API Default"
               : config[k];
@@ -1233,6 +1250,8 @@
             max_tokens: "Max Tokens",
             frequency_penalty: "Frequency Penalty",
             presence_penalty: "Presence Penalty",
+            embeddingsUrl: "Embeddings Base URL",
+            embeddingsKey: "Embeddings API Key",
             embeddingsModel: "Embeddings Model",
             chunkSize: "Chunk Size",
             chunkOverlap: "Chunk Overlap",
@@ -1481,16 +1500,25 @@
       }
 
       async function fetchEmbeddings(texts) {
-        let base = config.url.replace(/\/+$/, "");
+        let base =
+          config.embeddingsUrl && config.embeddingsUrl.trim() !== ""
+            ? config.embeddingsUrl.trim().replace(/\/+$/, "")
+            : config.url.replace(/\/+$/, "");
+
         if (base.endsWith("/chat/completions"))
           base = base.replace("/chat/completions", "");
         const endpoint = base + "/embeddings";
+
+        const apiKey =
+          config.embeddingsKey && config.embeddingsKey.trim() !== ""
+            ? config.embeddingsKey.trim()
+            : config.key;
 
         const res = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${config.key}`,
+            Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
             model: config.embeddingsModel || "text-embedding-3-small",

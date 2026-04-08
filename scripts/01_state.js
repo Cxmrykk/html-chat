@@ -120,6 +120,16 @@ const SETTING_DEFAULTS = {
     default: "",
     tooltip: "Penalizes new tokens (-2.0 to 2.0). Leave empty for API default.",
   },
+  embeddingsUrl: {
+    default: "",
+    tooltip:
+      "Custom base URL for embeddings (e.g., http://localhost:11434/v1). Leave empty to use main API URL.",
+  },
+  embeddingsKey: {
+    default: "",
+    tooltip:
+      "API Key for the custom embeddings URL. Leave empty to use main API key.",
+  },
   embeddingsModel: {
     default: "text-embedding-3-small",
     tooltip: "Model used for processing local RAG \\embed commands.",
@@ -347,7 +357,12 @@ function saveSuperSecretSetting() {
   let val = $("#chat-input").value;
   const key = activeSuperSecretSetting;
 
-  if (key === "godModePrompt" || key === "embeddingsModel") {
+  if (
+    key === "godModePrompt" ||
+    key === "embeddingsModel" ||
+    key === "embeddingsUrl" ||
+    key === "embeddingsKey"
+  ) {
     config[key] = val;
   } else {
     if (val.trim() === "") {
