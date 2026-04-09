@@ -45,10 +45,6 @@ async function uploadFile(name, text, existingId = null) {
 
   await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
 
-  if (currentFileId === id) {
-    currentFileText = text;
-  }
-
   saveState();
   renderApp();
 }
@@ -56,13 +52,6 @@ async function uploadFile(name, text, existingId = null) {
 async function deleteFile(id) {
   files = files.filter((f) => f.id !== id);
   await dbDelete(`mf_filedata_${id}`);
-
-  if (currentFileId === id) {
-    currentFileId = null;
-    currentView = "chat";
-    if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
-    else if (!chats.length) newChat();
-  }
 
   saveState();
   renderApp();
@@ -79,47 +68,36 @@ async function toggleEmbedding(id) {
   }
 }
 
-async function openFile(id) {
+function appendFileMessage(fileId) {
+  const meta = files.find((f) => f.id === fileId);
+  if (!meta) return;
   suspendSuperSecretSettings();
   resetEditState();
-  currentView = "file";
-  currentFileId = id;
+
+  if (!currentChatId) newChat();
+  const chat = chats.find((c) => c.id === currentChatId);
+
+  const approxTokens = meta.chunkCount
+    ? Math.ceil((meta.chunkCount * (parseInt(config.chunkSize) || 1000)) / 4)
+    : 0;
+
+  chat.messages.push({
+    role: "file",
+    fileId: meta.id,
+    fileName: meta.name,
+    prompt: "",
+    maxTokens: parseInt(config.maxRagTokens) || 5000,
+    approxTokens: approxTokens,
+  });
+
   if (window.innerWidth <= 768) {
     isSidebarHidden = true;
     applySidebarState();
   }
-  const data = await dbGet(`mf_filedata_${id}`);
-  currentFileText = data ? data.text : "";
+
   saveState();
   renderApp();
-}
-
-async function saveFileEdit() {
-  if (!currentFileId) return;
-  const text = $("#chat-input").value;
-  currentFileText = text;
-
-  const meta = files.find((f) => f.id === currentFileId);
-  if (meta) {
-    meta.progress = 0;
-    meta.isEmbedding = false;
-    meta.chunkCount = 0;
-    meta.embeddedCount = 0;
-  }
-
-  const data = await dbGet(`mf_filedata_${currentFileId}`);
-  if (data) {
-    data.text = text;
-    data.chunks = null;
-    await dbSet(`mf_filedata_${currentFileId}`, data);
-  }
-
-  saveState();
-  renderApp(true);
-}
-
-function cancelFileEdit() {
-  openFile(currentFileId); // reloads text and resets view cleanly
+  updateTokenCount();
 }
 
 // --- IMPORT / EXPORT ---
@@ -219,8 +197,6 @@ function handleNewChatClick(e) {
 function newChat() {
   suspendSuperSecretSettings();
   resetEditState();
-  currentView = "chat";
-  currentFileId = null;
   const id = Date.now().toString();
   chats.unshift({ id, title: "New Chat", messages: [] });
   currentChatId = id;
@@ -236,8 +212,6 @@ function newChat() {
 function loadChat(id) {
   suspendSuperSecretSettings();
   resetEditState();
-  currentView = "chat";
-  currentFileId = null;
   currentChatId = id;
   if (window.innerWidth <= 768) {
     isSidebarHidden = true;
@@ -269,8 +243,6 @@ function renameChat(id) {
 function forkChat(msgIndex) {
   suspendSuperSecretSettings();
   resetEditState();
-  currentView = "chat";
-  currentFileId = null;
   const chat = chats.find((c) => c.id === currentChatId);
   const newId = Date.now().toString();
   chats.unshift({
@@ -286,10 +258,18 @@ function forkChat(msgIndex) {
 function retryMessage(msgIndex) {
   resetEditState();
   const chat = chats.find((c) => c.id === currentChatId);
-  $("#chat-input").value = chat.messages[msgIndex].content;
-  chat.messages = chat.messages.slice(0, msgIndex);
-  saveState();
-  sendMessage();
+  const msg = chat.messages[msgIndex];
+
+  if (msg.role === "file") {
+    chat.messages = chat.messages.slice(0, msgIndex + 1);
+    saveState();
+    sendMessage();
+  } else {
+    $("#chat-input").value = msg.content;
+    chat.messages = chat.messages.slice(0, msgIndex);
+    saveState();
+    sendMessage();
+  }
 }
 
 function deleteMessage(msgIndex) {
@@ -310,7 +290,7 @@ function resetEditState() {
   if (area) {
     area.style.whiteSpace = "";
     area.style.overflowX = "";
-    if (!isSuperSecretSettingsOpen && currentView !== "file") {
+    if (!isSuperSecretSettingsOpen) {
       area.value = "";
       area.style.height = promptHeight;
     }
@@ -320,8 +300,10 @@ function resetEditState() {
 function startGlobalEdit(index) {
   editingMessageIndex = index;
   const chat = chats.find((c) => c.id === currentChatId);
+  const msg = chat.messages[index];
   const area = $("#chat-input");
-  area.value = chat.messages[index].content;
+
+  area.value = msg.role === "file" ? msg.prompt || "" : msg.content;
 
   renderApp(true);
   area.focus();
@@ -330,7 +312,14 @@ function startGlobalEdit(index) {
 function saveGlobalEdit() {
   if (editingMessageIndex === null) return;
   const chat = chats.find((c) => c.id === currentChatId);
-  chat.messages[editingMessageIndex].content = $("#chat-input").value;
+  const msg = chat.messages[editingMessageIndex];
+
+  if (msg.role === "file") {
+    msg.prompt = $("#chat-input").value;
+  } else {
+    msg.content = $("#chat-input").value;
+  }
+
   saveState();
   endGlobalEdit();
 }

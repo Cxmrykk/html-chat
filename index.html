@@ -67,6 +67,7 @@
 
       input[type="text"],
       input[type="password"],
+      input[type="number"],
       textarea,
       select {
         font-family: inherit;
@@ -202,6 +203,17 @@
       .msg.error {
         border-color: #c00000;
         background: #ffeeee;
+      }
+
+      .msg.file {
+        border-color: #00cc66;
+        background: #eaffea;
+      }
+
+      .file-config input {
+        border: 1px solid #ccc;
+        border-radius: 3px;
+        background: #fff;
       }
 
       .msg-meta {
@@ -446,18 +458,18 @@
 
         <div style="margin-bottom: 20px">
           <div style="display: flex; justify-content: space-between; align-items: center">
-            <h3>Your Files</h3>
-            <button onclick="handleUploadClick()" title="Upload Files for Vector Search">+ Upload</button>
-          </div>
-          <div id="file-list"></div>
-        </div>
-
-        <div>
-          <div style="display: flex; justify-content: space-between; align-items: center">
             <h3>Your Chats</h3>
             <button onclick="handleNewChatClick(event)" title="New: Alt+T ↔ Import: Alt+Click">+ New</button>
           </div>
           <div id="chat-list"></div>
+        </div>
+
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <h3>Your Files</h3>
+            <button onclick="handleUploadClick()" title="Upload Files for Vector Search">+ Upload</button>
+          </div>
+          <div id="file-list"></div>
         </div>
       </aside>
 
@@ -473,23 +485,6 @@
               style="flex-grow: 1; font-weight: bold"
             >
               Send
-            </button>
-            <button
-              id="file-save-btn"
-              class="hidden"
-              onclick="saveFileEdit()"
-              title="Save changes to file"
-              style="flex-grow: 1; font-weight: bold"
-            >
-              Save File
-            </button>
-            <button
-              id="file-cancel-btn"
-              class="hidden"
-              onclick="cancelFileEdit()"
-              style="flex-grow: 1; font-weight: bold"
-            >
-              Cancel
             </button>
             <button
               id="save-edit-btn"
@@ -636,9 +631,6 @@
       let chats = [];
       let files = [];
       let currentChatId = null;
-      let currentView = "chat"; // 'chat' or 'file'
-      let currentFileId = null;
-      let currentFileText = ""; // Dynamically loaded from DB, not saved to main state array
       let currentAbortController = null;
       let isSidebarHidden = false;
       let isTitleHidden = false;
@@ -699,9 +691,14 @@
           default: "200",
           tooltip: "Character overlap to maintain document continuity.",
         },
-        topK: {
-          default: "5",
-          tooltip: "Number of matched chunks to inject into the prompt per file.",
+        maxRagTokens: {
+          default: "5000",
+          tooltip: "Maximum estimated tokens to retrieve per file message.",
+        },
+        ragThreshold: {
+          default: "0.0",
+          tooltip:
+            "Minimum similarity threshold (0.0 to 1.0) for context injection. 0.0 allows anything.",
         },
         chunkBatchSize: {
           default: "100",
@@ -785,7 +782,7 @@
           for (let entry of entries) {
             const h = entry.target.style.height;
             if (!h) continue;
-            if (editingMessageIndex !== null || currentView === "file") {
+            if (editingMessageIndex !== null) {
               editHeight = h;
             } else {
               promptHeight = h;
@@ -819,20 +816,23 @@
           return;
 
         const inputVal = $("#chat-input").value || "";
-        let context = "";
+        let contextChars = 0;
 
-        if (currentChatId && currentView === "chat") {
+        if (currentChatId) {
           const chat = chats.find((c) => c.id === currentChatId);
           if (chat && chat.messages) {
-            context = chat.messages.map((m) => m.content).join(" ");
+            contextChars = chat.messages.reduce((acc, m) => {
+              if (m.role === "file") return acc + (m.approxTokens || 0) * 4;
+              return acc + (m.content || "").length;
+            }, 0);
           }
         }
 
-        if (config.godMode && currentView === "chat") {
-          context += " " + (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT);
+        if (config.godMode) {
+          contextChars += (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT).length;
         }
 
-        const totalChars = inputVal.length + context.length;
+        const totalChars = inputVal.length + contextChars;
         const tokens = Math.ceil(totalChars / 4);
 
         if (tokens < 1000) {
@@ -1084,10 +1084,6 @@
 
         await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
 
-        if (currentFileId === id) {
-          currentFileText = text;
-        }
-
         saveState();
         renderApp();
       }
@@ -1095,13 +1091,6 @@
       async function deleteFile(id) {
         files = files.filter((f) => f.id !== id);
         await dbDelete(`mf_filedata_${id}`);
-
-        if (currentFileId === id) {
-          currentFileId = null;
-          currentView = "chat";
-          if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
-          else if (!chats.length) newChat();
-        }
 
         saveState();
         renderApp();
@@ -1118,47 +1107,36 @@
         }
       }
 
-      async function openFile(id) {
+      function appendFileMessage(fileId) {
+        const meta = files.find((f) => f.id === fileId);
+        if (!meta) return;
         suspendSuperSecretSettings();
         resetEditState();
-        currentView = "file";
-        currentFileId = id;
+
+        if (!currentChatId) newChat();
+        const chat = chats.find((c) => c.id === currentChatId);
+
+        const approxTokens = meta.chunkCount
+          ? Math.ceil((meta.chunkCount * (parseInt(config.chunkSize) || 1000)) / 4)
+          : 0;
+
+        chat.messages.push({
+          role: "file",
+          fileId: meta.id,
+          fileName: meta.name,
+          prompt: "",
+          maxTokens: parseInt(config.maxRagTokens) || 5000,
+          approxTokens: approxTokens,
+        });
+
         if (window.innerWidth <= 768) {
           isSidebarHidden = true;
           applySidebarState();
         }
-        const data = await dbGet(`mf_filedata_${id}`);
-        currentFileText = data ? data.text : "";
+
         saveState();
         renderApp();
-      }
-
-      async function saveFileEdit() {
-        if (!currentFileId) return;
-        const text = $("#chat-input").value;
-        currentFileText = text;
-
-        const meta = files.find((f) => f.id === currentFileId);
-        if (meta) {
-          meta.progress = 0;
-          meta.isEmbedding = false;
-          meta.chunkCount = 0;
-          meta.embeddedCount = 0;
-        }
-
-        const data = await dbGet(`mf_filedata_${currentFileId}`);
-        if (data) {
-          data.text = text;
-          data.chunks = null;
-          await dbSet(`mf_filedata_${currentFileId}`, data);
-        }
-
-        saveState();
-        renderApp(true);
-      }
-
-      function cancelFileEdit() {
-        openFile(currentFileId); // reloads text and resets view cleanly
+        updateTokenCount();
       }
 
       // --- IMPORT / EXPORT ---
@@ -1258,8 +1236,6 @@
       function newChat() {
         suspendSuperSecretSettings();
         resetEditState();
-        currentView = "chat";
-        currentFileId = null;
         const id = Date.now().toString();
         chats.unshift({ id, title: "New Chat", messages: [] });
         currentChatId = id;
@@ -1275,8 +1251,6 @@
       function loadChat(id) {
         suspendSuperSecretSettings();
         resetEditState();
-        currentView = "chat";
-        currentFileId = null;
         currentChatId = id;
         if (window.innerWidth <= 768) {
           isSidebarHidden = true;
@@ -1308,8 +1282,6 @@
       function forkChat(msgIndex) {
         suspendSuperSecretSettings();
         resetEditState();
-        currentView = "chat";
-        currentFileId = null;
         const chat = chats.find((c) => c.id === currentChatId);
         const newId = Date.now().toString();
         chats.unshift({
@@ -1325,10 +1297,18 @@
       function retryMessage(msgIndex) {
         resetEditState();
         const chat = chats.find((c) => c.id === currentChatId);
-        $("#chat-input").value = chat.messages[msgIndex].content;
-        chat.messages = chat.messages.slice(0, msgIndex);
-        saveState();
-        sendMessage();
+        const msg = chat.messages[msgIndex];
+
+        if (msg.role === "file") {
+          chat.messages = chat.messages.slice(0, msgIndex + 1);
+          saveState();
+          sendMessage();
+        } else {
+          $("#chat-input").value = msg.content;
+          chat.messages = chat.messages.slice(0, msgIndex);
+          saveState();
+          sendMessage();
+        }
       }
 
       function deleteMessage(msgIndex) {
@@ -1349,7 +1329,7 @@
         if (area) {
           area.style.whiteSpace = "";
           area.style.overflowX = "";
-          if (!isSuperSecretSettingsOpen && currentView !== "file") {
+          if (!isSuperSecretSettingsOpen) {
             area.value = "";
             area.style.height = promptHeight;
           }
@@ -1359,8 +1339,10 @@
       function startGlobalEdit(index) {
         editingMessageIndex = index;
         const chat = chats.find((c) => c.id === currentChatId);
+        const msg = chat.messages[index];
         const area = $("#chat-input");
-        area.value = chat.messages[index].content;
+
+        area.value = msg.role === "file" ? msg.prompt || "" : msg.content;
 
         renderApp(true);
         area.focus();
@@ -1369,7 +1351,14 @@
       function saveGlobalEdit() {
         if (editingMessageIndex === null) return;
         const chat = chats.find((c) => c.id === currentChatId);
-        chat.messages[editingMessageIndex].content = $("#chat-input").value;
+        const msg = chat.messages[editingMessageIndex];
+
+        if (msg.role === "file") {
+          msg.prompt = $("#chat-input").value;
+        } else {
+          msg.content = $("#chat-input").value;
+        }
+
         saveState();
         endGlobalEdit();
       }
@@ -1393,13 +1382,7 @@
       function renderApp(preserveScroll = false) {
         renderFileList();
         renderChatList();
-
-        if (currentView === "chat") {
-          renderCurrentChat(preserveScroll);
-        } else if (currentView === "file") {
-          renderCurrentFile(preserveScroll);
-        }
-
+        renderCurrentChat(preserveScroll);
         applyInputAreaState();
       }
 
@@ -1413,8 +1396,6 @@
         const secSaveBtn = $("#secret-save-btn");
         const secResetBtn = $("#secret-reset-btn");
         const secCancelBtn = $("#secret-cancel-btn");
-        const fileSaveBtn = $("#file-save-btn");
-        const fileCancelBtn = $("#file-cancel-btn");
 
         // Reset visibilities
         modelSel.classList.add("hidden");
@@ -1424,8 +1405,6 @@
         secSaveBtn.classList.add("hidden");
         secResetBtn.classList.add("hidden");
         secCancelBtn.classList.add("hidden");
-        fileSaveBtn.classList.add("hidden");
-        fileCancelBtn.classList.add("hidden");
 
         if (isSuperSecretSettingsOpen) {
           secSaveBtn.classList.remove("hidden");
@@ -1447,18 +1426,14 @@
             secCancelBtn.disabled = false;
             area.placeholder = SETTING_DEFAULTS[activeSuperSecretSetting].tooltip;
           }
-        } else if (currentView === "file") {
-          fileSaveBtn.classList.remove("hidden");
-          fileCancelBtn.classList.remove("hidden");
-          area.disabled = false;
-          area.placeholder = "Edit file text here...";
-          if (!area.value && currentFileText) area.value = currentFileText;
-          area.style.height = editHeight;
         } else if (editingMessageIndex !== null) {
           saveBtn.classList.remove("hidden");
           cancelBtn.classList.remove("hidden");
           area.disabled = false;
-          area.placeholder = "";
+
+          const chat = chats.find((c) => c.id === currentChatId);
+          const isFile = chat && chat.messages[editingMessageIndex]?.role === "file";
+          area.placeholder = isFile ? "Edit embedding search prompt..." : "";
           area.style.height = editHeight;
         } else {
           modelSel.classList.remove("hidden");
@@ -1478,8 +1453,8 @@
         list.innerHTML = files
           .map(
             (f) => `
-          <div class="chat-item ${f.id === currentFileId && currentView === "file" ? "active" : ""}" data-id="${f.id}" data-type="file">
-            <div class="chat-item-title" data-action="load" title="Ctrl+Click to copy embed tag\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
+          <div class="chat-item" data-id="${f.id}" data-type="file">
+            <div class="chat-item-title" data-action="load" title="Click to insert into chat\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
             <div class="chat-item-actions">
               ${f.progress < 100 ? `<button data-action="embed" title="${f.isEmbedding ? "Pause Embedding" : "Start Embedding"}">${f.isEmbedding ? "⏸" : "e"}</button>` : ""}
               <button data-action="delete" title="Delete File">d</button>
@@ -1500,7 +1475,7 @@
         list.innerHTML = chats
           .map(
             (chat) => `
-          <div class="chat-item ${chat.id === currentChatId && currentView === "chat" ? "active" : ""}" data-id="${chat.id}" data-type="chat">
+          <div class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}" data-type="chat">
             <div class="chat-item-title" data-action="load" title="Export: Alt+Click">${escapeHTML(chat.title)}</div>
             <div class="chat-item-actions">
               <button data-action="rename" title="Rename">r</button>
@@ -1510,44 +1485,6 @@
         `,
           )
           .join("");
-      }
-
-      function renderCurrentFile(preserveScroll = false) {
-        const container = $("#chat-container");
-        const prevScroll = container.scrollTop;
-        const meta = files.find((f) => f.id === currentFileId);
-
-        if (!meta) {
-          container.innerHTML = '<h3 style="margin:0;">File not found.</h3>';
-          return;
-        }
-
-        let html = `
-          <div class="msg system" style="border-color: #0055ff; background: #e6f0ff;">
-              <div class="msg-meta" style="margin-bottom: 0;">
-                  <span>FILE PREVIEW: ${escapeHTML(meta.name)}</span>
-                  <span style="font-size: 0.85em; color: #555;">${meta.progress}% Embedded</span>
-              </div>
-          </div>
-          <div class="msg-content" style="padding: 0 5px;">
-              ${marked.parse(currentFileText || "*Empty File*")}
-          </div>
-        `;
-
-        container.innerHTML = html;
-
-        renderMathInElement(container, {
-          delimiters: [
-            { left: "$$", right: "$$", display: true },
-            { left: "$", right: "$", display: false },
-          ],
-          output: "htmlAndMathml",
-          throwOnError: false,
-        });
-        Prism.highlightAllUnder(container);
-
-        if (preserveScroll) container.scrollTop = prevScroll;
-        else container.scrollTop = 0;
       }
 
       function renderCurrentChat(preserveScroll = false) {
@@ -1577,7 +1514,8 @@
             embeddingsModel: "Embeddings Model",
             chunkSize: "Chunk Size",
             chunkOverlap: "Chunk Overlap",
-            topK: "Top K Chunks",
+            maxRagTokens: "Max RAG Tokens",
+            ragThreshold: "RAG Match Threshold",
             chunkBatchSize: "Chunk Batch Size",
           };
 
@@ -1642,26 +1580,39 @@
               return `
             <div class="msg ${msg.role} ${editingMessageIndex === i ? "editing" : ""}" data-index="${i}">
               <div class="msg-meta">
-                <select class="role-select">
-                  <option value="user" ${msg.role === "user" ? "selected" : ""}>user</option>
-                  <option value="assistant" ${msg.role === "assistant" ? "selected" : ""}>assistant</option>
-                  <option value="system" ${msg.role === "system" ? "selected" : ""}>system</option>
-                  ${msg.role === "error" ? `<option value="error" selected>error</option>` : ""}
-                </select>
+                ${
+                  msg.role === "file"
+                    ? `<span>📎 FILE: ${escapeHTML(msg.fileName)} (~${msg.approxTokens || 0} tokens)</span>`
+                    : `<select class="role-select">
+                    <option value="user" ${msg.role === "user" ? "selected" : ""}>user</option>
+                    <option value="assistant" ${msg.role === "assistant" ? "selected" : ""}>assistant</option>
+                    <option value="system" ${msg.role === "system" ? "selected" : ""}>system</option>
+                    ${msg.role === "error" ? `<option value="error" selected>error</option>` : ""}
+                  </select>`
+                }
                 <div class="msg-actions">
                   ${
                     editingMessageIndex === i
                       ? `<button data-action="save-edit">Save</button>
                          <button data-action="cancel-edit">Cancel</button>
                          <button data-action="toggle-wrap">Toggle Wrap</button>`
-                      : `<button data-action="edit">Edit</button>
+                      : `${msg.role === "file" ? `<button data-action="edit">Edit Prompt</button>` : `<button data-action="edit">Edit</button>`}
                          <button data-action="fork">Fork</button>
-                         ${msg.role === "user" ? `<button data-action="retry">Retry</button>` : ""}
+                         ${msg.role === "user" || msg.role === "file" ? `<button data-action="retry">Retry</button>` : ""}
                          <button data-action="delete">Delete</button>`
                   }
                 </div>
               </div>
-              <div class="msg-content">${marked.parse(displayContent)}</div>
+              ${
+                msg.role === "file"
+                  ? `<div class="file-config" style="margin-bottom: 10px; font-size: 0.85em; display: flex; gap: 10px; align-items: center;">
+                  <label>Max Tokens: <input type="number" class="file-max-tokens" value="${msg.maxTokens || 5000}" step="100" min="100" style="width: 80px; padding: 2px; margin: 0;"></label>
+                </div>
+                <div class="msg-content" style="background: rgba(0,0,0,0.03); padding: 8px; border: 1px solid rgba(0,0,0,0.1); font-style: italic;">
+                  ${msg.prompt ? `<strong>Search Prompt:</strong> ${marked.parseInline(msg.prompt)}` : `<em>No explicit prompt. Will use subsequent user message(s) to search, or default to first ~${msg.maxTokens || 5000} tokens.</em>`}
+                </div>`
+                  : `<div class="msg-content">${marked.parse(displayContent)}</div>`
+              }
             </div>
           `;
             })
@@ -1684,9 +1635,10 @@
         else {
           const lastMsg = container.lastElementChild;
           if (lastMsg && lastMsg.classList.contains("msg")) {
-            container.scrollTop = lastMsg.classList.contains("user")
-              ? container.scrollHeight
-              : lastMsg.offsetTop - 15;
+            container.scrollTop =
+              lastMsg.classList.contains("user") || lastMsg.classList.contains("file")
+                ? container.scrollHeight
+                : lastMsg.offsetTop - 15;
           }
         }
 
@@ -1739,7 +1691,10 @@
               const text =
                 `# ${chat.title}\n\n` +
                 chat.messages
-                  .map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`)
+                  .map(
+                    (m) =>
+                      `## ${m.role.toUpperCase()}\n${m.content || m.prompt || ""}\n\n`,
+                  )
                   .join("");
               navigator.clipboard.writeText(text.trim()).then(() => {
                 item.style.background = "#ccc";
@@ -1751,18 +1706,11 @@
           if (action === "delete") deleteFile(id);
           else if (action === "embed") toggleEmbedding(id);
           else if (action === "load") {
-            if (e.ctrlKey || e.metaKey) {
-              e.preventDefault();
-              const meta = files.find((f) => f.id === id);
-              navigator.clipboard.writeText(`[file: ${meta.name}]`).then(() => {
-                item.style.background = "#ccc";
-                setTimeout(() => (item.style.background = ""), 150);
-              });
-            } else if (e.altKey) {
+            if (e.altKey) {
               e.preventDefault();
               reuploadFile(id);
             } else {
-              openFile(id);
+              appendFileMessage(id);
             }
           }
         }
@@ -1799,6 +1747,15 @@
           chat.messages[index].role = e.target.value;
           saveState();
           renderApp(true);
+        } else if (e.target.classList.contains("file-max-tokens")) {
+          const msgDiv = e.target.closest(".msg");
+          if (!msgDiv || !msgDiv.hasAttribute("data-index")) return;
+          const index = parseInt(msgDiv.dataset.index, 10);
+          if (isNaN(index)) return;
+
+          const chat = chats.find((c) => c.id === currentChatId);
+          chat.messages[index].maxTokens = parseInt(e.target.value, 10) || 5000;
+          saveState();
         }
       });
 
@@ -1956,78 +1913,112 @@
         renderFileList();
       }
 
-      async function processRAG(promptText, requiredNames, btnEl) {
-        const queryText = promptText.replace(/\[file:\s*(.*?)\]/g, "").trim();
-        let queryEmb = null;
+      async function resolveAllMessages(messages, btnEl) {
+        let resolved = [];
 
-        if (queryText) {
-          if (btnEl) btnEl.textContent = "Embedding query...";
-          queryEmb = (await fetchEmbeddings([queryText]))[0];
-        }
+        for (let i = 0; i < messages.length; i++) {
+          const msg = messages[i];
 
-        const topK = parseInt(config.topK) || 5;
-        let expandedPrompt = promptText;
+          if (msg.role === "file") {
+            const meta = files.find((f) => f.id === msg.fileId);
+            let fileContent = "*File not found or unindexed.*";
+            let actualPrompt = msg.prompt ? msg.prompt.trim() : "";
+            let implicitSearchUsed = false;
 
-        for (const name of requiredNames) {
-          const meta = files.find((f) => f.name === name);
-          if (!meta) continue;
+            // Look ahead for user messages if no explicit prompt is set
+            if (!actualPrompt) {
+              let lookaheadText = [];
+              for (let j = i + 1; j < messages.length; j++) {
+                const nextMsg = messages[j];
+                if (nextMsg.role === "assistant") break; // Stop at the next assistant reply
+                if (nextMsg.role === "user" && nextMsg.content) {
+                  lookaheadText.push(nextMsg.content);
+                }
+              }
+              actualPrompt = lookaheadText.join("\n").trim();
+              if (actualPrompt) implicitSearchUsed = true;
+            }
 
-          const data = await dbGet(`mf_filedata_${meta.id}`);
-          if (!data || !data.chunks) continue;
+            if (meta) {
+              const data = await dbGet(`mf_filedata_${meta.id}`);
+              if (data && data.chunks) {
+                const validChunks = data.chunks.filter((c) => c.vector);
+                if (validChunks.length > 0) {
+                  let queryEmb = null;
 
-          const validChunks = data.chunks.filter((c) => c.vector);
-          if (validChunks.length === 0) continue;
+                  if (actualPrompt) {
+                    if (btnEl)
+                      btnEl.textContent = `Embedding prompt for ${meta.name}...`;
+                    queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
+                  }
 
-          validChunks.forEach((c) => {
-            c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
-          });
+                  validChunks.forEach((c) => {
+                    c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
+                  });
 
-          validChunks.sort((a, b) => b.score - a.score);
-          const topChunks = validChunks.slice(0, topK);
-          topChunks.sort((a, b) => a.index - b.index);
+                  const threshold = parseFloat(config.ragThreshold) || 0.0;
+                  let topChunks = validChunks.filter(
+                    (c) => !queryEmb || c.score >= threshold,
+                  );
 
-          let mergedContent = "";
-          for (let i = 0; i < topChunks.length; i++) {
-            const curr = topChunks[i];
-            if (i === 0) {
-              mergedContent += curr.text;
-            } else {
-              const prev = topChunks[i - 1];
-              if (curr.index === prev.index + 1) {
-                mergedContent += data.text.substring(prev.end, curr.end);
-              } else {
-                mergedContent += `\n...\n${curr.text}`;
+                  topChunks.sort((a, b) => b.score - a.score);
+
+                  const maxTokens = msg.maxTokens || 5000;
+                  let currentTokens = 0;
+                  let selectedChunks = [];
+
+                  for (const c of topChunks) {
+                    const chunkTokens = Math.ceil(c.text.length / 4);
+                    if (
+                      selectedChunks.length > 0 &&
+                      currentTokens + chunkTokens > maxTokens
+                    ) {
+                      break;
+                    }
+                    selectedChunks.push(c);
+                    currentTokens += chunkTokens;
+                  }
+
+                  selectedChunks.sort((a, b) => a.index - b.index);
+
+                  let mergedContent = "";
+                  for (let j = 0; j < selectedChunks.length; j++) {
+                    const curr = selectedChunks[j];
+                    if (j === 0) {
+                      mergedContent += curr.text;
+                    } else {
+                      const prev = selectedChunks[j - 1];
+                      if (curr.index === prev.index + 1) {
+                        mergedContent += data.text.substring(prev.end, curr.end);
+                      } else {
+                        mergedContent += `\n...\n${curr.text}`;
+                      }
+                    }
+                  }
+                  fileContent = mergedContent;
+                }
               }
             }
-          }
 
-          const fileBlock = `<file name="${name}">\n${mergedContent}\n</file>`;
-          expandedPrompt = expandedPrompt.split(`[file: ${name}]`).join(fileBlock);
-        }
+            let usedPromptText = "";
+            if (msg.prompt) {
+              usedPromptText = `Search Query: ${msg.prompt}`;
+            } else if (implicitSearchUsed) {
+              usedPromptText = `Implicit Search Query: ${actualPrompt}`;
+            } else {
+              usedPromptText = `Search Query: None (Head Retrieval)`;
+            }
 
-        return expandedPrompt;
-      }
-
-      async function resolveAllMessages(cleanMessages, btnEl) {
-        const requiredNames = new Set();
-
-        cleanMessages.forEach((msg) => {
-          const matches = [...msg.content.matchAll(/\[file:\s*(.*?)\]/g)];
-          for (const m of matches) {
-            requiredNames.add(m[1]);
-          }
-        });
-
-        if (requiredNames.size === 0) return cleanMessages;
-
-        for (let i = 0; i < cleanMessages.length; i++) {
-          const msg = cleanMessages[i];
-          if (/\[file:\s*(.*?)\]/.test(msg.content)) {
-            msg.content = await processRAG(msg.content, requiredNames, btnEl);
+            resolved.push({
+              role: "system",
+              content: `Attached File Context (${msg.fileName}):\n${usedPromptText}\n\n${fileContent}`,
+            });
+          } else {
+            resolved.push(msg);
           }
         }
 
-        return cleanMessages;
+        return resolved;
       }
 
       // --- API & GOD MODE ---
@@ -2099,7 +2090,7 @@
           if (!config.key && !skipApi)
             return alert("Please enter your API key in the settings first.");
 
-          if (!currentChatId || currentView !== "chat") newChat();
+          if (!currentChatId) newChat();
 
           const chat = chats.find((c) => c.id === currentChatId);
 
@@ -2130,10 +2121,13 @@
           const chat = chats.find((c) => c.id === currentChatId);
           let cleanMessages = chat.messages
             .filter((m) => m.role !== "error")
-            .map((m) => ({
-              role: m.role,
-              content: m.content || "",
-            }));
+            .map((m) => {
+              if (m.role === "file") return { ...m };
+              return {
+                role: m.role,
+                content: m.content || "",
+              };
+            });
 
           if (config.godMode) {
             cleanMessages.unshift({
@@ -2230,8 +2224,6 @@
             saveSuperSecretSetting();
           } else if (editingMessageIndex !== null) {
             saveGlobalEdit();
-          } else if (currentView === "file") {
-            saveFileEdit();
           } else {
             sendMessage(0, e.shiftKey);
           }
@@ -2247,12 +2239,11 @@
         }
         if (e.altKey && e.key.toLowerCase() === "w") {
           e.preventDefault();
-          if (currentView === "chat" && currentChatId) deleteChat(currentChatId);
-          if (currentView === "file" && currentFileId) deleteFile(currentFileId);
+          if (currentChatId) deleteChat(currentChatId);
         }
         if (e.altKey && e.key.toLowerCase() === "r") {
           e.preventDefault();
-          if (currentView === "chat" && currentChatId) renameChat(currentChatId);
+          if (currentChatId) renameChat(currentChatId);
         }
         if (e.altKey && e.key.toLowerCase() === "p") {
           e.preventDefault();
@@ -2284,16 +2275,14 @@
 
         if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
           e.preventDefault();
-          if (currentView === "chat") {
-            if (!chats.length) return;
-            let idx = Math.max(
-              0,
-              chats.findIndex((c) => c.id === currentChatId),
-            );
-            if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
-            if (e.key === "ArrowDown" && idx < chats.length - 1)
-              loadChat(chats[idx + 1].id);
-          }
+          if (!chats.length) return;
+          let idx = Math.max(
+            0,
+            chats.findIndex((c) => c.id === currentChatId),
+          );
+          if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
+          if (e.key === "ArrowDown" && idx < chats.length - 1)
+            loadChat(chats[idx + 1].id);
         }
 
         if (

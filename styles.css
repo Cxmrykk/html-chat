@@ -45,6 +45,7 @@ button:disabled {
 
 input[type="text"],
 input[type="password"],
+input[type="number"],
 textarea,
 select {
   font-family: inherit;
@@ -180,6 +181,17 @@ textarea:disabled {
 .msg.error {
   border-color: #c00000;
   background: #ffeeee;
+}
+
+.msg.file {
+  border-color: #00cc66;
+  background: #eaffea;
+}
+
+.file-config input {
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #fff;
 }
 
 .msg-meta {

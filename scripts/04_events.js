@@ -44,7 +44,10 @@ $("#sidebar").addEventListener("click", (e) => {
         const text =
           `# ${chat.title}\n\n` +
           chat.messages
-            .map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`)
+            .map(
+              (m) =>
+                `## ${m.role.toUpperCase()}\n${m.content || m.prompt || ""}\n\n`,
+            )
             .join("");
         navigator.clipboard.writeText(text.trim()).then(() => {
           item.style.background = "#ccc";
@@ -56,18 +59,11 @@ $("#sidebar").addEventListener("click", (e) => {
     if (action === "delete") deleteFile(id);
     else if (action === "embed") toggleEmbedding(id);
     else if (action === "load") {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        const meta = files.find((f) => f.id === id);
-        navigator.clipboard.writeText(`[file: ${meta.name}]`).then(() => {
-          item.style.background = "#ccc";
-          setTimeout(() => (item.style.background = ""), 150);
-        });
-      } else if (e.altKey) {
+      if (e.altKey) {
         e.preventDefault();
         reuploadFile(id);
       } else {
-        openFile(id);
+        appendFileMessage(id);
       }
     }
   }
@@ -104,5 +100,14 @@ $("#chat-container").addEventListener("change", (e) => {
     chat.messages[index].role = e.target.value;
     saveState();
     renderApp(true);
+  } else if (e.target.classList.contains("file-max-tokens")) {
+    const msgDiv = e.target.closest(".msg");
+    if (!msgDiv || !msgDiv.hasAttribute("data-index")) return;
+    const index = parseInt(msgDiv.dataset.index, 10);
+    if (isNaN(index)) return;
+
+    const chat = chats.find((c) => c.id === currentChatId);
+    chat.messages[index].maxTokens = parseInt(e.target.value, 10) || 5000;
+    saveState();
   }
 });

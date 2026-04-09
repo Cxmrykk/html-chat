@@ -2,13 +2,7 @@
 function renderApp(preserveScroll = false) {
   renderFileList();
   renderChatList();
-
-  if (currentView === "chat") {
-    renderCurrentChat(preserveScroll);
-  } else if (currentView === "file") {
-    renderCurrentFile(preserveScroll);
-  }
-
+  renderCurrentChat(preserveScroll);
   applyInputAreaState();
 }
 
@@ -22,8 +16,6 @@ function applyInputAreaState() {
   const secSaveBtn = $("#secret-save-btn");
   const secResetBtn = $("#secret-reset-btn");
   const secCancelBtn = $("#secret-cancel-btn");
-  const fileSaveBtn = $("#file-save-btn");
-  const fileCancelBtn = $("#file-cancel-btn");
 
   // Reset visibilities
   modelSel.classList.add("hidden");
@@ -33,8 +25,6 @@ function applyInputAreaState() {
   secSaveBtn.classList.add("hidden");
   secResetBtn.classList.add("hidden");
   secCancelBtn.classList.add("hidden");
-  fileSaveBtn.classList.add("hidden");
-  fileCancelBtn.classList.add("hidden");
 
   if (isSuperSecretSettingsOpen) {
     secSaveBtn.classList.remove("hidden");
@@ -56,18 +46,14 @@ function applyInputAreaState() {
       secCancelBtn.disabled = false;
       area.placeholder = SETTING_DEFAULTS[activeSuperSecretSetting].tooltip;
     }
-  } else if (currentView === "file") {
-    fileSaveBtn.classList.remove("hidden");
-    fileCancelBtn.classList.remove("hidden");
-    area.disabled = false;
-    area.placeholder = "Edit file text here...";
-    if (!area.value && currentFileText) area.value = currentFileText;
-    area.style.height = editHeight;
   } else if (editingMessageIndex !== null) {
     saveBtn.classList.remove("hidden");
     cancelBtn.classList.remove("hidden");
     area.disabled = false;
-    area.placeholder = "";
+
+    const chat = chats.find((c) => c.id === currentChatId);
+    const isFile = chat && chat.messages[editingMessageIndex]?.role === "file";
+    area.placeholder = isFile ? "Edit embedding search prompt..." : "";
     area.style.height = editHeight;
   } else {
     modelSel.classList.remove("hidden");
@@ -87,8 +73,8 @@ function renderFileList() {
   list.innerHTML = files
     .map(
       (f) => `
-    <div class="chat-item ${f.id === currentFileId && currentView === "file" ? "active" : ""}" data-id="${f.id}" data-type="file">
-      <div class="chat-item-title" data-action="load" title="Ctrl+Click to copy embed tag\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
+    <div class="chat-item" data-id="${f.id}" data-type="file">
+      <div class="chat-item-title" data-action="load" title="Click to insert into chat\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
       <div class="chat-item-actions">
         ${f.progress < 100 ? `<button data-action="embed" title="${f.isEmbedding ? "Pause Embedding" : "Start Embedding"}">${f.isEmbedding ? "⏸" : "e"}</button>` : ""}
         <button data-action="delete" title="Delete File">d</button>
@@ -109,7 +95,7 @@ function renderChatList() {
   list.innerHTML = chats
     .map(
       (chat) => `
-    <div class="chat-item ${chat.id === currentChatId && currentView === "chat" ? "active" : ""}" data-id="${chat.id}" data-type="chat">
+    <div class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}" data-type="chat">
       <div class="chat-item-title" data-action="load" title="Export: Alt+Click">${escapeHTML(chat.title)}</div>
       <div class="chat-item-actions">
         <button data-action="rename" title="Rename">r</button>
@@ -119,44 +105,6 @@ function renderChatList() {
   `,
     )
     .join("");
-}
-
-function renderCurrentFile(preserveScroll = false) {
-  const container = $("#chat-container");
-  const prevScroll = container.scrollTop;
-  const meta = files.find((f) => f.id === currentFileId);
-
-  if (!meta) {
-    container.innerHTML = '<h3 style="margin:0;">File not found.</h3>';
-    return;
-  }
-
-  let html = `
-    <div class="msg system" style="border-color: #0055ff; background: #e6f0ff;">
-        <div class="msg-meta" style="margin-bottom: 0;">
-            <span>FILE PREVIEW: ${escapeHTML(meta.name)}</span>
-            <span style="font-size: 0.85em; color: #555;">${meta.progress}% Embedded</span>
-        </div>
-    </div>
-    <div class="msg-content" style="padding: 0 5px;">
-        ${marked.parse(currentFileText || "*Empty File*")}
-    </div>
-  `;
-
-  container.innerHTML = html;
-
-  renderMathInElement(container, {
-    delimiters: [
-      { left: "$$", right: "$$", display: true },
-      { left: "$", right: "$", display: false },
-    ],
-    output: "htmlAndMathml",
-    throwOnError: false,
-  });
-  Prism.highlightAllUnder(container);
-
-  if (preserveScroll) container.scrollTop = prevScroll;
-  else container.scrollTop = 0;
 }
 
 function renderCurrentChat(preserveScroll = false) {
@@ -186,7 +134,8 @@ function renderCurrentChat(preserveScroll = false) {
       embeddingsModel: "Embeddings Model",
       chunkSize: "Chunk Size",
       chunkOverlap: "Chunk Overlap",
-      topK: "Top K Chunks",
+      maxRagTokens: "Max RAG Tokens",
+      ragThreshold: "RAG Match Threshold",
       chunkBatchSize: "Chunk Batch Size",
     };
 
@@ -251,26 +200,39 @@ function renderCurrentChat(preserveScroll = false) {
         return `
       <div class="msg ${msg.role} ${editingMessageIndex === i ? "editing" : ""}" data-index="${i}">
         <div class="msg-meta">
-          <select class="role-select">
-            <option value="user" ${msg.role === "user" ? "selected" : ""}>user</option>
-            <option value="assistant" ${msg.role === "assistant" ? "selected" : ""}>assistant</option>
-            <option value="system" ${msg.role === "system" ? "selected" : ""}>system</option>
-            ${msg.role === "error" ? `<option value="error" selected>error</option>` : ""}
-          </select>
+          ${
+            msg.role === "file"
+              ? `<span>📎 FILE: ${escapeHTML(msg.fileName)} (~${msg.approxTokens || 0} tokens)</span>`
+              : `<select class="role-select">
+              <option value="user" ${msg.role === "user" ? "selected" : ""}>user</option>
+              <option value="assistant" ${msg.role === "assistant" ? "selected" : ""}>assistant</option>
+              <option value="system" ${msg.role === "system" ? "selected" : ""}>system</option>
+              ${msg.role === "error" ? `<option value="error" selected>error</option>` : ""}
+            </select>`
+          }
           <div class="msg-actions">
             ${
               editingMessageIndex === i
                 ? `<button data-action="save-edit">Save</button>
                    <button data-action="cancel-edit">Cancel</button>
                    <button data-action="toggle-wrap">Toggle Wrap</button>`
-                : `<button data-action="edit">Edit</button>
+                : `${msg.role === "file" ? `<button data-action="edit">Edit Prompt</button>` : `<button data-action="edit">Edit</button>`}
                    <button data-action="fork">Fork</button>
-                   ${msg.role === "user" ? `<button data-action="retry">Retry</button>` : ""}
+                   ${msg.role === "user" || msg.role === "file" ? `<button data-action="retry">Retry</button>` : ""}
                    <button data-action="delete">Delete</button>`
             }
           </div>
         </div>
-        <div class="msg-content">${marked.parse(displayContent)}</div>
+        ${
+          msg.role === "file"
+            ? `<div class="file-config" style="margin-bottom: 10px; font-size: 0.85em; display: flex; gap: 10px; align-items: center;">
+            <label>Max Tokens: <input type="number" class="file-max-tokens" value="${msg.maxTokens || 5000}" step="100" min="100" style="width: 80px; padding: 2px; margin: 0;"></label>
+          </div>
+          <div class="msg-content" style="background: rgba(0,0,0,0.03); padding: 8px; border: 1px solid rgba(0,0,0,0.1); font-style: italic;">
+            ${msg.prompt ? `<strong>Search Prompt:</strong> ${marked.parseInline(msg.prompt)}` : `<em>No explicit prompt. Will use subsequent user message(s) to search, or default to first ~${msg.maxTokens || 5000} tokens.</em>`}
+          </div>`
+            : `<div class="msg-content">${marked.parse(displayContent)}</div>`
+        }
       </div>
     `;
       })
@@ -293,9 +255,10 @@ function renderCurrentChat(preserveScroll = false) {
   else {
     const lastMsg = container.lastElementChild;
     if (lastMsg && lastMsg.classList.contains("msg")) {
-      container.scrollTop = lastMsg.classList.contains("user")
-        ? container.scrollHeight
-        : lastMsg.offsetTop - 15;
+      container.scrollTop =
+        lastMsg.classList.contains("user") || lastMsg.classList.contains("file")
+          ? container.scrollHeight
+          : lastMsg.offsetTop - 15;
     }
   }
 

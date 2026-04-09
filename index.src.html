@@ -55,18 +55,18 @@
 
         <div style="margin-bottom: 20px">
           <div style="display: flex; justify-content: space-between; align-items: center">
-            <h3>Your Files</h3>
-            <button onclick="handleUploadClick()" title="Upload Files for Vector Search">+ Upload</button>
-          </div>
-          <div id="file-list"></div>
-        </div>
-
-        <div>
-          <div style="display: flex; justify-content: space-between; align-items: center">
             <h3>Your Chats</h3>
             <button onclick="handleNewChatClick(event)" title="New: Alt+T ↔ Import: Alt+Click">+ New</button>
           </div>
           <div id="chat-list"></div>
+        </div>
+
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <h3>Your Files</h3>
+            <button onclick="handleUploadClick()" title="Upload Files for Vector Search">+ Upload</button>
+          </div>
+          <div id="file-list"></div>
         </div>
       </aside>
 
@@ -82,23 +82,6 @@
               style="flex-grow: 1; font-weight: bold"
             >
               Send
-            </button>
-            <button
-              id="file-save-btn"
-              class="hidden"
-              onclick="saveFileEdit()"
-              title="Save changes to file"
-              style="flex-grow: 1; font-weight: bold"
-            >
-              Save File
-            </button>
-            <button
-              id="file-cancel-btn"
-              class="hidden"
-              onclick="cancelFileEdit()"
-              style="flex-grow: 1; font-weight: bold"
-            >
-              Cancel
             </button>
             <button
               id="save-edit-btn"

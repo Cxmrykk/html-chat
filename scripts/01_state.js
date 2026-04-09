@@ -94,9 +94,6 @@ let config = {};
 let chats = [];
 let files = [];
 let currentChatId = null;
-let currentView = "chat"; // 'chat' or 'file'
-let currentFileId = null;
-let currentFileText = ""; // Dynamically loaded from DB, not saved to main state array
 let currentAbortController = null;
 let isSidebarHidden = false;
 let isTitleHidden = false;
@@ -157,9 +154,14 @@ const SETTING_DEFAULTS = {
     default: "200",
     tooltip: "Character overlap to maintain document continuity.",
   },
-  topK: {
-    default: "5",
-    tooltip: "Number of matched chunks to inject into the prompt per file.",
+  maxRagTokens: {
+    default: "5000",
+    tooltip: "Maximum estimated tokens to retrieve per file message.",
+  },
+  ragThreshold: {
+    default: "0.0",
+    tooltip:
+      "Minimum similarity threshold (0.0 to 1.0) for context injection. 0.0 allows anything.",
   },
   chunkBatchSize: {
     default: "100",
@@ -243,7 +245,7 @@ async function init() {
     for (let entry of entries) {
       const h = entry.target.style.height;
       if (!h) continue;
-      if (editingMessageIndex !== null || currentView === "file") {
+      if (editingMessageIndex !== null) {
         editHeight = h;
       } else {
         promptHeight = h;
@@ -277,20 +279,23 @@ function updateTokenCount() {
     return;
 
   const inputVal = $("#chat-input").value || "";
-  let context = "";
+  let contextChars = 0;
 
-  if (currentChatId && currentView === "chat") {
+  if (currentChatId) {
     const chat = chats.find((c) => c.id === currentChatId);
     if (chat && chat.messages) {
-      context = chat.messages.map((m) => m.content).join(" ");
+      contextChars = chat.messages.reduce((acc, m) => {
+        if (m.role === "file") return acc + (m.approxTokens || 0) * 4;
+        return acc + (m.content || "").length;
+      }, 0);
     }
   }
 
-  if (config.godMode && currentView === "chat") {
-    context += " " + (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT);
+  if (config.godMode) {
+    contextChars += (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT).length;
   }
 
-  const totalChars = inputVal.length + context.length;
+  const totalChars = inputVal.length + contextChars;
   const tokens = Math.ceil(totalChars / 4);
 
   if (tokens < 1000) {

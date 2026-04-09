@@ -152,78 +152,112 @@ async function startEmbeddingLoop(id) {
   renderFileList();
 }
 
-async function processRAG(promptText, requiredNames, btnEl) {
-  const queryText = promptText.replace(/\[file:\s*(.*?)\]/g, "").trim();
-  let queryEmb = null;
+async function resolveAllMessages(messages, btnEl) {
+  let resolved = [];
 
-  if (queryText) {
-    if (btnEl) btnEl.textContent = "Embedding query...";
-    queryEmb = (await fetchEmbeddings([queryText]))[0];
-  }
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
 
-  const topK = parseInt(config.topK) || 5;
-  let expandedPrompt = promptText;
+    if (msg.role === "file") {
+      const meta = files.find((f) => f.id === msg.fileId);
+      let fileContent = "*File not found or unindexed.*";
+      let actualPrompt = msg.prompt ? msg.prompt.trim() : "";
+      let implicitSearchUsed = false;
 
-  for (const name of requiredNames) {
-    const meta = files.find((f) => f.name === name);
-    if (!meta) continue;
+      // Look ahead for user messages if no explicit prompt is set
+      if (!actualPrompt) {
+        let lookaheadText = [];
+        for (let j = i + 1; j < messages.length; j++) {
+          const nextMsg = messages[j];
+          if (nextMsg.role === "assistant") break; // Stop at the next assistant reply
+          if (nextMsg.role === "user" && nextMsg.content) {
+            lookaheadText.push(nextMsg.content);
+          }
+        }
+        actualPrompt = lookaheadText.join("\n").trim();
+        if (actualPrompt) implicitSearchUsed = true;
+      }
 
-    const data = await dbGet(`mf_filedata_${meta.id}`);
-    if (!data || !data.chunks) continue;
+      if (meta) {
+        const data = await dbGet(`mf_filedata_${meta.id}`);
+        if (data && data.chunks) {
+          const validChunks = data.chunks.filter((c) => c.vector);
+          if (validChunks.length > 0) {
+            let queryEmb = null;
 
-    const validChunks = data.chunks.filter((c) => c.vector);
-    if (validChunks.length === 0) continue;
+            if (actualPrompt) {
+              if (btnEl)
+                btnEl.textContent = `Embedding prompt for ${meta.name}...`;
+              queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
+            }
 
-    validChunks.forEach((c) => {
-      c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
-    });
+            validChunks.forEach((c) => {
+              c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
+            });
 
-    validChunks.sort((a, b) => b.score - a.score);
-    const topChunks = validChunks.slice(0, topK);
-    topChunks.sort((a, b) => a.index - b.index);
+            const threshold = parseFloat(config.ragThreshold) || 0.0;
+            let topChunks = validChunks.filter(
+              (c) => !queryEmb || c.score >= threshold,
+            );
 
-    let mergedContent = "";
-    for (let i = 0; i < topChunks.length; i++) {
-      const curr = topChunks[i];
-      if (i === 0) {
-        mergedContent += curr.text;
-      } else {
-        const prev = topChunks[i - 1];
-        if (curr.index === prev.index + 1) {
-          mergedContent += data.text.substring(prev.end, curr.end);
-        } else {
-          mergedContent += `\n...\n${curr.text}`;
+            topChunks.sort((a, b) => b.score - a.score);
+
+            const maxTokens = msg.maxTokens || 5000;
+            let currentTokens = 0;
+            let selectedChunks = [];
+
+            for (const c of topChunks) {
+              const chunkTokens = Math.ceil(c.text.length / 4);
+              if (
+                selectedChunks.length > 0 &&
+                currentTokens + chunkTokens > maxTokens
+              ) {
+                break;
+              }
+              selectedChunks.push(c);
+              currentTokens += chunkTokens;
+            }
+
+            selectedChunks.sort((a, b) => a.index - b.index);
+
+            let mergedContent = "";
+            for (let j = 0; j < selectedChunks.length; j++) {
+              const curr = selectedChunks[j];
+              if (j === 0) {
+                mergedContent += curr.text;
+              } else {
+                const prev = selectedChunks[j - 1];
+                if (curr.index === prev.index + 1) {
+                  mergedContent += data.text.substring(prev.end, curr.end);
+                } else {
+                  mergedContent += `\n...\n${curr.text}`;
+                }
+              }
+            }
+            fileContent = mergedContent;
+          }
         }
       }
-    }
 
-    const fileBlock = `<file name="${name}">\n${mergedContent}\n</file>`;
-    expandedPrompt = expandedPrompt.split(`[file: ${name}]`).join(fileBlock);
-  }
+      let usedPromptText = "";
+      if (msg.prompt) {
+        usedPromptText = `Search Query: ${msg.prompt}`;
+      } else if (implicitSearchUsed) {
+        usedPromptText = `Implicit Search Query: ${actualPrompt}`;
+      } else {
+        usedPromptText = `Search Query: None (Head Retrieval)`;
+      }
 
-  return expandedPrompt;
-}
-
-async function resolveAllMessages(cleanMessages, btnEl) {
-  const requiredNames = new Set();
-
-  cleanMessages.forEach((msg) => {
-    const matches = [...msg.content.matchAll(/\[file:\s*(.*?)\]/g)];
-    for (const m of matches) {
-      requiredNames.add(m[1]);
-    }
-  });
-
-  if (requiredNames.size === 0) return cleanMessages;
-
-  for (let i = 0; i < cleanMessages.length; i++) {
-    const msg = cleanMessages[i];
-    if (/\[file:\s*(.*?)\]/.test(msg.content)) {
-      msg.content = await processRAG(msg.content, requiredNames, btnEl);
+      resolved.push({
+        role: "system",
+        content: `Attached File Context (${msg.fileName}):\n${usedPromptText}\n\n${fileContent}`,
+      });
+    } else {
+      resolved.push(msg);
     }
   }
 
-  return cleanMessages;
+  return resolved;
 }
 
 // --- API & GOD MODE ---
@@ -295,7 +329,7 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     if (!config.key && !skipApi)
       return alert("Please enter your API key in the settings first.");
 
-    if (!currentChatId || currentView !== "chat") newChat();
+    if (!currentChatId) newChat();
 
     const chat = chats.find((c) => c.id === currentChatId);
 
@@ -326,10 +360,13 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     const chat = chats.find((c) => c.id === currentChatId);
     let cleanMessages = chat.messages
       .filter((m) => m.role !== "error")
-      .map((m) => ({
-        role: m.role,
-        content: m.content || "",
-      }));
+      .map((m) => {
+        if (m.role === "file") return { ...m };
+        return {
+          role: m.role,
+          content: m.content || "",
+        };
+      });
 
     if (config.godMode) {
       cleanMessages.unshift({
@@ -426,8 +463,6 @@ $("#chat-input").addEventListener("keydown", (e) => {
       saveSuperSecretSetting();
     } else if (editingMessageIndex !== null) {
       saveGlobalEdit();
-    } else if (currentView === "file") {
-      saveFileEdit();
     } else {
       sendMessage(0, e.shiftKey);
     }
@@ -443,12 +478,11 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.altKey && e.key.toLowerCase() === "w") {
     e.preventDefault();
-    if (currentView === "chat" && currentChatId) deleteChat(currentChatId);
-    if (currentView === "file" && currentFileId) deleteFile(currentFileId);
+    if (currentChatId) deleteChat(currentChatId);
   }
   if (e.altKey && e.key.toLowerCase() === "r") {
     e.preventDefault();
-    if (currentView === "chat" && currentChatId) renameChat(currentChatId);
+    if (currentChatId) renameChat(currentChatId);
   }
   if (e.altKey && e.key.toLowerCase() === "p") {
     e.preventDefault();
@@ -480,16 +514,14 @@ document.addEventListener("keydown", (e) => {
 
   if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
     e.preventDefault();
-    if (currentView === "chat") {
-      if (!chats.length) return;
-      let idx = Math.max(
-        0,
-        chats.findIndex((c) => c.id === currentChatId),
-      );
-      if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
-      if (e.key === "ArrowDown" && idx < chats.length - 1)
-        loadChat(chats[idx + 1].id);
-    }
+    if (!chats.length) return;
+    let idx = Math.max(
+      0,
+      chats.findIndex((c) => c.id === currentChatId),
+    );
+    if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
+    if (e.key === "ArrowDown" && idx < chats.length - 1)
+      loadChat(chats[idx + 1].id);
   }
 
   if (
