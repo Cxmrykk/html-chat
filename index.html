@@ -276,6 +276,7 @@
       }
 
       .chat-item {
+        position: relative;
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -309,6 +310,16 @@
         font-size: 0.7em;
         padding: 2px 5px;
         margin-left: 2px;
+      }
+
+      .file-progress-bar {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        height: 2px;
+        background: #0055ff;
+        width: 0%;
+        transition: width 0.3s ease;
       }
 
       .config-box {
@@ -433,6 +444,14 @@
           <button onclick="exportChats()">Export</button>
         </div>
 
+        <div style="margin-bottom: 20px">
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <h3>Your Files</h3>
+            <button onclick="handleUploadClick()" title="Upload Files for Vector Search">+ Upload</button>
+          </div>
+          <div id="file-list"></div>
+        </div>
+
         <div>
           <div style="display: flex; justify-content: space-between; align-items: center">
             <h3>Your Chats</h3>
@@ -454,6 +473,23 @@
               style="flex-grow: 1; font-weight: bold"
             >
               Send
+            </button>
+            <button
+              id="file-save-btn"
+              class="hidden"
+              onclick="saveFileEdit()"
+              title="Save changes to file"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Save File
+            </button>
+            <button
+              id="file-cancel-btn"
+              class="hidden"
+              onclick="cancelFileEdit()"
+              style="flex-grow: 1; font-weight: bold"
+            >
+              Cancel
             </button>
             <button
               id="save-edit-btn"
@@ -584,10 +620,25 @@
         });
       }
 
+      async function dbDelete(key) {
+        const db = await getDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_NAME, "readwrite");
+          const store = transaction.objectStore(STORE_NAME);
+          const request = store.delete(key);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
+
       // Global state variables
       let config = {};
       let chats = [];
+      let files = [];
       let currentChatId = null;
+      let currentView = "chat"; // 'chat' or 'file'
+      let currentFileId = null;
+      let currentFileText = ""; // Dynamically loaded from DB, not saved to main state array
       let currentAbortController = null;
       let isSidebarHidden = false;
       let isTitleHidden = false;
@@ -638,7 +689,7 @@
         },
         embeddingsModel: {
           default: "text-embedding-3-small",
-          tooltip: "Model used for processing local RAG \\embed commands.",
+          tooltip: "Model used for processing local RAG commands.",
         },
         chunkSize: {
           default: "1000",
@@ -685,6 +736,7 @@
       function saveState() {
         dbSet("mf_config", config);
         dbSet("mf_chats", chats);
+        dbSet("mf_files", files);
         dbSet("mf_current_chat_id", currentChatId || "");
         dbSet("mf_sidebar_hidden", isSidebarHidden);
         dbSet("mf_title_hidden", isTitleHidden);
@@ -709,6 +761,7 @@
         }
 
         chats = (await dbGet("mf_chats")) || [];
+        files = (await dbGet("mf_files")) || [];
         currentChatId = (await dbGet("mf_current_chat_id")) || null;
         isSidebarHidden = (await dbGet("mf_sidebar_hidden")) === true;
         isTitleHidden = (await dbGet("mf_title_hidden")) === true;
@@ -732,7 +785,7 @@
           for (let entry of entries) {
             const h = entry.target.style.height;
             if (!h) continue;
-            if (editingMessageIndex !== null) {
+            if (editingMessageIndex !== null || currentView === "file") {
               editHeight = h;
             } else {
               promptHeight = h;
@@ -745,6 +798,16 @@
         chats.sort((a, b) => Number(b.id) - Number(a.id));
 
         if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
+
+        // Auto-resume paused embedding loops on boot
+        for (const f of files) {
+          if (f.isEmbedding && f.progress < 100) {
+            startEmbeddingLoop(f.id);
+          } else if (f.progress >= 100) {
+            f.isEmbedding = false;
+          }
+        }
+
         renderApp();
       }
 
@@ -758,14 +821,14 @@
         const inputVal = $("#chat-input").value || "";
         let context = "";
 
-        if (currentChatId) {
+        if (currentChatId && currentView === "chat") {
           const chat = chats.find((c) => c.id === currentChatId);
           if (chat && chat.messages) {
             context = chat.messages.map((m) => m.content).join(" ");
           }
         }
 
-        if (config.godMode) {
+        if (config.godMode && currentView === "chat") {
           context += " " + (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT);
         }
 
@@ -809,7 +872,26 @@
           : "[hide title]";
       }
 
+      async function resetAllFileEmbeddings() {
+        for (const meta of files) {
+          meta.progress = 0;
+          meta.embeddedCount = 0;
+          meta.chunkCount = 0;
+          meta.isEmbedding = false;
+          const data = await dbGet(`mf_filedata_${meta.id}`);
+          if (data) {
+            data.chunks = null;
+            await dbSet(`mf_filedata_${meta.id}`, data);
+          }
+        }
+        saveState();
+        renderApp();
+      }
+
       function saveConfig() {
+        const oldRAG =
+          config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+
         config = {
           ...config,
           url: $("#cfg-url").value.trim(),
@@ -817,6 +899,13 @@
           models: $("#cfg-models").value.trim(),
           godMode: $("#cfg-godmode").checked,
         };
+
+        const newRAG =
+          config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+        if (oldRAG !== newRAG) {
+          resetAllFileEmbeddings();
+        }
+
         saveState();
         updateModelDropdown();
         renderApp(true);
@@ -862,6 +951,8 @@
         if (!activeSuperSecretSetting) return;
         let val = $("#chat-input").value;
         const key = activeSuperSecretSetting;
+        const oldRAG =
+          config.embeddingsModel + config.chunkSize + config.chunkOverlap;
 
         if (
           key === "godModePrompt" ||
@@ -879,6 +970,12 @@
           }
         }
 
+        const newRAG =
+          config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+        if (oldRAG !== newRAG) {
+          resetAllFileEmbeddings();
+        }
+
         saveState();
         activeSuperSecretSetting = null;
         uncommittedSuperSecretValue = null;
@@ -889,7 +986,16 @@
       function resetSuperSecretSetting() {
         if (!activeSuperSecretSetting) return;
         const key = activeSuperSecretSetting;
+        const oldRAG =
+          config.embeddingsModel + config.chunkSize + config.chunkOverlap;
         config[key] = SETTING_DEFAULTS[key].default;
+
+        const newRAG =
+          config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+        if (oldRAG !== newRAG) {
+          resetAllFileEmbeddings();
+        }
+
         saveState();
         activeSuperSecretSetting = null;
         uncommittedSuperSecretValue = null;
@@ -905,9 +1011,17 @@
 
       function resetAllSuperSecretSettings() {
         if (confirm("Reset ALL Advanced parameters to default?")) {
+          const oldRAG =
+            config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+
           for (let key in SETTING_DEFAULTS) {
             config[key] = SETTING_DEFAULTS[key].default;
           }
+
+          const newRAG =
+            config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+          if (oldRAG !== newRAG) resetAllFileEmbeddings();
+
           saveState();
           if (activeSuperSecretSetting) {
             uncommittedSuperSecretValue = null;
@@ -922,6 +1036,130 @@
       }
 
       init();
+
+      // --- FILE UPLOAD & MANAGEMENT ---
+      async function handleUploadClick() {
+        const picked = await pickFiles(true);
+        if (!picked || !picked.length) return;
+        for (const f of picked) {
+          const text = await readFileText(f);
+          await uploadFile(f.name, text);
+        }
+      }
+
+      async function reuploadFile(id) {
+        const picked = await pickFiles(false);
+        if (!picked || !picked.length) return;
+        const text = await readFileText(picked[0]);
+        const meta = files.find((f) => f.id === id);
+        await uploadFile(meta ? meta.name : picked[0].name, text, id);
+      }
+
+      async function uploadFile(name, text, existingId = null) {
+        let id =
+          existingId || Date.now().toString() + Math.floor(Math.random() * 1000);
+        let meta = files.find((f) => f.id === id);
+
+        if (!meta) {
+          let baseName = name;
+          let counter = 1;
+          while (files.some((f) => f.name === name)) {
+            name = `${baseName} (${counter++})`;
+          }
+          meta = {
+            id,
+            name,
+            progress: 0,
+            isEmbedding: false,
+            chunkCount: 0,
+            embeddedCount: 0,
+          };
+          files.unshift(meta);
+        } else {
+          meta.progress = 0;
+          meta.isEmbedding = false;
+          meta.chunkCount = 0;
+          meta.embeddedCount = 0;
+        }
+
+        await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
+
+        if (currentFileId === id) {
+          currentFileText = text;
+        }
+
+        saveState();
+        renderApp();
+      }
+
+      async function deleteFile(id) {
+        files = files.filter((f) => f.id !== id);
+        await dbDelete(`mf_filedata_${id}`);
+
+        if (currentFileId === id) {
+          currentFileId = null;
+          currentView = "chat";
+          if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
+          else if (!chats.length) newChat();
+        }
+
+        saveState();
+        renderApp();
+      }
+
+      async function toggleEmbedding(id) {
+        const meta = files.find((f) => f.id === id);
+        if (!meta) return;
+        meta.isEmbedding = !meta.isEmbedding;
+        saveState();
+        renderFileList();
+        if (meta.isEmbedding) {
+          startEmbeddingLoop(id);
+        }
+      }
+
+      async function openFile(id) {
+        suspendSuperSecretSettings();
+        resetEditState();
+        currentView = "file";
+        currentFileId = id;
+        if (window.innerWidth <= 768) {
+          isSidebarHidden = true;
+          applySidebarState();
+        }
+        const data = await dbGet(`mf_filedata_${id}`);
+        currentFileText = data ? data.text : "";
+        saveState();
+        renderApp();
+      }
+
+      async function saveFileEdit() {
+        if (!currentFileId) return;
+        const text = $("#chat-input").value;
+        currentFileText = text;
+
+        const meta = files.find((f) => f.id === currentFileId);
+        if (meta) {
+          meta.progress = 0;
+          meta.isEmbedding = false;
+          meta.chunkCount = 0;
+          meta.embeddedCount = 0;
+        }
+
+        const data = await dbGet(`mf_filedata_${currentFileId}`);
+        if (data) {
+          data.text = text;
+          data.chunks = null;
+          await dbSet(`mf_filedata_${currentFileId}`, data);
+        }
+
+        saveState();
+        renderApp(true);
+      }
+
+      function cancelFileEdit() {
+        openFile(currentFileId); // reloads text and resets view cleanly
+      }
 
       // --- IMPORT / EXPORT ---
       function exportChats() {
@@ -1020,6 +1258,8 @@
       function newChat() {
         suspendSuperSecretSettings();
         resetEditState();
+        currentView = "chat";
+        currentFileId = null;
         const id = Date.now().toString();
         chats.unshift({ id, title: "New Chat", messages: [] });
         currentChatId = id;
@@ -1035,6 +1275,8 @@
       function loadChat(id) {
         suspendSuperSecretSettings();
         resetEditState();
+        currentView = "chat";
+        currentFileId = null;
         currentChatId = id;
         if (window.innerWidth <= 768) {
           isSidebarHidden = true;
@@ -1066,6 +1308,8 @@
       function forkChat(msgIndex) {
         suspendSuperSecretSettings();
         resetEditState();
+        currentView = "chat";
+        currentFileId = null;
         const chat = chats.find((c) => c.id === currentChatId);
         const newId = Date.now().toString();
         chats.unshift({
@@ -1105,7 +1349,7 @@
         if (area) {
           area.style.whiteSpace = "";
           area.style.overflowX = "";
-          if (!isSuperSecretSettingsOpen) {
+          if (!isSuperSecretSettingsOpen && currentView !== "file") {
             area.value = "";
             area.style.height = promptHeight;
           }
@@ -1145,10 +1389,17 @@
         area.style.overflowX = area.style.whiteSpace === "pre" ? "auto" : "hidden";
       }
 
-      // --- RENDERING (Template Literals > DOM Building) ---
+      // --- RENDERING ---
       function renderApp(preserveScroll = false) {
+        renderFileList();
         renderChatList();
-        renderCurrentChat(preserveScroll);
+
+        if (currentView === "chat") {
+          renderCurrentChat(preserveScroll);
+        } else if (currentView === "file") {
+          renderCurrentFile(preserveScroll);
+        }
+
         applyInputAreaState();
       }
 
@@ -1162,6 +1413,8 @@
         const secSaveBtn = $("#secret-save-btn");
         const secResetBtn = $("#secret-reset-btn");
         const secCancelBtn = $("#secret-cancel-btn");
+        const fileSaveBtn = $("#file-save-btn");
+        const fileCancelBtn = $("#file-cancel-btn");
 
         // Reset visibilities
         modelSel.classList.add("hidden");
@@ -1171,6 +1424,8 @@
         secSaveBtn.classList.add("hidden");
         secResetBtn.classList.add("hidden");
         secCancelBtn.classList.add("hidden");
+        fileSaveBtn.classList.add("hidden");
+        fileCancelBtn.classList.add("hidden");
 
         if (isSuperSecretSettingsOpen) {
           secSaveBtn.classList.remove("hidden");
@@ -1192,6 +1447,13 @@
             secCancelBtn.disabled = false;
             area.placeholder = SETTING_DEFAULTS[activeSuperSecretSetting].tooltip;
           }
+        } else if (currentView === "file") {
+          fileSaveBtn.classList.remove("hidden");
+          fileCancelBtn.classList.remove("hidden");
+          area.disabled = false;
+          area.placeholder = "Edit file text here...";
+          if (!area.value && currentFileText) area.value = currentFileText;
+          area.style.height = editHeight;
         } else if (editingMessageIndex !== null) {
           saveBtn.classList.remove("hidden");
           cancelBtn.classList.remove("hidden");
@@ -1207,6 +1469,28 @@
         }
       }
 
+      function renderFileList() {
+        const list = $("#file-list");
+        if (!files.length)
+          return (list.innerHTML =
+            '<p style="font-size:0.8em; color:#666;">No files uploaded.</p>');
+
+        list.innerHTML = files
+          .map(
+            (f) => `
+          <div class="chat-item ${f.id === currentFileId && currentView === "file" ? "active" : ""}" data-id="${f.id}" data-type="file">
+            <div class="chat-item-title" data-action="load" title="Ctrl+Click to copy embed tag\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
+            <div class="chat-item-actions">
+              ${f.progress < 100 ? `<button data-action="embed" title="${f.isEmbedding ? "Pause Embedding" : "Start Embedding"}">${f.isEmbedding ? "⏸" : "e"}</button>` : ""}
+              <button data-action="delete" title="Delete File">d</button>
+            </div>
+            <div class="file-progress-bar" style="width: ${f.progress}%"></div>
+          </div>
+        `,
+          )
+          .join("");
+      }
+
       function renderChatList() {
         const list = $("#chat-list");
         if (!chats.length)
@@ -1216,7 +1500,7 @@
         list.innerHTML = chats
           .map(
             (chat) => `
-          <div class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}">
+          <div class="chat-item ${chat.id === currentChatId && currentView === "chat" ? "active" : ""}" data-id="${chat.id}" data-type="chat">
             <div class="chat-item-title" data-action="load" title="Export: Alt+Click">${escapeHTML(chat.title)}</div>
             <div class="chat-item-actions">
               <button data-action="rename" title="Rename">r</button>
@@ -1226,6 +1510,44 @@
         `,
           )
           .join("");
+      }
+
+      function renderCurrentFile(preserveScroll = false) {
+        const container = $("#chat-container");
+        const prevScroll = container.scrollTop;
+        const meta = files.find((f) => f.id === currentFileId);
+
+        if (!meta) {
+          container.innerHTML = '<h3 style="margin:0;">File not found.</h3>';
+          return;
+        }
+
+        let html = `
+          <div class="msg system" style="border-color: #0055ff; background: #e6f0ff;">
+              <div class="msg-meta" style="margin-bottom: 0;">
+                  <span>FILE PREVIEW: ${escapeHTML(meta.name)}</span>
+                  <span style="font-size: 0.85em; color: #555;">${meta.progress}% Embedded</span>
+              </div>
+          </div>
+          <div class="msg-content" style="padding: 0 5px;">
+              ${marked.parse(currentFileText || "*Empty File*")}
+          </div>
+        `;
+
+        container.innerHTML = html;
+
+        renderMathInElement(container, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$", right: "$", display: false },
+          ],
+          output: "htmlAndMathml",
+          throwOnError: false,
+        });
+        Prism.highlightAllUnder(container);
+
+        if (preserveScroll) container.scrollTop = prevScroll;
+        else container.scrollTop = 0;
       }
 
       function renderCurrentChat(preserveScroll = false) {
@@ -1288,7 +1610,6 @@
 
         let html = "";
 
-        // Inject the visual-only read-only system prompt when God Mode is enabled
         if (config.godMode) {
           html += `
             <div class="msg system">
@@ -1309,7 +1630,6 @@
         } else {
           html += chat.messages
             .map((msg, i) => {
-              // Dynamically format <run> blocks for the UI without altering the saved state
               let displayContent = msg.content || "";
               if (msg.role === "assistant") {
                 displayContent = displayContent.replace(
@@ -1379,12 +1699,10 @@
           e.preventDefault();
           isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
           if (!isSuperSecretSettingsOpen) {
-            // User explicitly toggled settings closed, intentionally lose context
             activeSuperSecretSetting = null;
             uncommittedSuperSecretValue = null;
             $("#chat-input").value = "";
           } else {
-            // Restoring context (if suspended earlier by clicking a chat)
             if (activeSuperSecretSetting) {
               const area = $("#chat-input");
               if (uncommittedSuperSecretValue !== null) {
@@ -1402,30 +1720,51 @@
         }
       });
 
-      $("#chat-list").addEventListener("click", (e) => {
+      $("#sidebar").addEventListener("click", (e) => {
         const item = e.target.closest(".chat-item");
         if (!item) return;
         const id = item.dataset.id;
+        const type = item.dataset.type || "chat";
         const action = e.target.dataset.action;
 
-        if (action === "rename") renameChat(id);
-        else if (action === "delete") deleteChat(id);
-        else if (action === "load") {
-          if (e.altKey) {
-            e.preventDefault();
-            exportSingleChat(id);
-          } else if (e.ctrlKey || e.metaKey) {
-            const chat = chats.find((c) => c.id === id);
-            const text =
-              `# ${chat.title}\n\n` +
-              chat.messages
-                .map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`)
-                .join("");
-            navigator.clipboard.writeText(text.trim()).then(() => {
-              item.style.background = "#ccc";
-              setTimeout(() => (item.style.background = ""), 150);
-            });
-          } else loadChat(id);
+        if (type === "chat") {
+          if (action === "rename") renameChat(id);
+          else if (action === "delete") deleteChat(id);
+          else if (action === "load") {
+            if (e.altKey) {
+              e.preventDefault();
+              exportSingleChat(id);
+            } else if (e.ctrlKey || e.metaKey) {
+              const chat = chats.find((c) => c.id === id);
+              const text =
+                `# ${chat.title}\n\n` +
+                chat.messages
+                  .map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`)
+                  .join("");
+              navigator.clipboard.writeText(text.trim()).then(() => {
+                item.style.background = "#ccc";
+                setTimeout(() => (item.style.background = ""), 150);
+              });
+            } else loadChat(id);
+          }
+        } else if (type === "file") {
+          if (action === "delete") deleteFile(id);
+          else if (action === "embed") toggleEmbedding(id);
+          else if (action === "load") {
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault();
+              const meta = files.find((f) => f.id === id);
+              navigator.clipboard.writeText(`[file: ${meta.name}]`).then(() => {
+                item.style.background = "#ccc";
+                setTimeout(() => (item.style.background = ""), 150);
+              });
+            } else if (e.altKey) {
+              e.preventDefault();
+              reuploadFile(id);
+            } else {
+              openFile(id);
+            }
+          }
         }
       });
 
@@ -1433,7 +1772,7 @@
         const btn = e.target.closest("button[data-action]");
         if (!btn) return;
         const msgDiv = btn.closest(".msg");
-        if (!msgDiv || !msgDiv.hasAttribute("data-index")) return; // Ignore visual-only messages
+        if (!msgDiv || !msgDiv.hasAttribute("data-index")) return;
         const index = parseInt(msgDiv.dataset.index, 10);
         if (isNaN(index)) return;
 
@@ -1463,7 +1802,7 @@
         }
       });
 
-      // --- ZERO-STORAGE RAG UTILITIES ---
+      // --- FILE RAG & EMBEDDING UTILITIES ---
       function pickFiles(multiple = true) {
         return new Promise((resolve) => {
           const input = document.createElement("input");
@@ -1538,27 +1877,21 @@
         return data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
       }
 
-      async function processRAG(promptText, requiredFiles, fileContents, btnEl) {
-        const queryText = promptText.replace(/\[file:\s*(.*?)\]/g, "").trim();
-        let queryEmb = null;
-        if (queryText) {
-          if (btnEl) btnEl.textContent = "Embedding query...";
-          queryEmb = (await fetchEmbeddings([queryText]))[0];
-        }
+      // --- BACKGROUND EMBEDDING ENGINE ---
+      async function startEmbeddingLoop(id) {
+        const meta = files.find((f) => f.id === id);
+        if (!meta || !meta.isEmbedding) return;
+        const data = await dbGet(`mf_filedata_${id}`);
+        if (!data) return;
 
-        const chunkSize = parseInt(config.chunkSize) || 1000;
-        const chunkOverlap = parseInt(config.chunkOverlap) || 200;
-        const topK = parseInt(config.topK) || 5;
-
-        let expandedPrompt = promptText;
-
-        for (const filename of requiredFiles) {
-          const text = fileContents[filename];
-          if (!text) continue;
-
+        if (!data.chunks) {
+          const chunkSize = parseInt(config.chunkSize) || 1000;
+          const chunkOverlap = parseInt(config.chunkOverlap) || 200;
+          const text = data.text;
           const chunks = [];
           let start = 0;
           let chunkIndex = 0;
+
           while (start < text.length) {
             let end = start + chunkSize;
             if (end > text.length) end = text.length;
@@ -1567,34 +1900,90 @@
               start: start,
               end: end,
               text: text.substring(start, end),
+              vector: null,
             });
             if (end >= text.length) break;
             start = end - chunkOverlap;
           }
 
-          if (chunks.length === 0) continue;
+          data.chunks = chunks;
+          meta.chunkCount = chunks.length;
+          meta.embeddedCount = 0;
+          await dbSet(`mf_filedata_${id}`, data);
+        }
 
-          const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
-          let fileEmbs = [];
+        const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
 
-          for (let i = 0; i < chunks.length; i += MAX_BATCH) {
-            if (btnEl) {
-              const currentChunk = Math.min(i + MAX_BATCH, chunks.length);
-              const percent = Math.round((currentChunk / chunks.length) * 100);
-              btnEl.textContent = `Embedding ${filename} (${percent}%)`;
-            }
+        while (true) {
+          const currentMeta = files.find((f) => f.id === id);
+          if (!currentMeta || !currentMeta.isEmbedding) break;
 
-            const batchTexts = chunks.slice(i, i + MAX_BATCH).map((c) => c.text);
-            const batchEmbs = await fetchEmbeddings(batchTexts);
-            fileEmbs.push(...batchEmbs);
+          const batch = data.chunks.filter((c) => !c.vector).slice(0, MAX_BATCH);
+          if (batch.length === 0) {
+            currentMeta.progress = 100;
+            currentMeta.isEmbedding = false;
+            break;
           }
 
-          chunks.forEach((c, i) => {
-            c.score = queryEmb ? cosSim(queryEmb, fileEmbs[i]) : -c.index;
+          try {
+            const batchTexts = batch.map((c) => c.text);
+            const embs = await fetchEmbeddings(batchTexts);
+
+            batch.forEach((c, i) => {
+              c.vector = embs[i];
+            });
+
+            currentMeta.embeddedCount += batch.length;
+            currentMeta.progress = Math.round(
+              (currentMeta.embeddedCount / currentMeta.chunkCount) * 100,
+            );
+
+            await dbSet(`mf_filedata_${id}`, data);
+            saveState();
+            renderFileList();
+            await new Promise((r) => setTimeout(r, 100)); // Yield to UI
+          } catch (err) {
+            console.error("Embedding error:", err);
+            currentMeta.isEmbedding = false;
+            saveState();
+            renderFileList();
+            alert(`Embedding failed for ${currentMeta.name}: ${err.message}`);
+            break;
+          }
+        }
+
+        saveState();
+        renderFileList();
+      }
+
+      async function processRAG(promptText, requiredNames, btnEl) {
+        const queryText = promptText.replace(/\[file:\s*(.*?)\]/g, "").trim();
+        let queryEmb = null;
+
+        if (queryText) {
+          if (btnEl) btnEl.textContent = "Embedding query...";
+          queryEmb = (await fetchEmbeddings([queryText]))[0];
+        }
+
+        const topK = parseInt(config.topK) || 5;
+        let expandedPrompt = promptText;
+
+        for (const name of requiredNames) {
+          const meta = files.find((f) => f.name === name);
+          if (!meta) continue;
+
+          const data = await dbGet(`mf_filedata_${meta.id}`);
+          if (!data || !data.chunks) continue;
+
+          const validChunks = data.chunks.filter((c) => c.vector);
+          if (validChunks.length === 0) continue;
+
+          validChunks.forEach((c) => {
+            c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
           });
 
-          chunks.sort((a, b) => b.score - a.score);
-          const topChunks = chunks.slice(0, topK);
+          validChunks.sort((a, b) => b.score - a.score);
+          const topChunks = validChunks.slice(0, topK);
           topChunks.sort((a, b) => a.index - b.index);
 
           let mergedContent = "";
@@ -1605,77 +1994,36 @@
             } else {
               const prev = topChunks[i - 1];
               if (curr.index === prev.index + 1) {
-                mergedContent += text.substring(prev.end, curr.end);
+                mergedContent += data.text.substring(prev.end, curr.end);
               } else {
                 mergedContent += `\n...\n${curr.text}`;
               }
             }
           }
 
-          const fileBlock = `<file name="${filename}">\n${mergedContent}\n</file>`;
-          expandedPrompt = expandedPrompt
-            .split(`[file: ${filename}]`)
-            .join(fileBlock);
+          const fileBlock = `<file name="${name}">\n${mergedContent}\n</file>`;
+          expandedPrompt = expandedPrompt.split(`[file: ${name}]`).join(fileBlock);
         }
 
         return expandedPrompt;
       }
 
-      async function resolveAllMessages(cleanMessages, btnEl, preSelectedFiles = []) {
-        const requiredFiles = new Set();
+      async function resolveAllMessages(cleanMessages, btnEl) {
+        const requiredNames = new Set();
 
         cleanMessages.forEach((msg) => {
           const matches = [...msg.content.matchAll(/\[file:\s*(.*?)\]/g)];
           for (const m of matches) {
-            requiredFiles.add(m[1]);
+            requiredNames.add(m[1]);
           }
         });
 
-        const reqArray = Array.from(requiredFiles);
-        if (reqArray.length === 0) return cleanMessages;
-
-        let allFiles = [...preSelectedFiles];
-        let providedNames = allFiles.map((f) => f.name);
-        let missingFiles = reqArray.filter((name) => !providedNames.includes(name));
-
-        if (missingFiles.length > 0) {
-          btnEl.textContent = "Awaiting required files...";
-          await new Promise((r) => setTimeout(r, 50));
-          alert(
-            `Please select the following files to continue:\n${missingFiles.join("\n")}`,
-          );
-          const newFiles = await pickFiles(true);
-
-          if (!newFiles || newFiles.length === 0) {
-            throw new Error("File selection cancelled.");
-          }
-
-          allFiles.push(...newFiles);
-          providedNames = allFiles.map((f) => f.name);
-          missingFiles = reqArray.filter((name) => !providedNames.includes(name));
-
-          if (missingFiles.length > 0) {
-            throw new Error(`Missing required files:\n${missingFiles.join("\n")}`);
-          }
-        }
-
-        btnEl.textContent = "Reading files...";
-        let fileContents = {};
-        for (const f of allFiles) {
-          if (reqArray.includes(f.name) && !fileContents[f.name]) {
-            fileContents[f.name] = await readFileText(f);
-          }
-        }
+        if (requiredNames.size === 0) return cleanMessages;
 
         for (let i = 0; i < cleanMessages.length; i++) {
           const msg = cleanMessages[i];
           if (/\[file:\s*(.*?)\]/.test(msg.content)) {
-            msg.content = await processRAG(
-              msg.content,
-              reqArray,
-              fileContents,
-              btnEl,
-            );
+            msg.content = await processRAG(msg.content, requiredNames, btnEl);
           }
         }
 
@@ -1745,28 +2093,13 @@
 
         const inputEl = $("#chat-input");
         let text = inputEl.value.trim();
-        let preSelectedFiles = [];
 
         if (!isAutoLoop) {
           if (!text) return;
           if (!config.key && !skipApi)
             return alert("Please enter your API key in the settings first.");
-          if (!currentChatId) newChat();
 
-          // RAG Phase 1: Creation (\embed to placeholders)
-          if (text.includes("\\embed")) {
-            btn.textContent = "Selecting files...";
-            const files = await pickFiles(true);
-            if (files && files.length > 0) {
-              const fileTags = files.map((f) => `[file: ${f.name}]`).join(" ");
-              text = text.replace(/\\embed/g, fileTags);
-              inputEl.value = text;
-              preSelectedFiles = files; // Store files to avoid Phase 2 prompt
-            } else {
-              btn.textContent = "Send";
-              return;
-            }
-          }
+          if (!currentChatId || currentView !== "chat") newChat();
 
           const chat = chats.find((c) => c.id === currentChatId);
 
@@ -1780,7 +2113,6 @@
               titleSource.substring(0, 30) + (titleSource.length > 30 ? "..." : "");
           }
 
-          // Push clean UI text to history BEFORE resolving placeholders for the API
           chat.messages.push({ role: "user", content: text });
           inputEl.value = "";
           saveState();
@@ -1810,12 +2142,8 @@
             });
           }
 
-          // RAG Phase 2: Execution (Inject Context into payload array ONLY)
-          cleanMessages = await resolveAllMessages(
-            cleanMessages,
-            btn,
-            preSelectedFiles,
-          );
+          // Inject File Context from DB
+          cleanMessages = await resolveAllMessages(cleanMessages, btn);
 
           const payload = {
             model: $("#model-select").value,
@@ -1902,6 +2230,8 @@
             saveSuperSecretSetting();
           } else if (editingMessageIndex !== null) {
             saveGlobalEdit();
+          } else if (currentView === "file") {
+            saveFileEdit();
           } else {
             sendMessage(0, e.shiftKey);
           }
@@ -1917,11 +2247,12 @@
         }
         if (e.altKey && e.key.toLowerCase() === "w") {
           e.preventDefault();
-          if (currentChatId) deleteChat(currentChatId);
+          if (currentView === "chat" && currentChatId) deleteChat(currentChatId);
+          if (currentView === "file" && currentFileId) deleteFile(currentFileId);
         }
         if (e.altKey && e.key.toLowerCase() === "r") {
           e.preventDefault();
-          renameChat(currentChatId);
+          if (currentView === "chat" && currentChatId) renameChat(currentChatId);
         }
         if (e.altKey && e.key.toLowerCase() === "p") {
           e.preventDefault();
@@ -1953,14 +2284,16 @@
 
         if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
           e.preventDefault();
-          if (!chats.length) return;
-          let idx = Math.max(
-            0,
-            chats.findIndex((c) => c.id === currentChatId),
-          );
-          if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
-          if (e.key === "ArrowDown" && idx < chats.length - 1)
-            loadChat(chats[idx + 1].id);
+          if (currentView === "chat") {
+            if (!chats.length) return;
+            let idx = Math.max(
+              0,
+              chats.findIndex((c) => c.id === currentChatId),
+            );
+            if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
+            if (e.key === "ArrowDown" && idx < chats.length - 1)
+              loadChat(chats[idx + 1].id);
+          }
         }
 
         if (

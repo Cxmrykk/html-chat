@@ -1,7 +1,14 @@
-// --- RENDERING (Template Literals > DOM Building) ---
+// --- RENDERING ---
 function renderApp(preserveScroll = false) {
+  renderFileList();
   renderChatList();
-  renderCurrentChat(preserveScroll);
+
+  if (currentView === "chat") {
+    renderCurrentChat(preserveScroll);
+  } else if (currentView === "file") {
+    renderCurrentFile(preserveScroll);
+  }
+
   applyInputAreaState();
 }
 
@@ -15,6 +22,8 @@ function applyInputAreaState() {
   const secSaveBtn = $("#secret-save-btn");
   const secResetBtn = $("#secret-reset-btn");
   const secCancelBtn = $("#secret-cancel-btn");
+  const fileSaveBtn = $("#file-save-btn");
+  const fileCancelBtn = $("#file-cancel-btn");
 
   // Reset visibilities
   modelSel.classList.add("hidden");
@@ -24,6 +33,8 @@ function applyInputAreaState() {
   secSaveBtn.classList.add("hidden");
   secResetBtn.classList.add("hidden");
   secCancelBtn.classList.add("hidden");
+  fileSaveBtn.classList.add("hidden");
+  fileCancelBtn.classList.add("hidden");
 
   if (isSuperSecretSettingsOpen) {
     secSaveBtn.classList.remove("hidden");
@@ -45,6 +56,13 @@ function applyInputAreaState() {
       secCancelBtn.disabled = false;
       area.placeholder = SETTING_DEFAULTS[activeSuperSecretSetting].tooltip;
     }
+  } else if (currentView === "file") {
+    fileSaveBtn.classList.remove("hidden");
+    fileCancelBtn.classList.remove("hidden");
+    area.disabled = false;
+    area.placeholder = "Edit file text here...";
+    if (!area.value && currentFileText) area.value = currentFileText;
+    area.style.height = editHeight;
   } else if (editingMessageIndex !== null) {
     saveBtn.classList.remove("hidden");
     cancelBtn.classList.remove("hidden");
@@ -60,6 +78,28 @@ function applyInputAreaState() {
   }
 }
 
+function renderFileList() {
+  const list = $("#file-list");
+  if (!files.length)
+    return (list.innerHTML =
+      '<p style="font-size:0.8em; color:#666;">No files uploaded.</p>');
+
+  list.innerHTML = files
+    .map(
+      (f) => `
+    <div class="chat-item ${f.id === currentFileId && currentView === "file" ? "active" : ""}" data-id="${f.id}" data-type="file">
+      <div class="chat-item-title" data-action="load" title="Ctrl+Click to copy embed tag\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
+      <div class="chat-item-actions">
+        ${f.progress < 100 ? `<button data-action="embed" title="${f.isEmbedding ? "Pause Embedding" : "Start Embedding"}">${f.isEmbedding ? "⏸" : "e"}</button>` : ""}
+        <button data-action="delete" title="Delete File">d</button>
+      </div>
+      <div class="file-progress-bar" style="width: ${f.progress}%"></div>
+    </div>
+  `,
+    )
+    .join("");
+}
+
 function renderChatList() {
   const list = $("#chat-list");
   if (!chats.length)
@@ -69,7 +109,7 @@ function renderChatList() {
   list.innerHTML = chats
     .map(
       (chat) => `
-    <div class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}">
+    <div class="chat-item ${chat.id === currentChatId && currentView === "chat" ? "active" : ""}" data-id="${chat.id}" data-type="chat">
       <div class="chat-item-title" data-action="load" title="Export: Alt+Click">${escapeHTML(chat.title)}</div>
       <div class="chat-item-actions">
         <button data-action="rename" title="Rename">r</button>
@@ -79,6 +119,44 @@ function renderChatList() {
   `,
     )
     .join("");
+}
+
+function renderCurrentFile(preserveScroll = false) {
+  const container = $("#chat-container");
+  const prevScroll = container.scrollTop;
+  const meta = files.find((f) => f.id === currentFileId);
+
+  if (!meta) {
+    container.innerHTML = '<h3 style="margin:0;">File not found.</h3>';
+    return;
+  }
+
+  let html = `
+    <div class="msg system" style="border-color: #0055ff; background: #e6f0ff;">
+        <div class="msg-meta" style="margin-bottom: 0;">
+            <span>FILE PREVIEW: ${escapeHTML(meta.name)}</span>
+            <span style="font-size: 0.85em; color: #555;">${meta.progress}% Embedded</span>
+        </div>
+    </div>
+    <div class="msg-content" style="padding: 0 5px;">
+        ${marked.parse(currentFileText || "*Empty File*")}
+    </div>
+  `;
+
+  container.innerHTML = html;
+
+  renderMathInElement(container, {
+    delimiters: [
+      { left: "$$", right: "$$", display: true },
+      { left: "$", right: "$", display: false },
+    ],
+    output: "htmlAndMathml",
+    throwOnError: false,
+  });
+  Prism.highlightAllUnder(container);
+
+  if (preserveScroll) container.scrollTop = prevScroll;
+  else container.scrollTop = 0;
 }
 
 function renderCurrentChat(preserveScroll = false) {
@@ -141,7 +219,6 @@ function renderCurrentChat(preserveScroll = false) {
 
   let html = "";
 
-  // Inject the visual-only read-only system prompt when God Mode is enabled
   if (config.godMode) {
     html += `
       <div class="msg system">
@@ -162,7 +239,6 @@ function renderCurrentChat(preserveScroll = false) {
   } else {
     html += chat.messages
       .map((msg, i) => {
-        // Dynamically format <run> blocks for the UI without altering the saved state
         let displayContent = msg.content || "";
         if (msg.role === "assistant") {
           displayContent = displayContent.replace(

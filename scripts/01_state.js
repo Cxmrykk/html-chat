@@ -78,10 +78,25 @@ async function dbSet(key, val) {
   });
 }
 
+async function dbDelete(key) {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.delete(key);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
 // Global state variables
 let config = {};
 let chats = [];
+let files = [];
 let currentChatId = null;
+let currentView = "chat"; // 'chat' or 'file'
+let currentFileId = null;
+let currentFileText = ""; // Dynamically loaded from DB, not saved to main state array
 let currentAbortController = null;
 let isSidebarHidden = false;
 let isTitleHidden = false;
@@ -132,7 +147,7 @@ const SETTING_DEFAULTS = {
   },
   embeddingsModel: {
     default: "text-embedding-3-small",
-    tooltip: "Model used for processing local RAG \\embed commands.",
+    tooltip: "Model used for processing local RAG commands.",
   },
   chunkSize: {
     default: "1000",
@@ -179,6 +194,7 @@ marked.use({
 function saveState() {
   dbSet("mf_config", config);
   dbSet("mf_chats", chats);
+  dbSet("mf_files", files);
   dbSet("mf_current_chat_id", currentChatId || "");
   dbSet("mf_sidebar_hidden", isSidebarHidden);
   dbSet("mf_title_hidden", isTitleHidden);
@@ -203,6 +219,7 @@ async function init() {
   }
 
   chats = (await dbGet("mf_chats")) || [];
+  files = (await dbGet("mf_files")) || [];
   currentChatId = (await dbGet("mf_current_chat_id")) || null;
   isSidebarHidden = (await dbGet("mf_sidebar_hidden")) === true;
   isTitleHidden = (await dbGet("mf_title_hidden")) === true;
@@ -226,7 +243,7 @@ async function init() {
     for (let entry of entries) {
       const h = entry.target.style.height;
       if (!h) continue;
-      if (editingMessageIndex !== null) {
+      if (editingMessageIndex !== null || currentView === "file") {
         editHeight = h;
       } else {
         promptHeight = h;
@@ -239,6 +256,16 @@ async function init() {
   chats.sort((a, b) => Number(b.id) - Number(a.id));
 
   if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
+
+  // Auto-resume paused embedding loops on boot
+  for (const f of files) {
+    if (f.isEmbedding && f.progress < 100) {
+      startEmbeddingLoop(f.id);
+    } else if (f.progress >= 100) {
+      f.isEmbedding = false;
+    }
+  }
+
   renderApp();
 }
 
@@ -252,14 +279,14 @@ function updateTokenCount() {
   const inputVal = $("#chat-input").value || "";
   let context = "";
 
-  if (currentChatId) {
+  if (currentChatId && currentView === "chat") {
     const chat = chats.find((c) => c.id === currentChatId);
     if (chat && chat.messages) {
       context = chat.messages.map((m) => m.content).join(" ");
     }
   }
 
-  if (config.godMode) {
+  if (config.godMode && currentView === "chat") {
     context += " " + (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT);
   }
 
@@ -303,7 +330,26 @@ function applyTitleState() {
     : "[hide title]";
 }
 
+async function resetAllFileEmbeddings() {
+  for (const meta of files) {
+    meta.progress = 0;
+    meta.embeddedCount = 0;
+    meta.chunkCount = 0;
+    meta.isEmbedding = false;
+    const data = await dbGet(`mf_filedata_${meta.id}`);
+    if (data) {
+      data.chunks = null;
+      await dbSet(`mf_filedata_${meta.id}`, data);
+    }
+  }
+  saveState();
+  renderApp();
+}
+
 function saveConfig() {
+  const oldRAG =
+    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+
   config = {
     ...config,
     url: $("#cfg-url").value.trim(),
@@ -311,6 +357,13 @@ function saveConfig() {
     models: $("#cfg-models").value.trim(),
     godMode: $("#cfg-godmode").checked,
   };
+
+  const newRAG =
+    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+  if (oldRAG !== newRAG) {
+    resetAllFileEmbeddings();
+  }
+
   saveState();
   updateModelDropdown();
   renderApp(true);
@@ -356,6 +409,8 @@ function saveSuperSecretSetting() {
   if (!activeSuperSecretSetting) return;
   let val = $("#chat-input").value;
   const key = activeSuperSecretSetting;
+  const oldRAG =
+    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
 
   if (
     key === "godModePrompt" ||
@@ -373,6 +428,12 @@ function saveSuperSecretSetting() {
     }
   }
 
+  const newRAG =
+    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+  if (oldRAG !== newRAG) {
+    resetAllFileEmbeddings();
+  }
+
   saveState();
   activeSuperSecretSetting = null;
   uncommittedSuperSecretValue = null;
@@ -383,7 +444,16 @@ function saveSuperSecretSetting() {
 function resetSuperSecretSetting() {
   if (!activeSuperSecretSetting) return;
   const key = activeSuperSecretSetting;
+  const oldRAG =
+    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
   config[key] = SETTING_DEFAULTS[key].default;
+
+  const newRAG =
+    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+  if (oldRAG !== newRAG) {
+    resetAllFileEmbeddings();
+  }
+
   saveState();
   activeSuperSecretSetting = null;
   uncommittedSuperSecretValue = null;
@@ -399,9 +469,17 @@ function cancelSuperSecretSetting() {
 
 function resetAllSuperSecretSettings() {
   if (confirm("Reset ALL Advanced parameters to default?")) {
+    const oldRAG =
+      config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+
     for (let key in SETTING_DEFAULTS) {
       config[key] = SETTING_DEFAULTS[key].default;
     }
+
+    const newRAG =
+      config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+    if (oldRAG !== newRAG) resetAllFileEmbeddings();
+
     saveState();
     if (activeSuperSecretSetting) {
       uncommittedSuperSecretValue = null;

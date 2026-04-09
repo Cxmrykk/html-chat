@@ -1,4 +1,4 @@
-// --- ZERO-STORAGE RAG UTILITIES ---
+// --- FILE RAG & EMBEDDING UTILITIES ---
 function pickFiles(multiple = true) {
   return new Promise((resolve) => {
     const input = document.createElement("input");
@@ -73,27 +73,21 @@ async function fetchEmbeddings(texts) {
   return data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }
 
-async function processRAG(promptText, requiredFiles, fileContents, btnEl) {
-  const queryText = promptText.replace(/\[file:\s*(.*?)\]/g, "").trim();
-  let queryEmb = null;
-  if (queryText) {
-    if (btnEl) btnEl.textContent = "Embedding query...";
-    queryEmb = (await fetchEmbeddings([queryText]))[0];
-  }
+// --- BACKGROUND EMBEDDING ENGINE ---
+async function startEmbeddingLoop(id) {
+  const meta = files.find((f) => f.id === id);
+  if (!meta || !meta.isEmbedding) return;
+  const data = await dbGet(`mf_filedata_${id}`);
+  if (!data) return;
 
-  const chunkSize = parseInt(config.chunkSize) || 1000;
-  const chunkOverlap = parseInt(config.chunkOverlap) || 200;
-  const topK = parseInt(config.topK) || 5;
-
-  let expandedPrompt = promptText;
-
-  for (const filename of requiredFiles) {
-    const text = fileContents[filename];
-    if (!text) continue;
-
+  if (!data.chunks) {
+    const chunkSize = parseInt(config.chunkSize) || 1000;
+    const chunkOverlap = parseInt(config.chunkOverlap) || 200;
+    const text = data.text;
     const chunks = [];
     let start = 0;
     let chunkIndex = 0;
+
     while (start < text.length) {
       let end = start + chunkSize;
       if (end > text.length) end = text.length;
@@ -102,34 +96,90 @@ async function processRAG(promptText, requiredFiles, fileContents, btnEl) {
         start: start,
         end: end,
         text: text.substring(start, end),
+        vector: null,
       });
       if (end >= text.length) break;
       start = end - chunkOverlap;
     }
 
-    if (chunks.length === 0) continue;
+    data.chunks = chunks;
+    meta.chunkCount = chunks.length;
+    meta.embeddedCount = 0;
+    await dbSet(`mf_filedata_${id}`, data);
+  }
 
-    const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
-    let fileEmbs = [];
+  const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
 
-    for (let i = 0; i < chunks.length; i += MAX_BATCH) {
-      if (btnEl) {
-        const currentChunk = Math.min(i + MAX_BATCH, chunks.length);
-        const percent = Math.round((currentChunk / chunks.length) * 100);
-        btnEl.textContent = `Embedding ${filename} (${percent}%)`;
-      }
+  while (true) {
+    const currentMeta = files.find((f) => f.id === id);
+    if (!currentMeta || !currentMeta.isEmbedding) break;
 
-      const batchTexts = chunks.slice(i, i + MAX_BATCH).map((c) => c.text);
-      const batchEmbs = await fetchEmbeddings(batchTexts);
-      fileEmbs.push(...batchEmbs);
+    const batch = data.chunks.filter((c) => !c.vector).slice(0, MAX_BATCH);
+    if (batch.length === 0) {
+      currentMeta.progress = 100;
+      currentMeta.isEmbedding = false;
+      break;
     }
 
-    chunks.forEach((c, i) => {
-      c.score = queryEmb ? cosSim(queryEmb, fileEmbs[i]) : -c.index;
+    try {
+      const batchTexts = batch.map((c) => c.text);
+      const embs = await fetchEmbeddings(batchTexts);
+
+      batch.forEach((c, i) => {
+        c.vector = embs[i];
+      });
+
+      currentMeta.embeddedCount += batch.length;
+      currentMeta.progress = Math.round(
+        (currentMeta.embeddedCount / currentMeta.chunkCount) * 100,
+      );
+
+      await dbSet(`mf_filedata_${id}`, data);
+      saveState();
+      renderFileList();
+      await new Promise((r) => setTimeout(r, 100)); // Yield to UI
+    } catch (err) {
+      console.error("Embedding error:", err);
+      currentMeta.isEmbedding = false;
+      saveState();
+      renderFileList();
+      alert(`Embedding failed for ${currentMeta.name}: ${err.message}`);
+      break;
+    }
+  }
+
+  saveState();
+  renderFileList();
+}
+
+async function processRAG(promptText, requiredNames, btnEl) {
+  const queryText = promptText.replace(/\[file:\s*(.*?)\]/g, "").trim();
+  let queryEmb = null;
+
+  if (queryText) {
+    if (btnEl) btnEl.textContent = "Embedding query...";
+    queryEmb = (await fetchEmbeddings([queryText]))[0];
+  }
+
+  const topK = parseInt(config.topK) || 5;
+  let expandedPrompt = promptText;
+
+  for (const name of requiredNames) {
+    const meta = files.find((f) => f.name === name);
+    if (!meta) continue;
+
+    const data = await dbGet(`mf_filedata_${meta.id}`);
+    if (!data || !data.chunks) continue;
+
+    const validChunks = data.chunks.filter((c) => c.vector);
+    if (validChunks.length === 0) continue;
+
+    validChunks.forEach((c) => {
+      c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
     });
 
-    chunks.sort((a, b) => b.score - a.score);
-    const topChunks = chunks.slice(0, topK);
+    validChunks.sort((a, b) => b.score - a.score);
+    const topChunks = validChunks.slice(0, topK);
     topChunks.sort((a, b) => a.index - b.index);
 
     let mergedContent = "";
@@ -140,77 +190,36 @@ async function processRAG(promptText, requiredFiles, fileContents, btnEl) {
       } else {
         const prev = topChunks[i - 1];
         if (curr.index === prev.index + 1) {
-          mergedContent += text.substring(prev.end, curr.end);
+          mergedContent += data.text.substring(prev.end, curr.end);
         } else {
           mergedContent += `\n...\n${curr.text}`;
         }
       }
     }
 
-    const fileBlock = `<file name="${filename}">\n${mergedContent}\n</file>`;
-    expandedPrompt = expandedPrompt
-      .split(`[file: ${filename}]`)
-      .join(fileBlock);
+    const fileBlock = `<file name="${name}">\n${mergedContent}\n</file>`;
+    expandedPrompt = expandedPrompt.split(`[file: ${name}]`).join(fileBlock);
   }
 
   return expandedPrompt;
 }
 
-async function resolveAllMessages(cleanMessages, btnEl, preSelectedFiles = []) {
-  const requiredFiles = new Set();
+async function resolveAllMessages(cleanMessages, btnEl) {
+  const requiredNames = new Set();
 
   cleanMessages.forEach((msg) => {
     const matches = [...msg.content.matchAll(/\[file:\s*(.*?)\]/g)];
     for (const m of matches) {
-      requiredFiles.add(m[1]);
+      requiredNames.add(m[1]);
     }
   });
 
-  const reqArray = Array.from(requiredFiles);
-  if (reqArray.length === 0) return cleanMessages;
-
-  let allFiles = [...preSelectedFiles];
-  let providedNames = allFiles.map((f) => f.name);
-  let missingFiles = reqArray.filter((name) => !providedNames.includes(name));
-
-  if (missingFiles.length > 0) {
-    btnEl.textContent = "Awaiting required files...";
-    await new Promise((r) => setTimeout(r, 50));
-    alert(
-      `Please select the following files to continue:\n${missingFiles.join("\n")}`,
-    );
-    const newFiles = await pickFiles(true);
-
-    if (!newFiles || newFiles.length === 0) {
-      throw new Error("File selection cancelled.");
-    }
-
-    allFiles.push(...newFiles);
-    providedNames = allFiles.map((f) => f.name);
-    missingFiles = reqArray.filter((name) => !providedNames.includes(name));
-
-    if (missingFiles.length > 0) {
-      throw new Error(`Missing required files:\n${missingFiles.join("\n")}`);
-    }
-  }
-
-  btnEl.textContent = "Reading files...";
-  let fileContents = {};
-  for (const f of allFiles) {
-    if (reqArray.includes(f.name) && !fileContents[f.name]) {
-      fileContents[f.name] = await readFileText(f);
-    }
-  }
+  if (requiredNames.size === 0) return cleanMessages;
 
   for (let i = 0; i < cleanMessages.length; i++) {
     const msg = cleanMessages[i];
     if (/\[file:\s*(.*?)\]/.test(msg.content)) {
-      msg.content = await processRAG(
-        msg.content,
-        reqArray,
-        fileContents,
-        btnEl,
-      );
+      msg.content = await processRAG(msg.content, requiredNames, btnEl);
     }
   }
 
@@ -280,28 +289,13 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
 
   const inputEl = $("#chat-input");
   let text = inputEl.value.trim();
-  let preSelectedFiles = [];
 
   if (!isAutoLoop) {
     if (!text) return;
     if (!config.key && !skipApi)
       return alert("Please enter your API key in the settings first.");
-    if (!currentChatId) newChat();
 
-    // RAG Phase 1: Creation (\embed to placeholders)
-    if (text.includes("\\embed")) {
-      btn.textContent = "Selecting files...";
-      const files = await pickFiles(true);
-      if (files && files.length > 0) {
-        const fileTags = files.map((f) => `[file: ${f.name}]`).join(" ");
-        text = text.replace(/\\embed/g, fileTags);
-        inputEl.value = text;
-        preSelectedFiles = files; // Store files to avoid Phase 2 prompt
-      } else {
-        btn.textContent = "Send";
-        return;
-      }
-    }
+    if (!currentChatId || currentView !== "chat") newChat();
 
     const chat = chats.find((c) => c.id === currentChatId);
 
@@ -315,7 +309,6 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
         titleSource.substring(0, 30) + (titleSource.length > 30 ? "..." : "");
     }
 
-    // Push clean UI text to history BEFORE resolving placeholders for the API
     chat.messages.push({ role: "user", content: text });
     inputEl.value = "";
     saveState();
@@ -345,12 +338,8 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
       });
     }
 
-    // RAG Phase 2: Execution (Inject Context into payload array ONLY)
-    cleanMessages = await resolveAllMessages(
-      cleanMessages,
-      btn,
-      preSelectedFiles,
-    );
+    // Inject File Context from DB
+    cleanMessages = await resolveAllMessages(cleanMessages, btn);
 
     const payload = {
       model: $("#model-select").value,
@@ -437,6 +426,8 @@ $("#chat-input").addEventListener("keydown", (e) => {
       saveSuperSecretSetting();
     } else if (editingMessageIndex !== null) {
       saveGlobalEdit();
+    } else if (currentView === "file") {
+      saveFileEdit();
     } else {
       sendMessage(0, e.shiftKey);
     }
@@ -452,11 +443,12 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.altKey && e.key.toLowerCase() === "w") {
     e.preventDefault();
-    if (currentChatId) deleteChat(currentChatId);
+    if (currentView === "chat" && currentChatId) deleteChat(currentChatId);
+    if (currentView === "file" && currentFileId) deleteFile(currentFileId);
   }
   if (e.altKey && e.key.toLowerCase() === "r") {
     e.preventDefault();
-    renameChat(currentChatId);
+    if (currentView === "chat" && currentChatId) renameChat(currentChatId);
   }
   if (e.altKey && e.key.toLowerCase() === "p") {
     e.preventDefault();
@@ -488,14 +480,16 @@ document.addEventListener("keydown", (e) => {
 
   if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
     e.preventDefault();
-    if (!chats.length) return;
-    let idx = Math.max(
-      0,
-      chats.findIndex((c) => c.id === currentChatId),
-    );
-    if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
-    if (e.key === "ArrowDown" && idx < chats.length - 1)
-      loadChat(chats[idx + 1].id);
+    if (currentView === "chat") {
+      if (!chats.length) return;
+      let idx = Math.max(
+        0,
+        chats.findIndex((c) => c.id === currentChatId),
+      );
+      if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
+      if (e.key === "ArrowDown" && idx < chats.length - 1)
+        loadChat(chats[idx + 1].id);
+    }
   }
 
   if (

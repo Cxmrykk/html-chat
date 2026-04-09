@@ -4,12 +4,10 @@ $("#settings-heading").addEventListener("click", (e) => {
     e.preventDefault();
     isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
     if (!isSuperSecretSettingsOpen) {
-      // User explicitly toggled settings closed, intentionally lose context
       activeSuperSecretSetting = null;
       uncommittedSuperSecretValue = null;
       $("#chat-input").value = "";
     } else {
-      // Restoring context (if suspended earlier by clicking a chat)
       if (activeSuperSecretSetting) {
         const area = $("#chat-input");
         if (uncommittedSuperSecretValue !== null) {
@@ -27,30 +25,51 @@ $("#settings-heading").addEventListener("click", (e) => {
   }
 });
 
-$("#chat-list").addEventListener("click", (e) => {
+$("#sidebar").addEventListener("click", (e) => {
   const item = e.target.closest(".chat-item");
   if (!item) return;
   const id = item.dataset.id;
+  const type = item.dataset.type || "chat";
   const action = e.target.dataset.action;
 
-  if (action === "rename") renameChat(id);
-  else if (action === "delete") deleteChat(id);
-  else if (action === "load") {
-    if (e.altKey) {
-      e.preventDefault();
-      exportSingleChat(id);
-    } else if (e.ctrlKey || e.metaKey) {
-      const chat = chats.find((c) => c.id === id);
-      const text =
-        `# ${chat.title}\n\n` +
-        chat.messages
-          .map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`)
-          .join("");
-      navigator.clipboard.writeText(text.trim()).then(() => {
-        item.style.background = "#ccc";
-        setTimeout(() => (item.style.background = ""), 150);
-      });
-    } else loadChat(id);
+  if (type === "chat") {
+    if (action === "rename") renameChat(id);
+    else if (action === "delete") deleteChat(id);
+    else if (action === "load") {
+      if (e.altKey) {
+        e.preventDefault();
+        exportSingleChat(id);
+      } else if (e.ctrlKey || e.metaKey) {
+        const chat = chats.find((c) => c.id === id);
+        const text =
+          `# ${chat.title}\n\n` +
+          chat.messages
+            .map((m) => `## ${m.role.toUpperCase()}\n${m.content}\n\n`)
+            .join("");
+        navigator.clipboard.writeText(text.trim()).then(() => {
+          item.style.background = "#ccc";
+          setTimeout(() => (item.style.background = ""), 150);
+        });
+      } else loadChat(id);
+    }
+  } else if (type === "file") {
+    if (action === "delete") deleteFile(id);
+    else if (action === "embed") toggleEmbedding(id);
+    else if (action === "load") {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const meta = files.find((f) => f.id === id);
+        navigator.clipboard.writeText(`[file: ${meta.name}]`).then(() => {
+          item.style.background = "#ccc";
+          setTimeout(() => (item.style.background = ""), 150);
+        });
+      } else if (e.altKey) {
+        e.preventDefault();
+        reuploadFile(id);
+      } else {
+        openFile(id);
+      }
+    }
   }
 });
 
@@ -58,7 +77,7 @@ $("#chat-container").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
   const msgDiv = btn.closest(".msg");
-  if (!msgDiv || !msgDiv.hasAttribute("data-index")) return; // Ignore visual-only messages
+  if (!msgDiv || !msgDiv.hasAttribute("data-index")) return;
   const index = parseInt(msgDiv.dataset.index, 10);
   if (isNaN(index)) return;
 

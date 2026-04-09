@@ -1,3 +1,127 @@
+// --- FILE UPLOAD & MANAGEMENT ---
+async function handleUploadClick() {
+  const picked = await pickFiles(true);
+  if (!picked || !picked.length) return;
+  for (const f of picked) {
+    const text = await readFileText(f);
+    await uploadFile(f.name, text);
+  }
+}
+
+async function reuploadFile(id) {
+  const picked = await pickFiles(false);
+  if (!picked || !picked.length) return;
+  const text = await readFileText(picked[0]);
+  const meta = files.find((f) => f.id === id);
+  await uploadFile(meta ? meta.name : picked[0].name, text, id);
+}
+
+async function uploadFile(name, text, existingId = null) {
+  let id =
+    existingId || Date.now().toString() + Math.floor(Math.random() * 1000);
+  let meta = files.find((f) => f.id === id);
+
+  if (!meta) {
+    let baseName = name;
+    let counter = 1;
+    while (files.some((f) => f.name === name)) {
+      name = `${baseName} (${counter++})`;
+    }
+    meta = {
+      id,
+      name,
+      progress: 0,
+      isEmbedding: false,
+      chunkCount: 0,
+      embeddedCount: 0,
+    };
+    files.unshift(meta);
+  } else {
+    meta.progress = 0;
+    meta.isEmbedding = false;
+    meta.chunkCount = 0;
+    meta.embeddedCount = 0;
+  }
+
+  await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
+
+  if (currentFileId === id) {
+    currentFileText = text;
+  }
+
+  saveState();
+  renderApp();
+}
+
+async function deleteFile(id) {
+  files = files.filter((f) => f.id !== id);
+  await dbDelete(`mf_filedata_${id}`);
+
+  if (currentFileId === id) {
+    currentFileId = null;
+    currentView = "chat";
+    if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
+    else if (!chats.length) newChat();
+  }
+
+  saveState();
+  renderApp();
+}
+
+async function toggleEmbedding(id) {
+  const meta = files.find((f) => f.id === id);
+  if (!meta) return;
+  meta.isEmbedding = !meta.isEmbedding;
+  saveState();
+  renderFileList();
+  if (meta.isEmbedding) {
+    startEmbeddingLoop(id);
+  }
+}
+
+async function openFile(id) {
+  suspendSuperSecretSettings();
+  resetEditState();
+  currentView = "file";
+  currentFileId = id;
+  if (window.innerWidth <= 768) {
+    isSidebarHidden = true;
+    applySidebarState();
+  }
+  const data = await dbGet(`mf_filedata_${id}`);
+  currentFileText = data ? data.text : "";
+  saveState();
+  renderApp();
+}
+
+async function saveFileEdit() {
+  if (!currentFileId) return;
+  const text = $("#chat-input").value;
+  currentFileText = text;
+
+  const meta = files.find((f) => f.id === currentFileId);
+  if (meta) {
+    meta.progress = 0;
+    meta.isEmbedding = false;
+    meta.chunkCount = 0;
+    meta.embeddedCount = 0;
+  }
+
+  const data = await dbGet(`mf_filedata_${currentFileId}`);
+  if (data) {
+    data.text = text;
+    data.chunks = null;
+    await dbSet(`mf_filedata_${currentFileId}`, data);
+  }
+
+  saveState();
+  renderApp(true);
+}
+
+function cancelFileEdit() {
+  openFile(currentFileId); // reloads text and resets view cleanly
+}
+
 // --- IMPORT / EXPORT ---
 function exportChats() {
   const dataStr = JSON.stringify(chats, null, 2);
@@ -95,6 +219,8 @@ function handleNewChatClick(e) {
 function newChat() {
   suspendSuperSecretSettings();
   resetEditState();
+  currentView = "chat";
+  currentFileId = null;
   const id = Date.now().toString();
   chats.unshift({ id, title: "New Chat", messages: [] });
   currentChatId = id;
@@ -110,6 +236,8 @@ function newChat() {
 function loadChat(id) {
   suspendSuperSecretSettings();
   resetEditState();
+  currentView = "chat";
+  currentFileId = null;
   currentChatId = id;
   if (window.innerWidth <= 768) {
     isSidebarHidden = true;
@@ -141,6 +269,8 @@ function renameChat(id) {
 function forkChat(msgIndex) {
   suspendSuperSecretSettings();
   resetEditState();
+  currentView = "chat";
+  currentFileId = null;
   const chat = chats.find((c) => c.id === currentChatId);
   const newId = Date.now().toString();
   chats.unshift({
@@ -180,7 +310,7 @@ function resetEditState() {
   if (area) {
     area.style.whiteSpace = "";
     area.style.overflowX = "";
-    if (!isSuperSecretSettingsOpen) {
+    if (!isSuperSecretSettingsOpen && currentView !== "file") {
       area.value = "";
       area.style.height = promptHeight;
     }

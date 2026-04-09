@@ -254,6 +254,7 @@ body.ctrl-down pre:hover code {
 }
 
 .chat-item {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -287,6 +288,16 @@ body.ctrl-down pre:hover code {
   font-size: 0.7em;
   padding: 2px 5px;
   margin-left: 2px;
+}
+
+.file-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: #0055ff;
+  width: 0%;
+  transition: width 0.3s ease;
 }
 
 .config-box {
