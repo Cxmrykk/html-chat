@@ -75,6 +75,8 @@ async function fetchEmbeddings(texts) {
 
 // --- BACKGROUND EMBEDDING ENGINE ---
 async function startEmbeddingLoop(id) {
+  if (!config.embeddingsModel || config.embeddingsModel.trim() === "") return;
+
   const meta = files.find((f) => f.id === id);
   if (!meta || !meta.isEmbedding) return;
   const data = await dbGet(`mf_filedata_${id}`);
@@ -160,98 +162,123 @@ async function resolveAllMessages(messages, btnEl) {
 
     if (msg.role === "file") {
       const meta = files.find((f) => f.id === msg.fileId);
-      let fileContent = "*File not found or unindexed.*";
-      let actualPrompt = msg.prompt ? msg.prompt.trim() : "";
-      let implicitSearchUsed = false;
+      const mode = msg.mode || "embed";
 
-      // Look ahead for user messages if no explicit prompt is set
-      if (!actualPrompt) {
-        let lookaheadText = [];
-        for (let j = i + 1; j < messages.length; j++) {
-          const nextMsg = messages[j];
-          if (nextMsg.role === "assistant") break; // Stop at the next assistant reply
-          if (nextMsg.role === "user" && nextMsg.content) {
-            lookaheadText.push(nextMsg.content);
+      if (mode === "full") {
+        let fileContent = msg.content;
+        if (!fileContent && meta) {
+          const data = await dbGet(`mf_filedata_${meta.id}`);
+          if (data) {
+            const extMatch = (meta.name || "").match(/\.([^.]+)$/);
+            const ext = extMatch ? extMatch[1] : "txt";
+            const blockTicks = data.text.includes("```") ? "````" : "```";
+            fileContent = `\`${meta.name}\`:\n\n${blockTicks}${ext}\n${data.text}\n${blockTicks}`;
           }
         }
-        actualPrompt = lookaheadText.join("\n").trim();
-        if (actualPrompt) implicitSearchUsed = true;
-      }
+        resolved.push({
+          role: "user",
+          content: fileContent || "*File not found.*",
+        });
+      } else {
+        let fileContent = "*File not found.*";
 
-      if (meta) {
-        const data = await dbGet(`mf_filedata_${meta.id}`);
-        if (data && data.chunks) {
-          const validChunks = data.chunks.filter((c) => c.vector);
-          if (validChunks.length > 0) {
-            let queryEmb = null;
+        if (meta) {
+          const data = await dbGet(`mf_filedata_${meta.id}`);
+          if (data) {
+            let actualPrompt = msg.prompt ? msg.prompt.trim() : "";
+            let implicitSearchUsed = false;
 
-            if (actualPrompt) {
-              if (btnEl)
-                btnEl.textContent = `Embedding prompt for ${meta.name}...`;
-              queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
-            }
-
-            validChunks.forEach((c) => {
-              c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
-            });
-
-            const threshold = parseFloat(config.ragThreshold) || 0.0;
-            let topChunks = validChunks.filter(
-              (c) => !queryEmb || c.score >= threshold,
-            );
-
-            topChunks.sort((a, b) => b.score - a.score);
-
-            const maxTokens = msg.maxTokens || 5000;
-            let currentTokens = 0;
-            let selectedChunks = [];
-
-            for (const c of topChunks) {
-              const chunkTokens = Math.ceil(c.text.length / 4);
-              if (
-                selectedChunks.length > 0 &&
-                currentTokens + chunkTokens > maxTokens
-              ) {
-                break;
-              }
-              selectedChunks.push(c);
-              currentTokens += chunkTokens;
-            }
-
-            selectedChunks.sort((a, b) => a.index - b.index);
-
-            let mergedContent = "";
-            for (let j = 0; j < selectedChunks.length; j++) {
-              const curr = selectedChunks[j];
-              if (j === 0) {
-                mergedContent += curr.text;
-              } else {
-                const prev = selectedChunks[j - 1];
-                if (curr.index === prev.index + 1) {
-                  mergedContent += data.text.substring(prev.end, curr.end);
-                } else {
-                  mergedContent += `\n...\n${curr.text}`;
+            if (!actualPrompt) {
+              let lookaheadText = [];
+              for (let j = i + 1; j < messages.length; j++) {
+                const nextMsg = messages[j];
+                if (nextMsg.role === "assistant") break;
+                if (nextMsg.role === "user" && nextMsg.content) {
+                  lookaheadText.push(nextMsg.content);
                 }
               }
+              actualPrompt = lookaheadText.join("\n").trim();
+              if (actualPrompt) implicitSearchUsed = true;
             }
-            fileContent = mergedContent;
+
+            if (data.chunks) {
+              const validChunks = data.chunks.filter((c) => c.vector);
+              if (validChunks.length > 0) {
+                let queryEmb = null;
+
+                if (actualPrompt) {
+                  if (btnEl)
+                    btnEl.textContent = `Embedding prompt for ${meta.name}...`;
+                  queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
+                }
+
+                validChunks.forEach((c) => {
+                  c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
+                });
+
+                const threshold = msg.ragThreshold || 0.0;
+                let topChunks = validChunks.filter(
+                  (c) => !queryEmb || c.score >= threshold,
+                );
+
+                topChunks.sort((a, b) => b.score - a.score);
+
+                const maxTokens = msg.maxTokens || 5000;
+                let currentTokens = 0;
+                let selectedChunks = [];
+
+                for (const c of topChunks) {
+                  const chunkTokens = Math.ceil(c.text.length / 4);
+                  if (
+                    selectedChunks.length > 0 &&
+                    currentTokens + chunkTokens > maxTokens
+                  ) {
+                    break;
+                  }
+                  selectedChunks.push(c);
+                  currentTokens += chunkTokens;
+                }
+
+                selectedChunks.sort((a, b) => a.index - b.index);
+
+                let mergedContent = "";
+                let sep =
+                  msg.chunkSeparator !== undefined ? msg.chunkSeparator : "...";
+                sep = sep.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+
+                for (let j = 0; j < selectedChunks.length; j++) {
+                  const curr = selectedChunks[j];
+                  if (j === 0) {
+                    mergedContent += curr.text;
+                  } else {
+                    const prev = selectedChunks[j - 1];
+                    if (curr.index === prev.index + 1) {
+                      mergedContent += data.text.substring(prev.end, curr.end);
+                    } else {
+                      mergedContent += sep + curr.text;
+                    }
+                  }
+                }
+                fileContent = mergedContent;
+              } else {
+                fileContent = "*File unindexed or no valid chunks.*";
+              }
+            } else {
+              fileContent = "*File unindexed.*";
+            }
           }
         }
-      }
 
-      let usedPromptText = "";
-      if (msg.prompt) {
-        usedPromptText = `Search Query: ${msg.prompt}`;
-      } else if (implicitSearchUsed) {
-        usedPromptText = `Implicit Search Query: ${actualPrompt}`;
-      } else {
-        usedPromptText = `Search Query: None (Head Retrieval)`;
-      }
+        const extMatch = (msg.fileName || "").match(/\.([^.]+)$/);
+        const ext = extMatch ? extMatch[1] : "txt";
+        const blockTicks = fileContent.includes("```") ? "````" : "```";
+        const formatted = `\`${msg.fileName}\`:\n\n${blockTicks}${ext}\n${fileContent}\n${blockTicks}`;
 
-      resolved.push({
-        role: "system",
-        content: `Attached File Context (${msg.fileName}):\n${usedPromptText}\n\n${fileContent}`,
-      });
+        resolved.push({
+          role: "user",
+          content: formatted,
+        });
+      }
     } else {
       resolved.push(msg);
     }
@@ -578,3 +605,46 @@ $("#chat-container").addEventListener("click", (e) => {
     });
   }
 });
+
+function updateTokenCount() {
+  const btn = $("#send-btn");
+  if (!btn) return;
+
+  if (btn.textContent.includes("Thinking") || btn.classList.contains("hidden"))
+    return;
+
+  const inputVal = $("#chat-input").value || "";
+  let contextChars = 0;
+
+  if (currentChatId) {
+    const chat = chats.find((c) => c.id === currentChatId);
+    if (chat && chat.messages) {
+      contextChars = chat.messages.reduce((acc, m) => {
+        if (m.role === "file") {
+          if (m.mode === "full") return acc + (m.content || "").length;
+          return acc + (m.maxTokens || 5000) * 4;
+        }
+        return acc + (m.content || "").length;
+      }, 0);
+    }
+  }
+
+  if (config.godMode) {
+    contextChars += (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT).length;
+  }
+
+  const totalChars = inputVal.length + contextChars;
+  const tokens = Math.ceil(totalChars / 4);
+
+  if (tokens < 1000) {
+    btn.textContent = "Send";
+  } else {
+    let label;
+    if (tokens >= 1000000) {
+      label = (tokens / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+    } else {
+      label = (tokens / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+    }
+    btn.textContent = `Send (${label} tokens)`;
+  }
+}

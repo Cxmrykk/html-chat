@@ -53,7 +53,12 @@ function applyInputAreaState() {
 
     const chat = chats.find((c) => c.id === currentChatId);
     const isFile = chat && chat.messages[editingMessageIndex]?.role === "file";
-    area.placeholder = isFile ? "Edit embedding search prompt..." : "";
+    const isEmbed =
+      isFile && chat.messages[editingMessageIndex]?.mode === "embed";
+
+    area.placeholder = isEmbed
+      ? "Default behavior: Uses subsequent user messages for search."
+      : "";
     area.style.height = editHeight;
   } else {
     modelSel.classList.remove("hidden");
@@ -70,19 +75,35 @@ function renderFileList() {
     return (list.innerHTML =
       '<p style="font-size:0.8em; color:#666;">No files uploaded.</p>');
 
+  const embeddingsEnabled = !!(
+    config.embeddingsModel && config.embeddingsModel.trim() !== ""
+  );
+
   list.innerHTML = files
-    .map(
-      (f) => `
+    .map((f) => {
+      let embedBtn = "";
+      let progressBar = "";
+
+      if (embeddingsEnabled) {
+        progressBar = `<div class="file-progress-bar" style="width: ${f.progress}%"></div>`;
+        if (f.progress < 100) {
+          embedBtn = `<button data-action="embed" title="${f.isEmbedding ? "Pause Embedding" : "Start Embedding"}">${f.isEmbedding ? "⏸" : "e"}</button>`;
+        } else {
+          embedBtn = `<button data-action="embed" title="Insert Embedding">e</button>`;
+        }
+      }
+
+      return `
     <div class="chat-item" data-id="${f.id}" data-type="file">
-      <div class="chat-item-title" data-action="load" title="Click to insert into chat\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
+      <div class="chat-item-title" data-action="load" title="Click to insert full contents into chat\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
       <div class="chat-item-actions">
-        ${f.progress < 100 ? `<button data-action="embed" title="${f.isEmbedding ? "Pause Embedding" : "Start Embedding"}">${f.isEmbedding ? "⏸" : "e"}</button>` : ""}
+        ${embedBtn}
         <button data-action="delete" title="Delete File">d</button>
       </div>
-      <div class="file-progress-bar" style="width: ${f.progress}%"></div>
+      ${progressBar}
     </div>
-  `,
-    )
+  `;
+    })
     .join("");
 }
 
@@ -116,10 +137,20 @@ function renderCurrentChat(preserveScroll = false) {
       if (k === "godModePrompt")
         return config[k] === SETTING_DEFAULTS[k].default ? "Default" : "Custom";
       if (k === "embeddingsKey") return config[k] ? "Custom" : "API Default";
+      if (k === "chunkSeparator") {
+        if (config[k] === undefined) return SETTING_DEFAULTS[k].default;
+        if (config[k] === "") return "(empty)";
+        return escapeHTML(config[k]);
+      }
+      if (k === "embeddingsModel") {
+        return config[k] === "" || config[k] === undefined
+          ? "Disabled"
+          : escapeHTML(config[k]);
+      }
 
-      return config[k] === "" || config[k] === undefined
-        ? "API Default"
-        : config[k];
+      let val =
+        config[k] === "" || config[k] === undefined ? "API Default" : config[k];
+      return escapeHTML(String(val));
     };
 
     const settingNames = {
@@ -137,6 +168,7 @@ function renderCurrentChat(preserveScroll = false) {
       maxRagTokens: "Max RAG Tokens",
       ragThreshold: "RAG Match Threshold",
       chunkBatchSize: "Chunk Batch Size",
+      chunkSeparator: "Chunk Separator",
     };
 
     const buttonsHTML = Object.keys(SETTING_DEFAULTS)
@@ -188,21 +220,63 @@ function renderCurrentChat(preserveScroll = false) {
   } else {
     html += chat.messages
       .map((msg, i) => {
+        let isEditing = editingMessageIndex === i;
         let displayContent = msg.content || "";
+        let configHtml = "";
+
         if (msg.role === "assistant") {
           displayContent = displayContent.replace(
             /<run>([\s\S]*?)<\/run>/g,
             (match, code) =>
               `**Executing Code:**\n\`\`\`javascript\n${code.trim()}\n\`\`\``,
           );
+        } else if (msg.role === "file") {
+          if (msg.mode === "embed") {
+            displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*<br>*(<= ${msg.maxTokens || 5000} tokens with embeddings enabled)*`;
+            if (msg.prompt) {
+              displayContent += `\n\n**Search Prompt:** ${msg.prompt}`;
+            }
+
+            if (isEditing) {
+              configHtml = `
+<div style="display:flex; gap:15px; flex-wrap:wrap; margin-top:10px; align-items:center; background: #eee; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+  <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Max Tokens <input type="number" class="embed-cfg-tokens" value="${msg.maxTokens || 5000}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
+  <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Match Threshold <input type="number" step="0.1" class="embed-cfg-threshold" value="${msg.ragThreshold || 0.0}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
+  <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Chunk Separator <input type="text" class="embed-cfg-separator" value="${escapeHTML(msg.chunkSeparator !== undefined ? msg.chunkSeparator : "...")}" style="width:120px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
+</div>`;
+            }
+          } else {
+            // Full mode file: We DO NOT preview the huge raw contents.
+            displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*`;
+          }
+        }
+
+        let actionsHtml = "";
+        if (isEditing) {
+          actionsHtml = `
+            <button data-action="save-edit">Save</button>
+            <button data-action="cancel-edit">Cancel</button>
+            <button data-action="toggle-wrap">Toggle Wrap</button>
+          `;
+        } else {
+          let editBtn = `<button data-action="edit">Edit</button>`;
+          if (msg.role === "file" && msg.mode === "embed") {
+            editBtn = `<button data-action="edit">Config</button>`;
+          }
+          actionsHtml = `
+            ${editBtn}
+            <button data-action="fork">Fork</button>
+            ${msg.role === "user" || msg.role === "file" ? `<button data-action="retry">Retry</button>` : ""}
+            <button data-action="delete">Delete</button>
+          `;
         }
 
         return `
-      <div class="msg ${msg.role} ${editingMessageIndex === i ? "editing" : ""}" data-index="${i}">
+      <div class="msg ${msg.role} ${isEditing ? "editing" : ""}" data-index="${i}">
         <div class="msg-meta">
           ${
             msg.role === "file"
-              ? `<span>📎 FILE: ${escapeHTML(msg.fileName)} (~${msg.approxTokens || 0} tokens)</span>`
+              ? `<span>FILE: ${escapeHTML(msg.fileName)}</span>`
               : `<select class="role-select">
               <option value="user" ${msg.role === "user" ? "selected" : ""}>user</option>
               <option value="assistant" ${msg.role === "assistant" ? "selected" : ""}>assistant</option>
@@ -211,28 +285,10 @@ function renderCurrentChat(preserveScroll = false) {
             </select>`
           }
           <div class="msg-actions">
-            ${
-              editingMessageIndex === i
-                ? `<button data-action="save-edit">Save</button>
-                   <button data-action="cancel-edit">Cancel</button>
-                   <button data-action="toggle-wrap">Toggle Wrap</button>`
-                : `${msg.role === "file" ? `<button data-action="edit">Edit Prompt</button>` : `<button data-action="edit">Edit</button>`}
-                   <button data-action="fork">Fork</button>
-                   ${msg.role === "user" || msg.role === "file" ? `<button data-action="retry">Retry</button>` : ""}
-                   <button data-action="delete">Delete</button>`
-            }
+            ${actionsHtml}
           </div>
         </div>
-        ${
-          msg.role === "file"
-            ? `<div class="file-config" style="margin-bottom: 10px; font-size: 0.85em; display: flex; gap: 10px; align-items: center;">
-            <label>Max Tokens: <input type="number" class="file-max-tokens" value="${msg.maxTokens || 5000}" step="100" min="100" style="width: 80px; padding: 2px; margin: 0;"></label>
-          </div>
-          <div class="msg-content" style="background: rgba(0,0,0,0.03); padding: 8px; border: 1px solid rgba(0,0,0,0.1); font-style: italic;">
-            ${msg.prompt ? `<strong>Search Prompt:</strong> ${marked.parseInline(msg.prompt)}` : `<em>No explicit prompt. Will use subsequent user message(s) to search, or default to first ~${msg.maxTokens || 5000} tokens.</em>`}
-          </div>`
-            : `<div class="msg-content">${marked.parse(displayContent)}</div>`
-        }
+        <div class="msg-content">${marked.parse(displayContent)}${configHtml}</div>
       </div>
     `;
       })

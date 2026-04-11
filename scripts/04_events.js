@@ -57,13 +57,19 @@ $("#sidebar").addEventListener("click", (e) => {
     }
   } else if (type === "file") {
     if (action === "delete") deleteFile(id);
-    else if (action === "embed") toggleEmbedding(id);
-    else if (action === "load") {
+    else if (action === "embed") {
+      const meta = files.find((f) => f.id === id);
+      if (meta && meta.progress >= 100) {
+        appendFileMessage(id, "embed");
+      } else {
+        toggleEmbedding(id);
+      }
+    } else if (action === "load") {
       if (e.altKey) {
         e.preventDefault();
         reuploadFile(id);
       } else {
-        appendFileMessage(id);
+        appendFileMessage(id, "full");
       }
     }
   }
@@ -100,14 +106,5 @@ $("#chat-container").addEventListener("change", (e) => {
     chat.messages[index].role = e.target.value;
     saveState();
     renderApp(true);
-  } else if (e.target.classList.contains("file-max-tokens")) {
-    const msgDiv = e.target.closest(".msg");
-    if (!msgDiv || !msgDiv.hasAttribute("data-index")) return;
-    const index = parseInt(msgDiv.dataset.index, 10);
-    if (isNaN(index)) return;
-
-    const chat = chats.find((c) => c.id === currentChatId);
-    chat.messages[index].maxTokens = parseInt(e.target.value, 10) || 5000;
-    saveState();
   }
 });

@@ -143,8 +143,9 @@ const SETTING_DEFAULTS = {
       "API Key for the custom embeddings URL. Leave empty to use main API key.",
   },
   embeddingsModel: {
-    default: "text-embedding-3-small",
-    tooltip: "Model used for processing local RAG commands.",
+    default: "",
+    tooltip:
+      "Model used for processing local RAG commands. Leave empty to disable embeddings.",
   },
   chunkSize: {
     default: "1000",
@@ -167,6 +168,11 @@ const SETTING_DEFAULTS = {
     default: "100",
     tooltip:
       "Max chunks sent to Embeddings API at once. Lower this if you get batch size errors.",
+  },
+  chunkSeparator: {
+    default: "...",
+    tooltip:
+      "String used to separate non-contiguous chunks in RAG. Allows special characters like \\n.",
   },
 };
 
@@ -421,7 +427,8 @@ function saveSuperSecretSetting() {
     key === "godModePrompt" ||
     key === "embeddingsModel" ||
     key === "embeddingsUrl" ||
-    key === "embeddingsKey"
+    key === "embeddingsKey" ||
+    key === "chunkSeparator"
   ) {
     config[key] = val;
   } else {

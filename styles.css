@@ -188,12 +188,6 @@ textarea:disabled {
   background: #eaffea;
 }
 
-.file-config input {
-  border: 1px solid #ccc;
-  border-radius: 3px;
-  background: #fff;
-}
-
 .msg-meta {
   font-size: 0.85em;
   text-transform: uppercase;

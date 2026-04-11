@@ -34,6 +34,7 @@ async function uploadFile(name, text, existingId = null) {
       isEmbedding: false,
       chunkCount: 0,
       embeddedCount: 0,
+      textLength: text.length,
     };
     files.unshift(meta);
   } else {
@@ -41,6 +42,7 @@ async function uploadFile(name, text, existingId = null) {
     meta.isEmbedding = false;
     meta.chunkCount = 0;
     meta.embeddedCount = 0;
+    meta.textLength = text.length;
   }
 
   await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
@@ -60,6 +62,8 @@ async function deleteFile(id) {
 async function toggleEmbedding(id) {
   const meta = files.find((f) => f.id === id);
   if (!meta) return;
+  if (!config.embeddingsModel || config.embeddingsModel.trim() === "") return;
+
   meta.isEmbedding = !meta.isEmbedding;
   saveState();
   renderFileList();
@@ -68,7 +72,7 @@ async function toggleEmbedding(id) {
   }
 }
 
-function appendFileMessage(fileId) {
+async function appendFileMessage(fileId, mode = "full") {
   const meta = files.find((f) => f.id === fileId);
   if (!meta) return;
   suspendSuperSecretSettings();
@@ -77,17 +81,31 @@ function appendFileMessage(fileId) {
   if (!currentChatId) newChat();
   const chat = chats.find((c) => c.id === currentChatId);
 
-  const approxTokens = meta.chunkCount
-    ? Math.ceil((meta.chunkCount * (parseInt(config.chunkSize) || 1000)) / 4)
-    : 0;
+  let approxTokens = Math.ceil((meta.textLength || 0) / 4);
+  let content = "";
+
+  if (mode === "full") {
+    const data = await dbGet(`mf_filedata_${meta.id}`);
+    const fileContent = data ? data.text : "";
+    const extMatch = (meta.name || "").match(/\.([^.]+)$/);
+    const ext = extMatch ? extMatch[1] : "txt";
+    const blockTicks = fileContent.includes("```") ? "````" : "```";
+    content = `\`${meta.name}\`:\n\n${blockTicks}${ext}\n${fileContent}\n${blockTicks}`;
+    approxTokens = Math.ceil(content.length / 4);
+  }
 
   chat.messages.push({
     role: "file",
     fileId: meta.id,
     fileName: meta.name,
     prompt: "",
-    maxTokens: parseInt(config.maxRagTokens) || 5000,
+    mode: mode,
     approxTokens: approxTokens,
+    content: content,
+    maxTokens: parseInt(config.maxRagTokens, 10) || 5000,
+    ragThreshold: parseFloat(config.ragThreshold) || 0.0,
+    chunkSeparator:
+      config.chunkSeparator !== undefined ? config.chunkSeparator : "...",
   });
 
   if (window.innerWidth <= 768) {
@@ -303,7 +321,10 @@ function startGlobalEdit(index) {
   const msg = chat.messages[index];
   const area = $("#chat-input");
 
-  area.value = msg.role === "file" ? msg.prompt || "" : msg.content;
+  area.value =
+    msg.role === "file" && msg.mode === "embed"
+      ? msg.prompt || ""
+      : msg.content;
 
   renderApp(true);
   area.focus();
@@ -315,7 +336,26 @@ function saveGlobalEdit() {
   const msg = chat.messages[editingMessageIndex];
 
   if (msg.role === "file") {
-    msg.prompt = $("#chat-input").value;
+    if (msg.mode === "embed") {
+      msg.prompt = $("#chat-input").value;
+      const tEl = document.querySelector(
+        `.msg[data-index="${editingMessageIndex}"] .embed-cfg-tokens`,
+      );
+      if (tEl) msg.maxTokens = parseInt(tEl.value, 10) || 5000;
+
+      const thEl = document.querySelector(
+        `.msg[data-index="${editingMessageIndex}"] .embed-cfg-threshold`,
+      );
+      if (thEl) msg.ragThreshold = parseFloat(thEl.value) || 0.0;
+
+      const sEl = document.querySelector(
+        `.msg[data-index="${editingMessageIndex}"] .embed-cfg-separator`,
+      );
+      if (sEl) msg.chunkSeparator = sEl.value;
+    } else {
+      msg.content = $("#chat-input").value;
+      msg.approxTokens = Math.ceil(msg.content.length / 4);
+    }
   } else {
     msg.content = $("#chat-input").value;
   }
