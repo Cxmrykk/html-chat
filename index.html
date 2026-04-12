@@ -428,7 +428,7 @@
 
     <header id="header" class="hidden">
       <h1>HTML Chat</h1>
-      <p>No bloated containers. No tracking. No bullshit. Just your API key and the browser.</p>
+      <p>Browser-based chat for OpenAI-compatible APIs (no bullshit).</p>
     </header>
 
     <div class="grid">
@@ -736,7 +736,6 @@
       let isTitleHidden = false;
       let editingMessageIndex = null;
       let promptHeight = "";
-      let editHeight = "250px";
 
       let isSuperSecretSettingsOpen = false;
       let activeSuperSecretSetting = null;
@@ -750,7 +749,6 @@
         dbSet("mf_sidebar_hidden", isSidebarHidden);
         dbSet("mf_title_hidden", isTitleHidden);
         dbSet("mf_prompt_height", promptHeight);
-        dbSet("mf_edit_height", editHeight);
       }
 
       // --- CONFIGURATION & SUPER SECRET SETTINGS ---
@@ -1849,11 +1847,12 @@
         secResetBtn.classList.add("hidden");
         secCancelBtn.classList.add("hidden");
 
+        area.style.height = promptHeight;
+
         if (isSuperSecretSettingsOpen) {
           secSaveBtn.classList.remove("hidden");
           secResetBtn.classList.remove("hidden");
           secCancelBtn.classList.remove("hidden");
-          area.style.height = promptHeight;
 
           if (!activeSuperSecretSetting) {
             area.disabled = true;
@@ -1882,13 +1881,11 @@
           area.placeholder = isEmbed
             ? "Default behavior: Uses subsequent user messages for search."
             : "";
-          area.style.height = editHeight;
         } else {
           modelSel.classList.remove("hidden");
           sendBtn.classList.remove("hidden");
           area.disabled = false;
           area.placeholder = "Type your prompt here...";
-          area.style.height = promptHeight;
         }
       }
 
@@ -2392,7 +2389,6 @@
         isSidebarHidden = (await dbGet("mf_sidebar_hidden")) === true;
         isTitleHidden = (await dbGet("mf_title_hidden")) === true;
         promptHeight = (await dbGet("mf_prompt_height")) || "";
-        editHeight = (await dbGet("mf_edit_height")) || "250px";
 
         $("#cfg-url").value = config.url;
         $("#cfg-key").value = config.key;
@@ -2410,11 +2406,7 @@
           for (let entry of entries) {
             const h = entry.target.style.height;
             if (!h) continue;
-            if (editingMessageIndex !== null) {
-              editHeight = h;
-            } else {
-              promptHeight = h;
-            }
+            promptHeight = h;
             saveState();
           }
         });

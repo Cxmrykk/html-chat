@@ -20,7 +20,6 @@ async function init() {
   isSidebarHidden = (await dbGet("mf_sidebar_hidden")) === true;
   isTitleHidden = (await dbGet("mf_title_hidden")) === true;
   promptHeight = (await dbGet("mf_prompt_height")) || "";
-  editHeight = (await dbGet("mf_edit_height")) || "250px";
 
   $("#cfg-url").value = config.url;
   $("#cfg-key").value = config.key;
@@ -38,11 +37,7 @@ async function init() {
     for (let entry of entries) {
       const h = entry.target.style.height;
       if (!h) continue;
-      if (editingMessageIndex !== null) {
-        editHeight = h;
-      } else {
-        promptHeight = h;
-      }
+      promptHeight = h;
       saveState();
     }
   });

@@ -8,7 +8,6 @@ let isSidebarHidden = false;
 let isTitleHidden = false;
 let editingMessageIndex = null;
 let promptHeight = "";
-let editHeight = "250px";
 
 let isSuperSecretSettingsOpen = false;
 let activeSuperSecretSetting = null;
@@ -22,5 +21,4 @@ function saveState() {
   dbSet("mf_sidebar_hidden", isSidebarHidden);
   dbSet("mf_title_hidden", isTitleHidden);
   dbSet("mf_prompt_height", promptHeight);
-  dbSet("mf_edit_height", editHeight);
 }

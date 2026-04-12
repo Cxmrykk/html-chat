@@ -48,11 +48,12 @@ function applyInputAreaState() {
   secResetBtn.classList.add("hidden");
   secCancelBtn.classList.add("hidden");
 
+  area.style.height = promptHeight;
+
   if (isSuperSecretSettingsOpen) {
     secSaveBtn.classList.remove("hidden");
     secResetBtn.classList.remove("hidden");
     secCancelBtn.classList.remove("hidden");
-    area.style.height = promptHeight;
 
     if (!activeSuperSecretSetting) {
       area.disabled = true;
@@ -81,13 +82,11 @@ function applyInputAreaState() {
     area.placeholder = isEmbed
       ? "Default behavior: Uses subsequent user messages for search."
       : "";
-    area.style.height = editHeight;
   } else {
     modelSel.classList.remove("hidden");
     sendBtn.classList.remove("hidden");
     area.disabled = false;
     area.placeholder = "Type your prompt here...";
-    area.style.height = promptHeight;
   }
 }
 
