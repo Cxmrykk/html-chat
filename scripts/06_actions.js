@@ -1,199 +1,4 @@
-// --- FILE UPLOAD & MANAGEMENT ---
-async function handleUploadClick() {
-  const picked = await pickFiles(true);
-  if (!picked || !picked.length) return;
-  for (const f of picked) {
-    const text = await readFileText(f);
-    await uploadFile(f.name, text);
-  }
-}
-
-async function reuploadFile(id) {
-  const picked = await pickFiles(false);
-  if (!picked || !picked.length) return;
-  const text = await readFileText(picked[0]);
-  const meta = files.find((f) => f.id === id);
-  await uploadFile(meta ? meta.name : picked[0].name, text, id);
-}
-
-async function uploadFile(name, text, existingId = null) {
-  let id =
-    existingId || Date.now().toString() + Math.floor(Math.random() * 1000);
-  let meta = files.find((f) => f.id === id);
-
-  if (!meta) {
-    let baseName = name;
-    let counter = 1;
-    while (files.some((f) => f.name === name)) {
-      name = `${baseName} (${counter++})`;
-    }
-    meta = {
-      id,
-      name,
-      progress: 0,
-      isEmbedding: false,
-      chunkCount: 0,
-      embeddedCount: 0,
-      textLength: text.length,
-    };
-    files.unshift(meta);
-  } else {
-    meta.progress = 0;
-    meta.isEmbedding = false;
-    meta.chunkCount = 0;
-    meta.embeddedCount = 0;
-    meta.textLength = text.length;
-  }
-
-  await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
-
-  saveState();
-  renderApp();
-}
-
-async function deleteFile(id) {
-  files = files.filter((f) => f.id !== id);
-  await dbDelete(`mf_filedata_${id}`);
-
-  saveState();
-  renderApp();
-}
-
-async function toggleEmbedding(id) {
-  const meta = files.find((f) => f.id === id);
-  if (!meta) return;
-  if (!config.embeddingsModel || config.embeddingsModel.trim() === "") return;
-
-  meta.isEmbedding = !meta.isEmbedding;
-  saveState();
-  renderFileList();
-  if (meta.isEmbedding) {
-    startEmbeddingLoop(id);
-  }
-}
-
-async function appendFileMessage(fileId, mode = "full") {
-  const meta = files.find((f) => f.id === fileId);
-  if (!meta) return;
-  suspendSuperSecretSettings();
-  resetEditState();
-
-  if (!currentChatId) newChat();
-  const chat = chats.find((c) => c.id === currentChatId);
-
-  let approxTokens = Math.ceil((meta.textLength || 0) / 4);
-  let content = "";
-
-  if (mode === "full") {
-    const data = await dbGet(`mf_filedata_${meta.id}`);
-    const fileContent = data ? data.text : "";
-    const extMatch = (meta.name || "").match(/\.([^.]+)$/);
-    const ext = extMatch ? extMatch[1] : "txt";
-    const blockTicks = fileContent.includes("```") ? "````" : "```";
-    content = `\`${meta.name}\`:\n\n${blockTicks}${ext}\n${fileContent}\n${blockTicks}`;
-    approxTokens = Math.ceil(content.length / 4);
-  }
-
-  chat.messages.push({
-    role: "file",
-    fileId: meta.id,
-    fileName: meta.name,
-    prompt: "",
-    mode: mode,
-    approxTokens: approxTokens,
-    content: content,
-    maxTokens: parseInt(config.maxRagTokens, 10) || 5000,
-    ragThreshold: parseFloat(config.ragThreshold) || 0.0,
-    chunkSeparator:
-      config.chunkSeparator !== undefined ? config.chunkSeparator : "...",
-  });
-
-  if (window.innerWidth <= 768) {
-    isSidebarHidden = true;
-    applySidebarState();
-  }
-
-  saveState();
-  renderApp();
-  updateTokenCount();
-}
-
-// --- IMPORT / EXPORT ---
-function exportChats() {
-  const dataStr = JSON.stringify(chats, null, 2);
-  const blob = new Blob([dataStr], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `html-chat-export-${Date.now()}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function exportSingleChat(id) {
-  const chat = chats.find((c) => c.id === id);
-  if (!chat) return;
-
-  const dataStr = JSON.stringify([chat], null, 2);
-  const blob = new Blob([dataStr], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-
-  a.download = `chat-timestamp-${chat.id}.json`;
-
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function importChats() {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = ".json";
-  input.onchange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const importedChats = JSON.parse(event.target.result);
-        if (!Array.isArray(importedChats))
-          throw new Error("Invalid format: expected an array of chats.");
-
-        let addedCount = 0;
-        const existingIds = new Set(chats.map((c) => c.id));
-
-        for (const chat of importedChats) {
-          if (!chat.id || !chat.messages) continue;
-          if (!existingIds.has(chat.id)) {
-            chats.push(chat);
-            existingIds.add(chat.id);
-            addedCount++;
-          }
-        }
-
-        // Sort chats by date (id is Unix epoch), newest first
-        chats.sort((a, b) => Number(b.id) - Number(a.id));
-
-        if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
-
-        saveState();
-        renderApp();
-        alert(`Successfully imported ${addedCount} new chat(s).`);
-      } catch (err) {
-        alert("Failed to import chats: " + err.message);
-      }
-    };
-    reader.readAsText(file);
-  };
-  input.click();
-}
-
-// --- CHAT ACTIONS ---
+// --- CHAT & FILE ACTIONS (CRUD) ---
 function suspendSuperSecretSettings() {
   if (isSuperSecretSettingsOpen) {
     if (activeSuperSecretSetting) {
@@ -300,11 +105,126 @@ function deleteMessage(msgIndex) {
   renderApp(true);
 }
 
-// --- EDITING ACTIONS ---
+async function handleUploadClick() {
+  const picked = await pickFiles(true);
+  if (!picked || !picked.length) return;
+  for (const f of picked) {
+    const text = await readFileText(f);
+    await uploadFile(f.name, text);
+  }
+}
+
+async function reuploadFile(id) {
+  const picked = await pickFiles(false);
+  if (!picked || !picked.length) return;
+  const text = await readFileText(picked[0]);
+  const meta = files.find((f) => f.id === id);
+  await uploadFile(meta ? meta.name : picked[0].name, text, id);
+}
+
+async function uploadFile(name, text, existingId = null) {
+  let id =
+    existingId || Date.now().toString() + Math.floor(Math.random() * 1000);
+  let meta = files.find((f) => f.id === id);
+
+  if (!meta) {
+    let baseName = name;
+    let counter = 1;
+    while (files.some((f) => f.name === name)) {
+      name = `${baseName} (${counter++})`;
+    }
+    meta = {
+      id,
+      name,
+      progress: 0,
+      isEmbedding: false,
+      chunkCount: 0,
+      embeddedCount: 0,
+      textLength: text.length,
+    };
+    files.unshift(meta);
+  } else {
+    meta.progress = 0;
+    meta.isEmbedding = false;
+    meta.chunkCount = 0;
+    meta.embeddedCount = 0;
+    meta.textLength = text.length;
+  }
+
+  await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
+  saveState();
+  renderApp();
+}
+
+async function deleteFile(id) {
+  files = files.filter((f) => f.id !== id);
+  await dbDelete(`mf_filedata_${id}`);
+  saveState();
+  renderApp();
+}
+
+async function toggleEmbedding(id) {
+  const meta = files.find((f) => f.id === id);
+  if (!meta) return;
+  if (!config.embeddingsModel || config.embeddingsModel.trim() === "") return;
+
+  meta.isEmbedding = !meta.isEmbedding;
+  saveState();
+  renderFileList();
+  if (meta.isEmbedding) {
+    startEmbeddingLoop(id);
+  }
+}
+
+async function appendFileMessage(fileId, mode = "full") {
+  const meta = files.find((f) => f.id === fileId);
+  if (!meta) return;
+  suspendSuperSecretSettings();
+  resetEditState();
+
+  if (!currentChatId) newChat();
+  const chat = chats.find((c) => c.id === currentChatId);
+
+  let approxTokens = Math.ceil((meta.textLength || 0) / 4);
+  let content = "";
+
+  if (mode === "full") {
+    const data = await dbGet(`mf_filedata_${meta.id}`);
+    const fileContent = data ? data.text : "";
+    const extMatch = (meta.name || "").match(/\.([^.]+)$/);
+    const ext = extMatch ? extMatch[1] : "txt";
+    const blockTicks = fileContent.includes("```") ? "````" : "```";
+    content = `\`${meta.name}\`:\n\n${blockTicks}${ext}\n${fileContent}\n${blockTicks}`;
+    approxTokens = Math.ceil(content.length / 4);
+  }
+
+  chat.messages.push({
+    role: "file",
+    fileId: meta.id,
+    fileName: meta.name,
+    prompt: "",
+    mode: mode,
+    approxTokens: approxTokens,
+    content: content,
+    maxTokens: parseInt(config.maxRagTokens, 10) || 5000,
+    ragThreshold: parseFloat(config.ragThreshold) || 0.0,
+    chunkSeparator:
+      config.chunkSeparator !== undefined ? config.chunkSeparator : "...",
+  });
+
+  if (window.innerWidth <= 768) {
+    isSidebarHidden = true;
+    applySidebarState();
+  }
+
+  saveState();
+  renderApp();
+  updateTokenCount();
+}
+
 function resetEditState() {
   editingMessageIndex = null;
   const area = $("#chat-input");
-
   if (area) {
     area.style.whiteSpace = "";
     area.style.overflowX = "";

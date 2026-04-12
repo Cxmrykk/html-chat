@@ -1,4 +1,4 @@
-// --- EVENT DELEGATION ---
+// --- DOM EVENT DELEGATION ---
 $("#settings-heading").addEventListener("click", (e) => {
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault();

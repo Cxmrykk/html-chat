@@ -1,4 +1,27 @@
-// --- RENDERING ---
+// --- RENDERING LOGIC ---
+marked.use({
+  extensions: [
+    {
+      name: "math",
+      level: "inline",
+      start(src) {
+        return src.match(/\$/)?.index;
+      },
+      tokenizer(src) {
+        const blockMatch = /^\$\$([\s\S]+?)\$\$/.exec(src);
+        if (blockMatch)
+          return { type: "math", raw: blockMatch[0], text: blockMatch[1] };
+        const inlineMatch = /^\$([^\s$](?:\\.|[^$\n])*?)\$/.exec(src);
+        if (inlineMatch)
+          return { type: "math", raw: inlineMatch[0], text: inlineMatch[1] };
+      },
+      renderer(token) {
+        return escapeHTML(token.raw);
+      },
+    },
+  ],
+});
+
 function renderApp(preserveScroll = false) {
   renderFileList();
   renderChatList();
@@ -17,7 +40,6 @@ function applyInputAreaState() {
   const secResetBtn = $("#secret-reset-btn");
   const secCancelBtn = $("#secret-cancel-btn");
 
-  // Reset visibilities
   modelSel.classList.add("hidden");
   sendBtn.classList.add("hidden");
   saveBtn.classList.add("hidden");
@@ -111,7 +133,7 @@ function renderChatList() {
   const list = $("#chat-list");
   if (!chats.length)
     return (list.innerHTML =
-      '<p style="font-size:0.8em; color:#666;">No chats. Start a new one, asshole.</p>');
+      '<p style="font-size:0.8em; color:#666;">No chats. Start a new one.</p>');
 
   list.innerHTML = chats
     .map(
@@ -184,7 +206,6 @@ function renderCurrentChat(preserveScroll = false) {
           <button onclick="resetAllSuperSecretSettings()">Reset All to Default</button>
         </div>
         <p style="flex-shrink: 0; margin-top: 5px; font-size: 0.9em; color: #555;">Warning: Changes may vary based on LLM provider (i.e. LiteLLM users). Settings are not guaranteed to work for every provider.</p>
-        
         <div style="flex-grow: 1; overflow-y: auto; margin: 10px 0;">
           ${buttonsHTML}
         </div>
@@ -205,9 +226,7 @@ function renderCurrentChat(preserveScroll = false) {
       <div class="msg system">
         <div class="msg-meta">
           <span>System</span>
-          <div class="msg-actions">
-            <span style="font-size: 0.8em; color: #888;">[Read-Only]</span>
-          </div>
+          <div class="msg-actions"><span style="font-size: 0.8em; color: #888;">[Read-Only]</span></div>
         </div>
         <div class="msg-content">${marked.parse("**JS Execution Enabled**. Proceed with caution.")}</div>
       </div>
@@ -216,7 +235,7 @@ function renderCurrentChat(preserveScroll = false) {
 
   if (!chat.messages.length && !config.godMode) {
     html +=
-      '<p style="margin:0; padding-top: 15px;">It is fucking empty in here. Send a prompt.</p>';
+      '<p style="margin:0; padding-top: 15px;">It is empty in here. Send a prompt.</p>';
   } else {
     html += chat.messages
       .map((msg, i) => {
@@ -233,9 +252,8 @@ function renderCurrentChat(preserveScroll = false) {
         } else if (msg.role === "file") {
           if (msg.mode === "embed") {
             displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*<br>*(<= ${msg.maxTokens || 5000} tokens with embeddings enabled)*`;
-            if (msg.prompt) {
+            if (msg.prompt)
               displayContent += `\n\n**Search Prompt:** ${msg.prompt}`;
-            }
 
             if (isEditing) {
               configHtml = `
@@ -246,7 +264,6 @@ function renderCurrentChat(preserveScroll = false) {
 </div>`;
             }
           } else {
-            // Full mode file: We DO NOT preview the huge raw contents.
             displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*`;
           }
         }
@@ -284,9 +301,7 @@ function renderCurrentChat(preserveScroll = false) {
               ${msg.role === "error" ? `<option value="error" selected>error</option>` : ""}
             </select>`
           }
-          <div class="msg-actions">
-            ${actionsHtml}
-          </div>
+          <div class="msg-actions">${actionsHtml}</div>
         </div>
         <div class="msg-content">${marked.parse(displayContent)}${configHtml}</div>
       </div>

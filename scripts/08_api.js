@@ -1,0 +1,189 @@
+// --- LLM API & GOD MODE ---
+async function executeGodMode(code) {
+  let logs = [];
+  const safeStr = (obj) => {
+    try {
+      return typeof obj === "object"
+        ? JSON.stringify(obj, null, 2)
+        : String(obj);
+    } catch {
+      return Object.prototype.toString.call(obj);
+    }
+  };
+  const proxyConsole = {
+    log: (...args) => logs.push(args.map(safeStr).join(" ")),
+    error: (...args) => logs.push("ERROR: " + args.map(safeStr).join(" ")),
+  };
+  let result,
+    errorStr = "";
+  try {
+    const execFn = new (Object.getPrototypeOf(
+      async function () {},
+    ).constructor)("console", code);
+    result = await execFn(proxyConsole);
+  } catch (err) {
+    errorStr = err.toString();
+  }
+
+  let out = "**Execution Result:**\n```text\n";
+  if (logs.length) out += logs.join("\n") + "\n";
+  if (result !== undefined) out += "Return: " + safeStr(result) + "\n";
+  if (errorStr) out += "Error: " + errorStr + "\n";
+  if (!logs.length && result === undefined && !errorStr)
+    out += "Code executed successfully with no output.\n";
+  return out + "```";
+}
+
+async function sendMessage(autoLoopDepth = 0, skipApi = false) {
+  const btn = $("#send-btn");
+  const MAX_LOOPS = 5;
+
+  if (autoLoopDepth >= MAX_LOOPS) {
+    chats
+      .find((c) => c.id === currentChatId)
+      .messages.push({
+        role: "error",
+        content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached.`,
+      });
+    updateTokenCount();
+    saveState();
+    renderApp();
+    return;
+  }
+
+  const isAutoLoop = autoLoopDepth > 0;
+  if (currentAbortController && !isAutoLoop) {
+    currentAbortController.abort();
+    currentAbortController = null;
+    btn.textContent = "Send";
+    return;
+  }
+
+  const inputEl = $("#chat-input");
+  let text = inputEl.value.trim();
+
+  if (!isAutoLoop) {
+    if (!text) return;
+    if (!config.key && !skipApi)
+      return alert("Please enter your API key in the settings first.");
+
+    if (!currentChatId) newChat();
+
+    const chat = chats.find((c) => c.id === currentChatId);
+
+    if (!chat.messages.length) {
+      const lastDoubleNewline = text.lastIndexOf("\n\n");
+      const titleSource =
+        lastDoubleNewline !== -1
+          ? text.substring(lastDoubleNewline + 2).trim()
+          : text;
+      chat.title =
+        titleSource.substring(0, 30) + (titleSource.length > 30 ? "..." : "");
+    }
+
+    chat.messages.push({ role: "user", content: text });
+    inputEl.value = "";
+    saveState();
+    renderApp();
+  }
+
+  if (skipApi) return;
+
+  currentAbortController = new AbortController();
+  btn.textContent = isAutoLoop
+    ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
+    : "Thinking...";
+
+  try {
+    const chat = chats.find((c) => c.id === currentChatId);
+    let cleanMessages = chat.messages
+      .filter((m) => m.role !== "error")
+      .map((m) => {
+        if (m.role === "file") return { ...m };
+        return { role: m.role, content: m.content || "" };
+      });
+
+    if (config.godMode) {
+      cleanMessages.unshift({
+        role: "system",
+        content: config.godModePrompt || DEFAULT_GOD_MODE_PROMPT,
+      });
+    }
+
+    cleanMessages = await resolveAllMessages(cleanMessages, btn);
+
+    const payload = {
+      model: $("#model-select").value,
+      messages: cleanMessages,
+    };
+
+    if (config.temperature !== "" && config.temperature !== undefined)
+      payload.temperature = parseFloat(config.temperature);
+    if (config.top_p !== "" && config.top_p !== undefined)
+      payload.top_p = parseFloat(config.top_p);
+    if (
+      config.frequency_penalty !== "" &&
+      config.frequency_penalty !== undefined
+    )
+      payload.frequency_penalty = parseFloat(config.frequency_penalty);
+    if (config.presence_penalty !== "" && config.presence_penalty !== undefined)
+      payload.presence_penalty = parseFloat(config.presence_penalty);
+    if (config.max_tokens !== "" && config.max_tokens !== undefined)
+      payload.max_tokens = parseInt(config.max_tokens, 10);
+
+    const response = await fetch(`${config.url}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.key}`,
+      },
+      body: JSON.stringify(payload),
+      signal: currentAbortController.signal,
+    });
+
+    if (!response.ok)
+      throw new Error(
+        (await response.json().catch(() => ({}))).error?.message ||
+          `HTTP ${response.status}`,
+      );
+    const reply = (await response.json()).choices[0].message.content || "";
+
+    if (config.godMode && reply) {
+      const runMatches = [...reply.matchAll(/<run>([\s\S]*?)<\/run>/g)];
+      if (runMatches.length > 0) {
+        chat.messages.push({ role: "assistant", content: reply });
+        saveState();
+        renderApp();
+
+        for (const match of runMatches) {
+          const code = match[1].trim();
+          const result = await executeGodMode(code);
+          chat.messages.push({ role: "user", content: result });
+          saveState();
+          renderApp(true);
+        }
+        return sendMessage(autoLoopDepth + 1);
+      }
+    }
+
+    if (reply.trim() !== "" || isAutoLoop) {
+      chat.messages.push({ role: "assistant", content: reply });
+      saveState();
+      renderApp();
+    }
+  } catch (error) {
+    const chat = chats.find((c) => c.id === currentChatId);
+    chat.messages.push({
+      role: "error",
+      content:
+        error.name === "AbortError"
+          ? "**System:** Request cancelled by user."
+          : `**Error:**\n\n${error.message}`,
+    });
+  }
+
+  currentAbortController = null;
+  btn.textContent = "Send";
+  saveState();
+  renderApp();
+}
