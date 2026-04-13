@@ -80,7 +80,7 @@ function applyInputAreaState() {
       isFile && chat.messages[editingMessageIndex]?.mode === "embed";
 
     area.placeholder = isEmbed
-      ? "Default behavior: Uses subsequent user messages for search."
+      ? "Type an embeddings prompt here. Default behavior: Uses subsequent user messages for search."
       : "";
   } else {
     modelSel.classList.remove("hidden");
