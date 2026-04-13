@@ -2,26 +2,7 @@
 $("#settings-heading").addEventListener("click", (e) => {
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault();
-    isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
-    if (!isSuperSecretSettingsOpen) {
-      activeSuperSecretSetting = null;
-      uncommittedSuperSecretValue = null;
-      $("#chat-input").value = "";
-    } else {
-      if (activeSuperSecretSetting) {
-        const area = $("#chat-input");
-        if (uncommittedSuperSecretValue !== null) {
-          area.value = uncommittedSuperSecretValue;
-        } else {
-          area.value =
-            config[activeSuperSecretSetting] !== "" &&
-            config[activeSuperSecretSetting] !== undefined
-              ? config[activeSuperSecretSetting]
-              : SETTING_DEFAULTS[activeSuperSecretSetting].default;
-        }
-      }
-    }
-    renderApp();
+    toggleSuperSecretSettings();
   }
 });
 

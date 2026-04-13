@@ -1262,6 +1262,29 @@
         area.style.overflowX = area.style.whiteSpace === "pre" ? "auto" : "hidden";
       }
 
+      function toggleSuperSecretSettings() {
+        isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
+        if (!isSuperSecretSettingsOpen) {
+          activeSuperSecretSetting = null;
+          uncommittedSuperSecretValue = null;
+          $("#chat-input").value = "";
+        } else {
+          if (activeSuperSecretSetting) {
+            const area = $("#chat-input");
+            if (uncommittedSuperSecretValue !== null) {
+              area.value = uncommittedSuperSecretValue;
+            } else {
+              area.value =
+                config[activeSuperSecretSetting] !== "" &&
+                config[activeSuperSecretSetting] !== undefined
+                  ? config[activeSuperSecretSetting]
+                  : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+            }
+          }
+        }
+        renderApp();
+      }
+
       // --- EMBEDDINGS & RAG ---
       async function fetchEmbeddings(texts) {
         let base =
@@ -2173,26 +2196,7 @@
       $("#settings-heading").addEventListener("click", (e) => {
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
-          isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
-          if (!isSuperSecretSettingsOpen) {
-            activeSuperSecretSetting = null;
-            uncommittedSuperSecretValue = null;
-            $("#chat-input").value = "";
-          } else {
-            if (activeSuperSecretSetting) {
-              const area = $("#chat-input");
-              if (uncommittedSuperSecretValue !== null) {
-                area.value = uncommittedSuperSecretValue;
-              } else {
-                area.value =
-                  config[activeSuperSecretSetting] !== "" &&
-                  config[activeSuperSecretSetting] !== undefined
-                    ? config[activeSuperSecretSetting]
-                    : SETTING_DEFAULTS[activeSuperSecretSetting].default;
-              }
-            }
-          }
-          renderApp();
+          toggleSuperSecretSettings();
         }
       });
 
@@ -2314,6 +2318,10 @@
         if (e.altKey && e.key.toLowerCase() === "o") {
           e.preventDefault();
           toggleTitle();
+        }
+        if (e.altKey && e.key.toLowerCase() === "i") {
+          e.preventDefault();
+          toggleSuperSecretSettings();
         }
 
         if (e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {

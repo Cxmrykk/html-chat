@@ -298,3 +298,26 @@ function toggleGlobalWrap() {
   area.style.whiteSpace = area.style.whiteSpace === "pre" ? "pre-wrap" : "pre";
   area.style.overflowX = area.style.whiteSpace === "pre" ? "auto" : "hidden";
 }
+
+function toggleSuperSecretSettings() {
+  isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
+  if (!isSuperSecretSettingsOpen) {
+    activeSuperSecretSetting = null;
+    uncommittedSuperSecretValue = null;
+    $("#chat-input").value = "";
+  } else {
+    if (activeSuperSecretSetting) {
+      const area = $("#chat-input");
+      if (uncommittedSuperSecretValue !== null) {
+        area.value = uncommittedSuperSecretValue;
+      } else {
+        area.value =
+          config[activeSuperSecretSetting] !== "" &&
+          config[activeSuperSecretSetting] !== undefined
+            ? config[activeSuperSecretSetting]
+            : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+      }
+    }
+  }
+  renderApp();
+}

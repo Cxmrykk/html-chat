@@ -29,6 +29,7 @@ A minimalist, high-performance AI chat interface that functions as a single, por
 | Alt + R                            | Rename current chat                                |
 | Alt + P                            | Toggle sidebar visibility                          |
 | Alt + O                            | Toggle header visibility                           |
+| Alt + I                            | Toggle Super Secret Settings visibility            |
 | Shift + Up/Down                    | Scroll between messages                            |
 | Alt + Up/Down                      | Switch between chats                               |
 | Ctrl/Cmd + Click (on code/maths)   | Copy content to clipboard                          |

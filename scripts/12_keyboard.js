@@ -33,6 +33,10 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     toggleTitle();
   }
+  if (e.altKey && e.key.toLowerCase() === "i") {
+    e.preventDefault();
+    toggleSuperSecretSettings();
+  }
 
   if (e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
     if (document.activeElement?.tagName === "TEXTAREA") return;
