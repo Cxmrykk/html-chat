@@ -195,10 +195,11 @@ function renderCurrentChat(preserveScroll = false) {
 
     let sectionsHTML = "";
     for (const [catName, keys] of Object.entries(categories)) {
-      sectionsHTML += `<div style="margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">
-        <h3 style="margin: 0; font-size: 0.9em; text-transform: uppercase; color: #666;">${catName}</h3>
-      </div>
-      <div style="padding: 10px 0;">`;
+      sectionsHTML += `
+        <div style="margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">
+          <h3 style="margin: 0; font-size: 0.9em; text-transform: uppercase; color: #666;">${catName}</h3>
+        </div>
+        <div style="padding: 10px 0;">`;
 
       sectionsHTML += keys
         .map((k) => {
@@ -219,15 +220,15 @@ function renderCurrentChat(preserveScroll = false) {
     }
 
     container.innerHTML = `
-      <div style="height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
           <h2 style="margin: 0;">Super Secret Settings</h2>
           <button onclick="resetAllSuperSecretSettings()">Reset All</button>
         </div>
-        <p style="flex-shrink: 0; margin-top: 5px; font-size: 0.85em; color: #555;">Advanced engine parameters. Hover over a setting to see its description.</p>
-        <div style="flex-grow: 1; overflow-y: auto; padding-right: 5px;">
-          ${sectionsHTML}
-        </div>
+        <p style="margin-top: 5px; font-size: 0.85em; color: #555;">
+          Advanced engine parameters. Hover over a setting to see its description.
+        </p>
+        ${sectionsHTML}
       </div>
     `;
     return;
