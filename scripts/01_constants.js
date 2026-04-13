@@ -35,70 +35,84 @@ const DEFAULT_GOD_MODE_PROMPT = [
 ].join("\n");
 
 const SETTING_DEFAULTS = {
+  // --- LLM Category ---
   godModePrompt: {
     default: DEFAULT_GOD_MODE_PROMPT,
-    tooltip: "Enter the system prompt used when God Mode is enabled.",
+    tooltip: "System prompt used when God Mode is enabled.",
+    category: "LLM Behavior",
   },
   temperature: {
     default: "",
-    tooltip: "Controls randomness (0.0 to 2.0). Leave empty for API default.",
+    tooltip: "Controls randomness (0.0 to 2.0).",
+    category: "LLM Behavior",
   },
   top_p: {
     default: "",
-    tooltip: "Nucleus sampling (0.0 to 1.0). Leave empty for API default.",
+    tooltip: "Nucleus sampling (0.0 to 1.0).",
+    category: "LLM Behavior",
   },
   max_tokens: {
     default: "",
-    tooltip:
-      "Maximum number of tokens to generate. Leave empty for API default.",
+    tooltip: "Maximum number of tokens to generate.",
+    category: "LLM Behavior",
   },
   frequency_penalty: {
     default: "",
-    tooltip: "Penalizes new tokens (-2.0 to 2.0). Leave empty for API default.",
+    tooltip: "Penalizes new tokens based on existing frequency (-2.0 to 2.0).",
+    category: "LLM Behavior",
   },
   presence_penalty: {
     default: "",
-    tooltip: "Penalizes new tokens (-2.0 to 2.0). Leave empty for API default.",
+    tooltip: "Penalizes new tokens based on presence (-2.0 to 2.0).",
+    category: "LLM Behavior",
   },
+
+  // --- Connection Category ---
   embeddingsUrl: {
     default: "",
-    tooltip: "Custom base URL for embeddings. Leave empty to use main API URL.",
+    tooltip: "Custom base URL for embeddings (e.g. LiteLLM or OpenAI).",
+    category: "API & Connections",
   },
   embeddingsKey: {
     default: "",
-    tooltip:
-      "API Key for the custom embeddings URL. Leave empty to use main API key.",
+    tooltip: "API Key for the custom embeddings URL.",
+    category: "API & Connections",
   },
   embeddingsModel: {
     default: "",
-    tooltip:
-      "Model used for processing local RAG commands. Leave empty to disable embeddings.",
+    tooltip: "Model used for processing local RAG commands. Empty to disable.",
+    category: "API & Connections",
   },
+
+  // --- RAG Category ---
   chunkSize: {
     default: "1000",
     tooltip: "Character size for file chunking.",
+    category: "RAG & Document Processing",
   },
   chunkOverlap: {
     default: "200",
     tooltip: "Character overlap to maintain document continuity.",
+    category: "RAG & Document Processing",
   },
   maxRagTokens: {
     default: "5000",
     tooltip: "Maximum estimated tokens to retrieve per file message.",
+    category: "RAG & Document Processing",
   },
   ragThreshold: {
     default: "0.0",
-    tooltip:
-      "Minimum similarity threshold (0.0 to 1.0) for context injection. 0.0 allows anything.",
+    tooltip: "Min similarity threshold (0.0 to 1.0). 0.0 allows anything.",
+    category: "RAG & Document Processing",
   },
   chunkBatchSize: {
     default: "100",
-    tooltip:
-      "Max chunks sent to Embeddings API at once. Lower this if you get batch size errors.",
+    tooltip: "Max chunks sent to Embeddings API at once.",
+    category: "RAG & Document Processing",
   },
   chunkSeparator: {
     default: "...",
-    tooltip:
-      "String used to separate non-contiguous chunks in RAG. Allows special characters like \\n.",
+    tooltip: "String used to separate non-contiguous chunks (allows \\n).",
+    category: "RAG & Document Processing",
   },
 };

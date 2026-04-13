@@ -155,23 +155,17 @@ function renderCurrentChat(preserveScroll = false) {
 
   if (isSuperSecretSettingsOpen) {
     const getSettingDisplay = (k) => {
-      if (k === "godModePrompt")
-        return config[k] === SETTING_DEFAULTS[k].default ? "Default" : "Custom";
-      if (k === "embeddingsKey") return config[k] ? "Custom" : "API Default";
-      if (k === "chunkSeparator") {
-        if (config[k] === undefined) return SETTING_DEFAULTS[k].default;
-        if (config[k] === "") return "(empty)";
-        return escapeHTML(config[k]);
-      }
-      if (k === "embeddingsModel") {
-        return config[k] === "" || config[k] === undefined
-          ? "Disabled"
-          : escapeHTML(config[k]);
-      }
+      const val = config[k];
+      const isDefault =
+        val === undefined || val === "" || val === SETTING_DEFAULTS[k].default;
 
-      let val =
-        config[k] === "" || config[k] === undefined ? "API Default" : config[k];
-      return escapeHTML(String(val));
+      if (k === "godModePrompt") return isDefault ? "Default" : "Custom";
+      if (k === "embeddingsKey") return val ? "Custom" : "API Default";
+      if (k === "embeddingsModel")
+        return val === "" || val === undefined ? "Disabled" : escapeHTML(val);
+
+      let displayVal = val === "" || val === undefined ? "API Default" : val;
+      return escapeHTML(String(displayVal));
     };
 
     const settingNames = {
@@ -192,21 +186,47 @@ function renderCurrentChat(preserveScroll = false) {
       chunkSeparator: "Chunk Separator",
     };
 
-    const buttonsHTML = Object.keys(SETTING_DEFAULTS)
-      .map((k) => {
-        return `<button class="${activeSuperSecretSetting === k ? "active-setting" : ""}" onclick="selectSuperSecretSetting('${k}')" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace;">Edit ${settingNames[k]} (Current: ${getSettingDisplay(k)})</button>`;
-      })
-      .join("");
+    const categories = {};
+    Object.keys(SETTING_DEFAULTS).forEach((key) => {
+      const cat = SETTING_DEFAULTS[key].category || "Other";
+      if (!categories[cat]) categories[cat] = [];
+      categories[cat].push(key);
+    });
+
+    let sectionsHTML = "";
+    for (const [catName, keys] of Object.entries(categories)) {
+      sectionsHTML += `<div style="margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">
+        <h3 style="margin: 0; font-size: 0.9em; text-transform: uppercase; color: #666;">${catName}</h3>
+      </div>
+      <div style="padding: 10px 0;">`;
+
+      sectionsHTML += keys
+        .map((k) => {
+          const isActive = activeSuperSecretSetting === k;
+          const tooltip = SETTING_DEFAULTS[k].tooltip;
+          return `<button 
+          class="${isActive ? "active-setting" : ""}" 
+          onclick="selectSuperSecretSetting('${k}')" 
+          title="${escapeHTML(tooltip)}"
+          style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace; display: flex; justify-content: space-between;">
+            <span>Edit ${settingNames[k]}</span>
+            <span style="opacity: 0.7;">${getSettingDisplay(k)}</span>
+        </button>`;
+        })
+        .join("");
+
+      sectionsHTML += `</div>`;
+    }
 
     container.innerHTML = `
       <div style="height: 100%; display: flex; flex-direction: column; box-sizing: border-box;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
           <h2 style="margin: 0;">Super Secret Settings</h2>
-          <button onclick="resetAllSuperSecretSettings()">Reset All to Default</button>
+          <button onclick="resetAllSuperSecretSettings()">Reset All</button>
         </div>
-        <p style="flex-shrink: 0; margin-top: 5px; font-size: 0.9em; color: #555;">Warning: Changes may vary based on LLM provider (i.e. LiteLLM users). Settings are not guaranteed to work for every provider.</p>
-        <div style="flex-grow: 1; overflow-y: auto; margin: 10px 0;">
-          ${buttonsHTML}
+        <p style="flex-shrink: 0; margin-top: 5px; font-size: 0.85em; color: #555;">Advanced engine parameters. Hover over a setting to see its description.</p>
+        <div style="flex-grow: 1; overflow-y: auto; padding-right: 5px;">
+          ${sectionsHTML}
         </div>
       </div>
     `;
