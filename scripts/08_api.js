@@ -39,15 +39,17 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
   const MAX_LOOPS = 5;
 
   if (autoLoopDepth >= MAX_LOOPS) {
-    chats
-      .find((c) => c.id === currentChatId)
-      .messages.push({
-        role: "error",
-        content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached.`,
-      });
-    updateTokenCount();
+    const chat = chats.find((c) => c.id === currentChatId);
+    chat.messages.push({
+      role: "error",
+      content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached.`,
+    });
+    invalidateTokenCache();
     saveState();
-    renderApp();
+    appendMessageToDOM(
+      chat.messages[chat.messages.length - 1],
+      chat.messages.length - 1,
+    );
     return;
   }
 
@@ -67,7 +69,9 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     if (!config.key && !skipApi)
       return alert("Please enter your API key in the settings first.");
 
-    if (!currentChatId) newChat();
+    if (!currentChatId) {
+      newChat();
+    }
 
     const chat = chats.find((c) => c.id === currentChatId);
 
@@ -79,12 +83,18 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
           : text;
       chat.title =
         titleSource.substring(0, 30) + (titleSource.length > 30 ? "..." : "");
+      renderChatList();
     }
 
     chat.messages.push({ role: "user", content: text });
     inputEl.value = "";
+    invalidateTokenCache();
     saveState();
-    renderApp();
+    appendMessageToDOM(
+      chat.messages[chat.messages.length - 1],
+      chat.messages.length - 1,
+    );
+    updateTokenCount();
   }
 
   if (skipApi) return;
@@ -115,6 +125,7 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     const payload = {
       model: $("#model-select").value,
       messages: cleanMessages,
+      stream: true,
     };
 
     if (config.temperature !== "" && config.temperature !== undefined)
@@ -146,44 +157,95 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
         (await response.json().catch(() => ({}))).error?.message ||
           `HTTP ${response.status}`,
       );
-    const reply = (await response.json()).choices[0].message.content || "";
+
+    chat.messages.push({ role: "assistant", content: "" });
+    const msgIndex = chat.messages.length - 1;
+    appendMessageToDOM(chat.messages[msgIndex], msgIndex);
+    invalidateTokenCache();
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let reply = "";
+    let lastRenderTime = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (let line of lines) {
+          line = line.trim();
+          if (line.startsWith("data: ")) {
+            if (line === "data: [DONE]") continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              const chunk = data.choices[0]?.delta?.content;
+              if (chunk) reply += chunk;
+            } catch (e) {}
+          }
+        }
+
+        chat.messages[msgIndex].content = reply;
+
+        const now = Date.now();
+        // Throttle UI rendering to ~10fps to avoid blocking thread
+        if (now - lastRenderTime > 100) {
+          updateMessageContentInDOM(msgIndex, reply, false);
+          lastRenderTime = now;
+        }
+      }
+    } catch (err) {
+      if (err.name === "AbortError") {
+        reply += "\n\n*[Stopped by user]*";
+        chat.messages[msgIndex].content = reply;
+      } else {
+        throw err;
+      }
+    }
+
+    chat.messages[msgIndex].content = reply;
+    updateMessageContentInDOM(msgIndex, reply, true);
+    saveState();
 
     if (config.godMode && reply) {
       const runMatches = [...reply.matchAll(/<run>([\s\S]*?)<\/run>/g)];
       if (runMatches.length > 0) {
-        chat.messages.push({ role: "assistant", content: reply });
-        saveState();
-        renderApp();
-
         for (const match of runMatches) {
           const code = match[1].trim();
           const result = await executeGodMode(code);
           chat.messages.push({ role: "user", content: result });
+          invalidateTokenCache();
           saveState();
-          renderApp(true);
+          appendMessageToDOM(
+            chat.messages[chat.messages.length - 1],
+            chat.messages.length - 1,
+          );
         }
         return sendMessage(autoLoopDepth + 1);
       }
     }
-
-    if (reply.trim() !== "" || isAutoLoop) {
-      chat.messages.push({ role: "assistant", content: reply });
-      saveState();
-      renderApp();
-    }
   } catch (error) {
-    const chat = chats.find((c) => c.id === currentChatId);
-    chat.messages.push({
-      role: "error",
-      content:
-        error.name === "AbortError"
-          ? "**System:** Request cancelled by user."
-          : `**Error:**\n\n${error.message}`,
-    });
+    if (error.name !== "AbortError") {
+      const chat = chats.find((c) => c.id === currentChatId);
+      chat.messages.push({
+        role: "error",
+        content: `**Error:**\n\n${error.message}`,
+      });
+      invalidateTokenCache();
+      saveState();
+      appendMessageToDOM(
+        chat.messages[chat.messages.length - 1],
+        chat.messages.length - 1,
+      );
+    }
   }
 
   currentAbortController = null;
   btn.textContent = "Send";
   saveState();
-  renderApp();
 }

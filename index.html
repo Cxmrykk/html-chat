@@ -755,14 +755,35 @@
       let activeSuperSecretSetting = null;
       let uncommittedSuperSecretValue = null;
 
-      function saveState() {
+      let cachedContextChars = -1;
+
+      function invalidateTokenCache() {
+        cachedContextChars = -1;
+      }
+
+      async function saveState() {
         dbSet("mf_config", config);
-        dbSet("mf_chats", chats);
-        dbSet("mf_files", files);
         dbSet("mf_current_chat_id", currentChatId || "");
         dbSet("mf_sidebar_hidden", isSidebarHidden);
         dbSet("mf_title_hidden", isTitleHidden);
         dbSet("mf_prompt_height", promptHeight);
+        dbSet("mf_files", files);
+
+        const index = chats.map((c) => ({ id: c.id, title: c.title }));
+        dbSet("mf_chat_index", index);
+
+        if (currentChatId) {
+          const current = chats.find((c) => c.id === currentChatId);
+          if (current) dbSet(`mf_chat_${currentChatId}`, current);
+        }
+      }
+
+      async function saveAllChats() {
+        const index = chats.map((c) => ({ id: c.id, title: c.title }));
+        dbSet("mf_chat_index", index);
+        for (let c of chats) {
+          await dbSet(`mf_chat_${c.id}`, c);
+        }
       }
 
       // --- CONFIGURATION & SUPER SECRET SETTINGS ---
@@ -928,7 +949,7 @@
           const file = e.target.files[0];
           if (!file) return;
           const reader = new FileReader();
-          reader.onload = (event) => {
+          reader.onload = async (event) => {
             try {
               const importedChats = JSON.parse(event.target.result);
               if (!Array.isArray(importedChats))
@@ -942,6 +963,7 @@
                 if (!existingIds.has(chat.id)) {
                   chats.push(chat);
                   existingIds.add(chat.id);
+                  await dbSet(`mf_chat_${chat.id}`, chat);
                   addedCount++;
                 }
               }
@@ -990,6 +1012,7 @@
           isSidebarHidden = true;
           applySidebarState();
         }
+        invalidateTokenCache();
         saveState();
         renderApp();
         updateTokenCount();
@@ -1003,6 +1026,7 @@
           isSidebarHidden = true;
           applySidebarState();
         }
+        invalidateTokenCache();
         saveState();
         renderApp();
       }
@@ -1012,6 +1036,7 @@
         resetEditState();
         chats = chats.filter((c) => c.id !== id);
         if (currentChatId === id) currentChatId = chats.length ? chats[0].id : null;
+        invalidateTokenCache();
         saveState();
         renderApp();
       }
@@ -1022,7 +1047,7 @@
         if (newTitle) {
           chat.title = newTitle.trim();
           saveState();
-          renderApp(true);
+          renderChatList();
         }
       }
 
@@ -1037,6 +1062,7 @@
           messages: JSON.parse(JSON.stringify(chat.messages.slice(0, msgIndex + 1))),
         });
         currentChatId = newId;
+        invalidateTokenCache();
         saveState();
         renderApp();
       }
@@ -1048,24 +1074,29 @@
 
         if (msg.role === "file") {
           chat.messages = chat.messages.slice(0, msgIndex + 1);
+          invalidateTokenCache();
           saveState();
+          renderCurrentChat();
           sendMessage();
         } else {
           $("#chat-input").value = msg.content;
           chat.messages = chat.messages.slice(0, msgIndex);
+          invalidateTokenCache();
           saveState();
+          renderCurrentChat();
           sendMessage();
         }
       }
 
       function deleteMessage(msgIndex) {
-        if (editingMessageIndex === msgIndex) resetEditState();
+        if (editingMessageIndex === msgIndex) cancelGlobalEdit();
         else if (editingMessageIndex !== null && editingMessageIndex > msgIndex) {
           editingMessageIndex--;
         }
         chats.find((c) => c.id === currentChatId).messages.splice(msgIndex, 1);
+        invalidateTokenCache();
         saveState();
-        renderApp(true);
+        renderCurrentChat();
       }
 
       async function handleUploadClick() {
@@ -1116,14 +1147,14 @@
 
         await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
         saveState();
-        renderApp();
+        renderFileList();
       }
 
       async function deleteFile(id) {
         files = files.filter((f) => f.id !== id);
         await dbDelete(`mf_filedata_${id}`);
         saveState();
-        renderApp();
+        renderFileList();
       }
 
       async function toggleEmbedding(id) {
@@ -1180,8 +1211,12 @@
           applySidebarState();
         }
 
+        invalidateTokenCache();
         saveState();
-        renderApp();
+        appendMessageToDOM(
+          chat.messages[chat.messages.length - 1],
+          chat.messages.length - 1,
+        );
         updateTokenCount();
       }
 
@@ -1199,7 +1234,12 @@
       }
 
       function startGlobalEdit(index) {
+        const prevIdx = editingMessageIndex;
         editingMessageIndex = index;
+
+        if (prevIdx !== null) updateMessageInDOM(prevIdx);
+        updateMessageInDOM(index);
+
         const chat = chats.find((c) => c.id === currentChatId);
         const msg = chat.messages[index];
         const area = $("#chat-input");
@@ -1208,8 +1248,7 @@
           msg.role === "file" && msg.mode === "embed"
             ? msg.prompt || ""
             : msg.content;
-
-        renderApp(true);
+        applyInputAreaState();
         area.focus();
       }
 
@@ -1243,6 +1282,7 @@
           msg.content = $("#chat-input").value;
         }
 
+        invalidateTokenCache();
         saveState();
         endGlobalEdit();
       }
@@ -1252,8 +1292,10 @@
       }
 
       function endGlobalEdit() {
+        const idx = editingMessageIndex;
         resetEditState();
-        renderApp(true);
+        if (idx !== null) updateMessageInDOM(idx);
+        applyInputAreaState();
       }
 
       function toggleGlobalWrap() {
@@ -1282,7 +1324,8 @@
             }
           }
         }
-        renderApp();
+        renderCurrentChat();
+        applyInputAreaState();
       }
 
       // --- EMBEDDINGS & RAG ---
@@ -1593,15 +1636,17 @@
         const MAX_LOOPS = 5;
 
         if (autoLoopDepth >= MAX_LOOPS) {
-          chats
-            .find((c) => c.id === currentChatId)
-            .messages.push({
-              role: "error",
-              content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached.`,
-            });
-          updateTokenCount();
+          const chat = chats.find((c) => c.id === currentChatId);
+          chat.messages.push({
+            role: "error",
+            content: `**System Error:** Maximum execution loop depth (${MAX_LOOPS}) reached.`,
+          });
+          invalidateTokenCache();
           saveState();
-          renderApp();
+          appendMessageToDOM(
+            chat.messages[chat.messages.length - 1],
+            chat.messages.length - 1,
+          );
           return;
         }
 
@@ -1621,7 +1666,9 @@
           if (!config.key && !skipApi)
             return alert("Please enter your API key in the settings first.");
 
-          if (!currentChatId) newChat();
+          if (!currentChatId) {
+            newChat();
+          }
 
           const chat = chats.find((c) => c.id === currentChatId);
 
@@ -1633,12 +1680,18 @@
                 : text;
             chat.title =
               titleSource.substring(0, 30) + (titleSource.length > 30 ? "..." : "");
+            renderChatList();
           }
 
           chat.messages.push({ role: "user", content: text });
           inputEl.value = "";
+          invalidateTokenCache();
           saveState();
-          renderApp();
+          appendMessageToDOM(
+            chat.messages[chat.messages.length - 1],
+            chat.messages.length - 1,
+          );
+          updateTokenCount();
         }
 
         if (skipApi) return;
@@ -1669,6 +1722,7 @@
           const payload = {
             model: $("#model-select").value,
             messages: cleanMessages,
+            stream: true,
           };
 
           if (config.temperature !== "" && config.temperature !== undefined)
@@ -1700,46 +1754,97 @@
               (await response.json().catch(() => ({}))).error?.message ||
                 `HTTP ${response.status}`,
             );
-          const reply = (await response.json()).choices[0].message.content || "";
+
+          chat.messages.push({ role: "assistant", content: "" });
+          const msgIndex = chat.messages.length - 1;
+          appendMessageToDOM(chat.messages[msgIndex], msgIndex);
+          invalidateTokenCache();
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder("utf-8");
+          let buffer = "";
+          let reply = "";
+          let lastRenderTime = 0;
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+
+              let lines = buffer.split("\n");
+              buffer = lines.pop();
+
+              for (let line of lines) {
+                line = line.trim();
+                if (line.startsWith("data: ")) {
+                  if (line === "data: [DONE]") continue;
+                  try {
+                    const data = JSON.parse(line.slice(6));
+                    const chunk = data.choices[0]?.delta?.content;
+                    if (chunk) reply += chunk;
+                  } catch (e) {}
+                }
+              }
+
+              chat.messages[msgIndex].content = reply;
+
+              const now = Date.now();
+              // Throttle UI rendering to ~10fps to avoid blocking thread
+              if (now - lastRenderTime > 100) {
+                updateMessageContentInDOM(msgIndex, reply, false);
+                lastRenderTime = now;
+              }
+            }
+          } catch (err) {
+            if (err.name === "AbortError") {
+              reply += "\n\n*[Stopped by user]*";
+              chat.messages[msgIndex].content = reply;
+            } else {
+              throw err;
+            }
+          }
+
+          chat.messages[msgIndex].content = reply;
+          updateMessageContentInDOM(msgIndex, reply, true);
+          saveState();
 
           if (config.godMode && reply) {
             const runMatches = [...reply.matchAll(/<run>([\s\S]*?)<\/run>/g)];
             if (runMatches.length > 0) {
-              chat.messages.push({ role: "assistant", content: reply });
-              saveState();
-              renderApp();
-
               for (const match of runMatches) {
                 const code = match[1].trim();
                 const result = await executeGodMode(code);
                 chat.messages.push({ role: "user", content: result });
+                invalidateTokenCache();
                 saveState();
-                renderApp(true);
+                appendMessageToDOM(
+                  chat.messages[chat.messages.length - 1],
+                  chat.messages.length - 1,
+                );
               }
               return sendMessage(autoLoopDepth + 1);
             }
           }
-
-          if (reply.trim() !== "" || isAutoLoop) {
-            chat.messages.push({ role: "assistant", content: reply });
-            saveState();
-            renderApp();
-          }
         } catch (error) {
-          const chat = chats.find((c) => c.id === currentChatId);
-          chat.messages.push({
-            role: "error",
-            content:
-              error.name === "AbortError"
-                ? "**System:** Request cancelled by user."
-                : `**Error:**\n\n${error.message}`,
-          });
+          if (error.name !== "AbortError") {
+            const chat = chats.find((c) => c.id === currentChatId);
+            chat.messages.push({
+              role: "error",
+              content: `**Error:**\n\n${error.message}`,
+            });
+            invalidateTokenCache();
+            saveState();
+            appendMessageToDOM(
+              chat.messages[chat.messages.length - 1],
+              chat.messages.length - 1,
+            );
+          }
         }
 
         currentAbortController = null;
         btn.textContent = "Send";
         saveState();
-        renderApp();
       }
 
       // --- UI TOGGLES & UPDATES ---
@@ -1798,27 +1903,29 @@
         if (btn.textContent.includes("Thinking") || btn.classList.contains("hidden"))
           return;
 
-        const inputVal = $("#chat-input").value || "";
-        let contextChars = 0;
-
-        if (currentChatId) {
-          const chat = chats.find((c) => c.id === currentChatId);
-          if (chat && chat.messages) {
-            contextChars = chat.messages.reduce((acc, m) => {
-              if (m.role === "file") {
-                if (m.mode === "full") return acc + (m.content || "").length;
-                return acc + (m.maxTokens || 5000) * 4;
-              }
-              return acc + (m.content || "").length;
-            }, 0);
+        if (cachedContextChars === -1) {
+          let contextChars = 0;
+          if (currentChatId) {
+            const chat = chats.find((c) => c.id === currentChatId);
+            if (chat && chat.messages) {
+              contextChars = chat.messages.reduce((acc, m) => {
+                if (m.role === "file") {
+                  if (m.mode === "full") return acc + (m.content || "").length;
+                  return acc + (m.maxTokens || 5000) * 4;
+                }
+                return acc + (m.content || "").length;
+              }, 0);
+            }
           }
+
+          if (config.godMode) {
+            contextChars += (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT).length;
+          }
+          cachedContextChars = contextChars;
         }
 
-        if (config.godMode) {
-          contextChars += (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT).length;
-        }
-
-        const totalChars = inputVal.length + contextChars;
+        const inputVal = $("#chat-input").value || "";
+        const totalChars = inputVal.length + cachedContextChars;
         const tokens = Math.ceil(totalChars / 4);
 
         if (tokens < 1000) {
@@ -1985,6 +2092,147 @@
           .join("");
       }
 
+      function generateMessageHTML(msg, i, isEditing = false) {
+        let displayContent = msg.content || "";
+        let configHtml = "";
+
+        if (msg.role === "assistant") {
+          displayContent = displayContent.replace(
+            /<run>([\s\S]*?)<\/run>/g,
+            (match, code) =>
+              `**Executing Code:**\n\`\`\`javascript\n${code.trim()}\n\`\`\``,
+          );
+        } else if (msg.role === "file") {
+          if (msg.mode === "embed") {
+            displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*<br>*(<= ${msg.maxTokens || 5000} tokens with embeddings enabled)*`;
+            if (msg.prompt) displayContent += `\n\n**Search Prompt:** ${msg.prompt}`;
+
+            if (isEditing) {
+              configHtml = `
+      <div style="display:flex; gap:15px; flex-wrap:wrap; margin-top:10px; align-items:center; background: #eee; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+      <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Max Tokens <input type="number" class="embed-cfg-tokens" value="${msg.maxTokens || 5000}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
+      <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Match Threshold <input type="number" step="0.1" class="embed-cfg-threshold" value="${msg.ragThreshold || 0.0}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
+      <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Chunk Separator <input type="text" class="embed-cfg-separator" value="${escapeHTML(msg.chunkSeparator !== undefined ? msg.chunkSeparator : "...")}" style="width:120px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
+      </div>`;
+            }
+          } else {
+            displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*`;
+          }
+        }
+
+        let actionsHtml = "";
+        if (isEditing) {
+          actionsHtml = `
+            <button data-action="save-edit">Save</button>
+            <button data-action="cancel-edit">Cancel</button>
+            <button data-action="toggle-wrap">Toggle Wrap</button>
+          `;
+        } else {
+          let editBtn = `<button data-action="edit">Edit</button>`;
+          if (msg.role === "file" && msg.mode === "embed") {
+            editBtn = `<button data-action="edit">Config</button>`;
+          }
+          actionsHtml = `
+            ${editBtn}
+            <button data-action="fork">Fork</button>
+            ${msg.role === "user" || msg.role === "file" ? `<button data-action="retry">Retry</button>` : ""}
+            <button data-action="delete">Delete</button>
+          `;
+        }
+
+        return `
+          <div class="msg ${msg.role} ${isEditing ? "editing" : ""}" data-index="${i}">
+            <div class="msg-meta">
+              ${
+                msg.role === "file"
+                  ? `<span>FILE: ${escapeHTML(msg.fileName)}</span>`
+                  : `<select class="role-select">
+                  <option value="user" ${msg.role === "user" ? "selected" : ""}>user</option>
+                  <option value="assistant" ${msg.role === "assistant" ? "selected" : ""}>assistant</option>
+                  <option value="system" ${msg.role === "system" ? "selected" : ""}>system</option>
+                  ${msg.role === "error" ? `<option value="error" selected>error</option>` : ""}
+                </select>`
+              }
+              <div class="msg-actions">${actionsHtml}</div>
+            </div>
+            <div class="msg-content">${marked.parse(displayContent)}${configHtml}</div>
+          </div>
+        `;
+      }
+
+      function appendMessageToDOM(msg, index) {
+        const container = $("#chat-container");
+        const wrapper = document.createElement("div");
+        wrapper.innerHTML = generateMessageHTML(msg, index, false);
+        const msgEl = wrapper.firstElementChild;
+        container.appendChild(msgEl);
+
+        renderMathInElement(msgEl, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$", right: "$", display: false },
+          ],
+          output: "htmlAndMathml",
+          throwOnError: false,
+        });
+        Prism.highlightAllUnder(msgEl);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      function updateMessageInDOM(index) {
+        const chat = chats.find((c) => c.id === currentChatId);
+        const msg = chat.messages[index];
+        const existingEl = document.querySelector(`.msg[data-index="${index}"]`);
+
+        if (!existingEl) return renderCurrentChat();
+
+        const wrapper = document.createElement("div");
+        wrapper.innerHTML = generateMessageHTML(
+          msg,
+          index,
+          editingMessageIndex === index,
+        );
+        const newEl = wrapper.firstElementChild;
+
+        existingEl.replaceWith(newEl);
+        renderMathInElement(newEl, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$", right: "$", display: false },
+          ],
+          output: "htmlAndMathml",
+          throwOnError: false,
+        });
+        Prism.highlightAllUnder(newEl);
+      }
+
+      function updateMessageContentInDOM(index, content, isFinal = true) {
+        const el = document.querySelector(`.msg[data-index="${index}"] .msg-content`);
+        if (!el) return;
+
+        let displayContent = content;
+        displayContent = displayContent.replace(
+          /<run>([\s\S]*?)<\/run>/g,
+          (match, code) =>
+            `**Executing Code:**\n\`\`\`javascript\n${code.trim()}\n\`\`\``,
+        );
+
+        el.innerHTML = marked.parse(displayContent);
+        if (isFinal) {
+          renderMathInElement(el, {
+            delimiters: [
+              { left: "$$", right: "$$", display: true },
+              { left: "$", right: "$", display: false },
+            ],
+            output: "htmlAndMathml",
+            throwOnError: false,
+          });
+          Prism.highlightAllUnder(el);
+          const container = $("#chat-container");
+          container.scrollTop = container.scrollHeight;
+        }
+      }
+
       function renderCurrentChat(preserveScroll = false) {
         const container = $("#chat-container");
         const prevScroll = container.scrollTop;
@@ -2094,75 +2342,7 @@
             '<p style="margin:0; padding-top: 15px;">It is empty in here. Send a prompt.</p>';
         } else {
           html += chat.messages
-            .map((msg, i) => {
-              let isEditing = editingMessageIndex === i;
-              let displayContent = msg.content || "";
-              let configHtml = "";
-
-              if (msg.role === "assistant") {
-                displayContent = displayContent.replace(
-                  /<run>([\s\S]*?)<\/run>/g,
-                  (match, code) =>
-                    `**Executing Code:**\n\`\`\`javascript\n${code.trim()}\n\`\`\``,
-                );
-              } else if (msg.role === "file") {
-                if (msg.mode === "embed") {
-                  displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*<br>*(<= ${msg.maxTokens || 5000} tokens with embeddings enabled)*`;
-                  if (msg.prompt)
-                    displayContent += `\n\n**Search Prompt:** ${msg.prompt}`;
-
-                  if (isEditing) {
-                    configHtml = `
-      <div style="display:flex; gap:15px; flex-wrap:wrap; margin-top:10px; align-items:center; background: #eee; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
-        <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Max Tokens <input type="number" class="embed-cfg-tokens" value="${msg.maxTokens || 5000}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
-        <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Match Threshold <input type="number" step="0.1" class="embed-cfg-threshold" value="${msg.ragThreshold || 0.0}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
-        <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Chunk Separator <input type="text" class="embed-cfg-separator" value="${escapeHTML(msg.chunkSeparator !== undefined ? msg.chunkSeparator : "...")}" style="width:120px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
-      </div>`;
-                  }
-                } else {
-                  displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*`;
-                }
-              }
-
-              let actionsHtml = "";
-              if (isEditing) {
-                actionsHtml = `
-                  <button data-action="save-edit">Save</button>
-                  <button data-action="cancel-edit">Cancel</button>
-                  <button data-action="toggle-wrap">Toggle Wrap</button>
-                `;
-              } else {
-                let editBtn = `<button data-action="edit">Edit</button>`;
-                if (msg.role === "file" && msg.mode === "embed") {
-                  editBtn = `<button data-action="edit">Config</button>`;
-                }
-                actionsHtml = `
-                  ${editBtn}
-                  <button data-action="fork">Fork</button>
-                  ${msg.role === "user" || msg.role === "file" ? `<button data-action="retry">Retry</button>` : ""}
-                  <button data-action="delete">Delete</button>
-                `;
-              }
-
-              return `
-            <div class="msg ${msg.role} ${isEditing ? "editing" : ""}" data-index="${i}">
-              <div class="msg-meta">
-                ${
-                  msg.role === "file"
-                    ? `<span>FILE: ${escapeHTML(msg.fileName)}</span>`
-                    : `<select class="role-select">
-                    <option value="user" ${msg.role === "user" ? "selected" : ""}>user</option>
-                    <option value="assistant" ${msg.role === "assistant" ? "selected" : ""}>assistant</option>
-                    <option value="system" ${msg.role === "system" ? "selected" : ""}>system</option>
-                    ${msg.role === "error" ? `<option value="error" selected>error</option>` : ""}
-                  </select>`
-                }
-                <div class="msg-actions">${actionsHtml}</div>
-              </div>
-              <div class="msg-content">${marked.parse(displayContent)}${configHtml}</div>
-            </div>
-          `;
-            })
+            .map((msg, i) => generateMessageHTML(msg, i, editingMessageIndex === i))
             .join("");
         }
 
@@ -2426,7 +2606,21 @@
           }
         }
 
-        chats = (await dbGet("mf_chats")) || [];
+        let oldChats = await dbGet("mf_chats");
+        if (oldChats && Array.isArray(oldChats) && oldChats.length > 0) {
+          chats = oldChats;
+          await saveAllChats();
+          await dbDelete("mf_chats");
+        } else {
+          const index = (await dbGet("mf_chat_index")) || [];
+          chats = [];
+          for (let idx of index) {
+            let chatData = await dbGet(`mf_chat_${idx.id}`);
+            if (chatData) chats.push(chatData);
+            else chats.push({ id: idx.id, title: idx.title, messages: [] });
+          }
+        }
+
         files = (await dbGet("mf_files")) || [];
         currentChatId = (await dbGet("mf_current_chat_id")) || null;
         isSidebarHidden = (await dbGet("mf_sidebar_hidden")) === true;

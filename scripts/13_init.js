@@ -14,7 +14,21 @@ async function init() {
     }
   }
 
-  chats = (await dbGet("mf_chats")) || [];
+  let oldChats = await dbGet("mf_chats");
+  if (oldChats && Array.isArray(oldChats) && oldChats.length > 0) {
+    chats = oldChats;
+    await saveAllChats();
+    await dbDelete("mf_chats");
+  } else {
+    const index = (await dbGet("mf_chat_index")) || [];
+    chats = [];
+    for (let idx of index) {
+      let chatData = await dbGet(`mf_chat_${idx.id}`);
+      if (chatData) chats.push(chatData);
+      else chats.push({ id: idx.id, title: idx.title, messages: [] });
+    }
+  }
+
   files = (await dbGet("mf_files")) || [];
   currentChatId = (await dbGet("mf_current_chat_id")) || null;
   isSidebarHidden = (await dbGet("mf_sidebar_hidden")) === true;

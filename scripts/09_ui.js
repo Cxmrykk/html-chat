@@ -54,27 +54,29 @@ function updateTokenCount() {
   if (btn.textContent.includes("Thinking") || btn.classList.contains("hidden"))
     return;
 
-  const inputVal = $("#chat-input").value || "";
-  let contextChars = 0;
-
-  if (currentChatId) {
-    const chat = chats.find((c) => c.id === currentChatId);
-    if (chat && chat.messages) {
-      contextChars = chat.messages.reduce((acc, m) => {
-        if (m.role === "file") {
-          if (m.mode === "full") return acc + (m.content || "").length;
-          return acc + (m.maxTokens || 5000) * 4;
-        }
-        return acc + (m.content || "").length;
-      }, 0);
+  if (cachedContextChars === -1) {
+    let contextChars = 0;
+    if (currentChatId) {
+      const chat = chats.find((c) => c.id === currentChatId);
+      if (chat && chat.messages) {
+        contextChars = chat.messages.reduce((acc, m) => {
+          if (m.role === "file") {
+            if (m.mode === "full") return acc + (m.content || "").length;
+            return acc + (m.maxTokens || 5000) * 4;
+          }
+          return acc + (m.content || "").length;
+        }, 0);
+      }
     }
+
+    if (config.godMode) {
+      contextChars += (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT).length;
+    }
+    cachedContextChars = contextChars;
   }
 
-  if (config.godMode) {
-    contextChars += (config.godModePrompt || DEFAULT_GOD_MODE_PROMPT).length;
-  }
-
-  const totalChars = inputVal.length + contextChars;
+  const inputVal = $("#chat-input").value || "";
+  const totalChars = inputVal.length + cachedContextChars;
   const tokens = Math.ceil(totalChars / 4);
 
   if (tokens < 1000) {

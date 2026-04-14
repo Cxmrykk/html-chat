@@ -36,7 +36,7 @@ function importChats() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const importedChats = JSON.parse(event.target.result);
         if (!Array.isArray(importedChats))
@@ -50,6 +50,7 @@ function importChats() {
           if (!existingIds.has(chat.id)) {
             chats.push(chat);
             existingIds.add(chat.id);
+            await dbSet(`mf_chat_${chat.id}`, chat);
             addedCount++;
           }
         }

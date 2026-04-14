@@ -27,6 +27,7 @@ function newChat() {
     isSidebarHidden = true;
     applySidebarState();
   }
+  invalidateTokenCache();
   saveState();
   renderApp();
   updateTokenCount();
@@ -40,6 +41,7 @@ function loadChat(id) {
     isSidebarHidden = true;
     applySidebarState();
   }
+  invalidateTokenCache();
   saveState();
   renderApp();
 }
@@ -49,6 +51,7 @@ function deleteChat(id) {
   resetEditState();
   chats = chats.filter((c) => c.id !== id);
   if (currentChatId === id) currentChatId = chats.length ? chats[0].id : null;
+  invalidateTokenCache();
   saveState();
   renderApp();
 }
@@ -59,7 +62,7 @@ function renameChat(id) {
   if (newTitle) {
     chat.title = newTitle.trim();
     saveState();
-    renderApp(true);
+    renderChatList();
   }
 }
 
@@ -74,6 +77,7 @@ function forkChat(msgIndex) {
     messages: JSON.parse(JSON.stringify(chat.messages.slice(0, msgIndex + 1))),
   });
   currentChatId = newId;
+  invalidateTokenCache();
   saveState();
   renderApp();
 }
@@ -85,24 +89,29 @@ function retryMessage(msgIndex) {
 
   if (msg.role === "file") {
     chat.messages = chat.messages.slice(0, msgIndex + 1);
+    invalidateTokenCache();
     saveState();
+    renderCurrentChat();
     sendMessage();
   } else {
     $("#chat-input").value = msg.content;
     chat.messages = chat.messages.slice(0, msgIndex);
+    invalidateTokenCache();
     saveState();
+    renderCurrentChat();
     sendMessage();
   }
 }
 
 function deleteMessage(msgIndex) {
-  if (editingMessageIndex === msgIndex) resetEditState();
+  if (editingMessageIndex === msgIndex) cancelGlobalEdit();
   else if (editingMessageIndex !== null && editingMessageIndex > msgIndex) {
     editingMessageIndex--;
   }
   chats.find((c) => c.id === currentChatId).messages.splice(msgIndex, 1);
+  invalidateTokenCache();
   saveState();
-  renderApp(true);
+  renderCurrentChat();
 }
 
 async function handleUploadClick() {
@@ -153,14 +162,14 @@ async function uploadFile(name, text, existingId = null) {
 
   await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
   saveState();
-  renderApp();
+  renderFileList();
 }
 
 async function deleteFile(id) {
   files = files.filter((f) => f.id !== id);
   await dbDelete(`mf_filedata_${id}`);
   saveState();
-  renderApp();
+  renderFileList();
 }
 
 async function toggleEmbedding(id) {
@@ -217,8 +226,12 @@ async function appendFileMessage(fileId, mode = "full") {
     applySidebarState();
   }
 
+  invalidateTokenCache();
   saveState();
-  renderApp();
+  appendMessageToDOM(
+    chat.messages[chat.messages.length - 1],
+    chat.messages.length - 1,
+  );
   updateTokenCount();
 }
 
@@ -236,7 +249,12 @@ function resetEditState() {
 }
 
 function startGlobalEdit(index) {
+  const prevIdx = editingMessageIndex;
   editingMessageIndex = index;
+
+  if (prevIdx !== null) updateMessageInDOM(prevIdx);
+  updateMessageInDOM(index);
+
   const chat = chats.find((c) => c.id === currentChatId);
   const msg = chat.messages[index];
   const area = $("#chat-input");
@@ -245,8 +263,7 @@ function startGlobalEdit(index) {
     msg.role === "file" && msg.mode === "embed"
       ? msg.prompt || ""
       : msg.content;
-
-  renderApp(true);
+  applyInputAreaState();
   area.focus();
 }
 
@@ -280,6 +297,7 @@ function saveGlobalEdit() {
     msg.content = $("#chat-input").value;
   }
 
+  invalidateTokenCache();
   saveState();
   endGlobalEdit();
 }
@@ -289,8 +307,10 @@ function cancelGlobalEdit() {
 }
 
 function endGlobalEdit() {
+  const idx = editingMessageIndex;
   resetEditState();
-  renderApp(true);
+  if (idx !== null) updateMessageInDOM(idx);
+  applyInputAreaState();
 }
 
 function toggleGlobalWrap() {
@@ -319,5 +339,6 @@ function toggleSuperSecretSettings() {
       }
     }
   }
-  renderApp();
+  renderCurrentChat();
+  applyInputAreaState();
 }
