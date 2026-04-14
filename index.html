@@ -641,6 +641,11 @@
           tooltip: "Penalizes new tokens based on presence (-2.0 to 2.0).",
           category: "LLM Behavior",
         },
+        streamResponse: {
+          default: "true",
+          tooltip: "Stream responses chunk-by-chunk (true/false).",
+          category: "LLM Behavior",
+        },
 
         // --- Connection Category ---
         embeddingsUrl: {
@@ -836,7 +841,8 @@
           key === "embeddingsModel" ||
           key === "embeddingsUrl" ||
           key === "embeddingsKey" ||
-          key === "chunkSeparator"
+          key === "chunkSeparator" ||
+          key === "streamResponse"
         ) {
           config[key] = val;
         } else {
@@ -1501,8 +1507,7 @@
                       let queryEmb = null;
 
                       if (actualPrompt) {
-                        if (btnEl)
-                          btnEl.textContent = `Embedding prompt for ${meta.name}...`;
+                        if (btnEl) btnEl.textContent = "Embedding files...";
                         queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
                       }
 
@@ -1655,6 +1660,7 @@
           currentAbortController.abort();
           currentAbortController = null;
           btn.textContent = "Send";
+          updateTokenCount();
           return;
         }
 
@@ -1719,10 +1725,17 @@
 
           cleanMessages = await resolveAllMessages(cleanMessages, btn);
 
+          // After resolving file embeddings, we wait on the API. Set state to Thinking...
+          btn.textContent = isAutoLoop
+            ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
+            : "Thinking...";
+
+          const isStream = config.streamResponse !== "false";
+
           const payload = {
             model: $("#model-select").value,
             messages: cleanMessages,
-            stream: true,
+            stream: isStream,
           };
 
           if (config.temperature !== "" && config.temperature !== undefined)
@@ -1755,58 +1768,72 @@
                 `HTTP ${response.status}`,
             );
 
+          // Target API Responded. Generating text...
+          btn.textContent = isAutoLoop
+            ? `Generating (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
+            : "Generating...";
+
           chat.messages.push({ role: "assistant", content: "" });
           const msgIndex = chat.messages.length - 1;
           appendMessageToDOM(chat.messages[msgIndex], msgIndex);
           invalidateTokenCache();
 
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder("utf-8");
-          let buffer = "";
           let reply = "";
-          let lastRenderTime = 0;
 
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              buffer += decoder.decode(value, { stream: true });
+          if (!isStream) {
+            const data = await response.json();
+            reply = data.choices[0]?.message?.content || "";
+            chat.messages[msgIndex].content = reply;
+            updateMessageContentInDOM(msgIndex, reply, true, "top");
+          } else {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let buffer = "";
+            let lastRenderTime = 0;
 
-              let lines = buffer.split("\n");
-              buffer = lines.pop();
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
 
-              for (let line of lines) {
-                line = line.trim();
-                if (line.startsWith("data: ")) {
-                  if (line === "data: [DONE]") continue;
-                  try {
-                    const data = JSON.parse(line.slice(6));
-                    const chunk = data.choices[0]?.delta?.content;
-                    if (chunk) reply += chunk;
-                  } catch (e) {}
+                let lines = buffer.split("\n");
+                buffer = lines.pop();
+
+                for (let line of lines) {
+                  line = line.trim();
+                  if (line.startsWith("data: ")) {
+                    if (line === "data: [DONE]") continue;
+                    try {
+                      const data = JSON.parse(line.slice(6));
+                      const chunk = data.choices[0]?.delta?.content;
+                      if (chunk) reply += chunk;
+                    } catch (e) {}
+                  }
+                }
+
+                chat.messages[msgIndex].content = reply;
+
+                const now = Date.now();
+                // Throttle UI rendering to ~10fps to avoid blocking thread
+                if (now - lastRenderTime > 100) {
+                  updateMessageContentInDOM(msgIndex, reply, false);
+                  lastRenderTime = now;
                 }
               }
-
-              chat.messages[msgIndex].content = reply;
-
-              const now = Date.now();
-              // Throttle UI rendering to ~10fps to avoid blocking thread
-              if (now - lastRenderTime > 100) {
-                updateMessageContentInDOM(msgIndex, reply, false);
-                lastRenderTime = now;
+            } catch (err) {
+              if (err.name === "AbortError") {
+                reply += "\n\n*[Stopped by user]*";
+                chat.messages[msgIndex].content = reply;
+              } else {
+                throw err;
               }
             }
-          } catch (err) {
-            if (err.name === "AbortError") {
-              reply += "\n\n*[Stopped by user]*";
-              chat.messages[msgIndex].content = reply;
-            } else {
-              throw err;
-            }
+
+            chat.messages[msgIndex].content = reply;
+            updateMessageContentInDOM(msgIndex, reply, true, "none");
           }
 
-          chat.messages[msgIndex].content = reply;
-          updateMessageContentInDOM(msgIndex, reply, true);
           saveState();
 
           if (config.godMode && reply) {
@@ -1845,6 +1872,7 @@
         currentAbortController = null;
         btn.textContent = "Send";
         saveState();
+        updateTokenCount();
       }
 
       // --- UI TOGGLES & UPDATES ---
@@ -1900,7 +1928,12 @@
         const btn = $("#send-btn");
         if (!btn) return;
 
-        if (btn.textContent.includes("Thinking") || btn.classList.contains("hidden"))
+        if (
+          btn.textContent.includes("Thinking") ||
+          btn.textContent.includes("Generating") ||
+          btn.textContent.includes("Embedding") ||
+          btn.classList.contains("hidden")
+        )
           return;
 
         if (cachedContextChars === -1) {
@@ -2206,7 +2239,12 @@
         Prism.highlightAllUnder(newEl);
       }
 
-      function updateMessageContentInDOM(index, content, isFinal = true) {
+      function updateMessageContentInDOM(
+        index,
+        content,
+        isFinal = true,
+        alignMode = "none",
+      ) {
         const el = document.querySelector(`.msg[data-index="${index}"] .msg-content`);
         if (!el) return;
 
@@ -2228,8 +2266,16 @@
             throwOnError: false,
           });
           Prism.highlightAllUnder(el);
+
           const container = $("#chat-container");
-          container.scrollTop = container.scrollHeight;
+          if (alignMode === "top") {
+            const msgEl = el.closest(".msg");
+            if (msgEl) {
+              container.scrollTop = msgEl.offsetTop - 15;
+            }
+          } else if (alignMode === "bottom") {
+            container.scrollTop = container.scrollHeight;
+          }
         }
       }
 
@@ -2259,6 +2305,7 @@
             max_tokens: "Max Tokens",
             frequency_penalty: "Frequency Penalty",
             presence_penalty: "Presence Penalty",
+            streamResponse: "Stream Response",
             embeddingsUrl: "Embeddings Base URL",
             embeddingsKey: "Embeddings API Key",
             embeddingsModel: "Embeddings Model",

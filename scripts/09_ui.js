@@ -51,7 +51,12 @@ function updateTokenCount() {
   const btn = $("#send-btn");
   if (!btn) return;
 
-  if (btn.textContent.includes("Thinking") || btn.classList.contains("hidden"))
+  if (
+    btn.textContent.includes("Thinking") ||
+    btn.textContent.includes("Generating") ||
+    btn.textContent.includes("Embedding") ||
+    btn.classList.contains("hidden")
+  )
     return;
 
   if (cachedContextChars === -1) {

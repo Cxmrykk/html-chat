@@ -171,8 +171,7 @@ async function resolveAllMessages(messages, btnEl) {
                 let queryEmb = null;
 
                 if (actualPrompt) {
-                  if (btnEl)
-                    btnEl.textContent = `Embedding prompt for ${meta.name}...`;
+                  if (btnEl) btnEl.textContent = "Embedding files...";
                   queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
                 }
 

@@ -66,6 +66,11 @@ const SETTING_DEFAULTS = {
     tooltip: "Penalizes new tokens based on presence (-2.0 to 2.0).",
     category: "LLM Behavior",
   },
+  streamResponse: {
+    default: "true",
+    tooltip: "Stream responses chunk-by-chunk (true/false).",
+    category: "LLM Behavior",
+  },
 
   // --- Connection Category ---
   embeddingsUrl: {

@@ -58,6 +58,7 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
     currentAbortController.abort();
     currentAbortController = null;
     btn.textContent = "Send";
+    updateTokenCount();
     return;
   }
 
@@ -122,10 +123,17 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
 
     cleanMessages = await resolveAllMessages(cleanMessages, btn);
 
+    // After resolving file embeddings, we wait on the API. Set state to Thinking...
+    btn.textContent = isAutoLoop
+      ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
+      : "Thinking...";
+
+    const isStream = config.streamResponse !== "false";
+
     const payload = {
       model: $("#model-select").value,
       messages: cleanMessages,
-      stream: true,
+      stream: isStream,
     };
 
     if (config.temperature !== "" && config.temperature !== undefined)
@@ -158,58 +166,72 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
           `HTTP ${response.status}`,
       );
 
+    // Target API Responded. Generating text...
+    btn.textContent = isAutoLoop
+      ? `Generating (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
+      : "Generating...";
+
     chat.messages.push({ role: "assistant", content: "" });
     const msgIndex = chat.messages.length - 1;
     appendMessageToDOM(chat.messages[msgIndex], msgIndex);
     invalidateTokenCache();
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
     let reply = "";
-    let lastRenderTime = 0;
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+    if (!isStream) {
+      const data = await response.json();
+      reply = data.choices[0]?.message?.content || "";
+      chat.messages[msgIndex].content = reply;
+      updateMessageContentInDOM(msgIndex, reply, true, "top");
+    } else {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      let lastRenderTime = 0;
 
-        let lines = buffer.split("\n");
-        buffer = lines.pop();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
 
-        for (let line of lines) {
-          line = line.trim();
-          if (line.startsWith("data: ")) {
-            if (line === "data: [DONE]") continue;
-            try {
-              const data = JSON.parse(line.slice(6));
-              const chunk = data.choices[0]?.delta?.content;
-              if (chunk) reply += chunk;
-            } catch (e) {}
+          let lines = buffer.split("\n");
+          buffer = lines.pop();
+
+          for (let line of lines) {
+            line = line.trim();
+            if (line.startsWith("data: ")) {
+              if (line === "data: [DONE]") continue;
+              try {
+                const data = JSON.parse(line.slice(6));
+                const chunk = data.choices[0]?.delta?.content;
+                if (chunk) reply += chunk;
+              } catch (e) {}
+            }
+          }
+
+          chat.messages[msgIndex].content = reply;
+
+          const now = Date.now();
+          // Throttle UI rendering to ~10fps to avoid blocking thread
+          if (now - lastRenderTime > 100) {
+            updateMessageContentInDOM(msgIndex, reply, false);
+            lastRenderTime = now;
           }
         }
-
-        chat.messages[msgIndex].content = reply;
-
-        const now = Date.now();
-        // Throttle UI rendering to ~10fps to avoid blocking thread
-        if (now - lastRenderTime > 100) {
-          updateMessageContentInDOM(msgIndex, reply, false);
-          lastRenderTime = now;
+      } catch (err) {
+        if (err.name === "AbortError") {
+          reply += "\n\n*[Stopped by user]*";
+          chat.messages[msgIndex].content = reply;
+        } else {
+          throw err;
         }
       }
-    } catch (err) {
-      if (err.name === "AbortError") {
-        reply += "\n\n*[Stopped by user]*";
-        chat.messages[msgIndex].content = reply;
-      } else {
-        throw err;
-      }
+
+      chat.messages[msgIndex].content = reply;
+      updateMessageContentInDOM(msgIndex, reply, true, "none");
     }
 
-    chat.messages[msgIndex].content = reply;
-    updateMessageContentInDOM(msgIndex, reply, true);
     saveState();
 
     if (config.godMode && reply) {
@@ -248,4 +270,5 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
   currentAbortController = null;
   btn.textContent = "Send";
   saveState();
+  updateTokenCount();
 }

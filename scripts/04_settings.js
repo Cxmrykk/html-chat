@@ -48,7 +48,8 @@ function saveSuperSecretSetting() {
     key === "embeddingsModel" ||
     key === "embeddingsUrl" ||
     key === "embeddingsKey" ||
-    key === "chunkSeparator"
+    key === "chunkSeparator" ||
+    key === "streamResponse"
   ) {
     config[key] = val;
   } else {

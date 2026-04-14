@@ -263,7 +263,12 @@ function updateMessageInDOM(index) {
   Prism.highlightAllUnder(newEl);
 }
 
-function updateMessageContentInDOM(index, content, isFinal = true) {
+function updateMessageContentInDOM(
+  index,
+  content,
+  isFinal = true,
+  alignMode = "none",
+) {
   const el = document.querySelector(`.msg[data-index="${index}"] .msg-content`);
   if (!el) return;
 
@@ -285,8 +290,16 @@ function updateMessageContentInDOM(index, content, isFinal = true) {
       throwOnError: false,
     });
     Prism.highlightAllUnder(el);
+
     const container = $("#chat-container");
-    container.scrollTop = container.scrollHeight;
+    if (alignMode === "top") {
+      const msgEl = el.closest(".msg");
+      if (msgEl) {
+        container.scrollTop = msgEl.offsetTop - 15;
+      }
+    } else if (alignMode === "bottom") {
+      container.scrollTop = container.scrollHeight;
+    }
   }
 }
 
@@ -316,6 +329,7 @@ function renderCurrentChat(preserveScroll = false) {
       max_tokens: "Max Tokens",
       frequency_penalty: "Frequency Penalty",
       presence_penalty: "Presence Penalty",
+      streamResponse: "Stream Response",
       embeddingsUrl: "Embeddings Base URL",
       embeddingsKey: "Embeddings API Key",
       embeddingsModel: "Embeddings Model",
