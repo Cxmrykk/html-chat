@@ -219,8 +219,13 @@ function generateMessageHTML(msg, i, isEditing = false) {
 
 function appendMessageToDOM(msg, index) {
   const container = $("#chat-container");
+
+  const emptyMsg = container.querySelector(".empty-chat-msg");
+  if (emptyMsg) emptyMsg.remove();
+
   const wrapper = document.createElement("div");
   wrapper.innerHTML = generateMessageHTML(msg, index, false);
+
   const msgEl = wrapper.firstElementChild;
   container.appendChild(msgEl);
 
@@ -410,7 +415,7 @@ function renderCurrentChat(preserveScroll = false) {
 
   if (!chat.messages.length && !config.godMode) {
     html +=
-      '<p style="margin:0; padding-top: 15px;">It is empty in here. Send a prompt.</p>';
+      '<p class="empty-chat-msg" style="margin:0; padding-top: 15px;">It is empty in here. Send a prompt.</p>';
   } else {
     html += chat.messages
       .map((msg, i) => generateMessageHTML(msg, i, editingMessageIndex === i))
