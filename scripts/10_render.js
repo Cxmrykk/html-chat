@@ -92,6 +92,17 @@ function applyInputAreaState() {
 
 function renderFileList() {
   const list = $("#file-list");
+
+  const maxVisible = parseInt(config.maxVisibleFiles, 10);
+  if (!isNaN(maxVisible) && maxVisible > 0) {
+    // 1.6em (line height) + 17px (box padding, margin, border combined)
+    list.style.maxHeight = `calc(${maxVisible} * (1.6em + 17px))`;
+    list.style.overflowY = "auto";
+  } else {
+    list.style.maxHeight = "";
+    list.style.overflowY = "";
+  }
+
   if (!files.length)
     return (list.innerHTML =
       '<p style="font-size:0.8em; color:#666;">No files uploaded.</p>');
@@ -130,6 +141,16 @@ function renderFileList() {
 
 function renderChatList() {
   const list = $("#chat-list");
+
+  const maxVisible = parseInt(config.maxVisibleChats, 10);
+  if (!isNaN(maxVisible) && maxVisible > 0) {
+    list.style.maxHeight = `calc(${maxVisible} * (1.6em + 17px))`;
+    list.style.overflowY = "auto";
+  } else {
+    list.style.maxHeight = "";
+    list.style.overflowY = "";
+  }
+
   if (!chats.length)
     return (list.innerHTML =
       '<p style="font-size:0.8em; color:#666;">No chats. Start a new one.</p>');
@@ -322,6 +343,10 @@ function renderCurrentChat(preserveScroll = false) {
       if (k === "embeddingsKey") return val ? "Custom" : "API Default";
       if (k === "embeddingsModel")
         return val === "" || val === undefined ? "Disabled" : escapeHTML(val);
+      if (k === "maxVisibleChats" || k === "maxVisibleFiles")
+        return val === "" || val === undefined
+          ? "Unlimited"
+          : escapeHTML(String(val));
 
       let displayVal = val === "" || val === undefined ? "API Default" : val;
       return escapeHTML(String(displayVal));
@@ -344,6 +369,8 @@ function renderCurrentChat(preserveScroll = false) {
       ragThreshold: "RAG Match Threshold",
       chunkBatchSize: "Chunk Batch Size",
       chunkSeparator: "Chunk Separator",
+      maxVisibleChats: "Max Visible Chats",
+      maxVisibleFiles: "Max Visible Files",
     };
 
     const categories = {};

@@ -120,4 +120,16 @@ const SETTING_DEFAULTS = {
     tooltip: "String used to separate non-contiguous chunks (allows \\n).",
     category: "RAG & Document Processing",
   },
+
+  // --- UI & Display Category ---
+  maxVisibleChats: {
+    default: "",
+    tooltip: "Maximum number of chats displayed at once in the sidebar.",
+    category: "UI & Display",
+  },
+  maxVisibleFiles: {
+    default: "",
+    tooltip: "Maximum number of files displayed at once in the sidebar.",
+    category: "UI & Display",
+  },
 };

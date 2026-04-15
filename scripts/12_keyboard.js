@@ -67,6 +67,9 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "ArrowUp" && idx > 0) loadChat(chats[idx - 1].id);
     if (e.key === "ArrowDown" && idx < chats.length - 1)
       loadChat(chats[idx + 1].id);
+
+    const activeChat = document.querySelector("#chat-list .chat-item.active");
+    if (activeChat) activeChat.scrollIntoView({ block: "nearest" });
   }
 
   if (
