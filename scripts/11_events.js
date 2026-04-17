@@ -37,6 +37,12 @@ $("#sidebar").addEventListener("click", (e) => {
       } else loadChat(id);
     }
   } else if (type === "file") {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      toggleAdvancedRAGSettings(id);
+      return;
+    }
+
     if (action === "delete") deleteFile(id);
     else if (action === "embed") {
       const meta = files.find((f) => f.id === id);

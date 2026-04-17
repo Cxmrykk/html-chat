@@ -610,10 +610,9 @@
       ].join("\n");
 
       const SETTING_DEFAULTS = {
-        // --- LLM Category ---
         godModePrompt: {
           default: DEFAULT_GOD_MODE_PROMPT,
-          tooltip: "System prompt used when God Mode is enabled.",
+          tooltip: "System prompt used when God Mode is enabled (execute JavaScript).",
           category: "LLM Behavior",
         },
         temperature: {
@@ -646,8 +645,6 @@
           tooltip: "Stream responses chunk-by-chunk (true/false).",
           category: "LLM Behavior",
         },
-
-        // --- Connection Category ---
         embeddingsUrl: {
           default: "",
           tooltip: "Custom base URL for embeddings (e.g. LiteLLM or OpenAI).",
@@ -663,8 +660,6 @@
           tooltip: "Model used for processing local RAG commands. Empty to disable.",
           category: "API & Connections",
         },
-
-        // --- RAG Category ---
         chunkSize: {
           default: "1000",
           tooltip: "Character size for file chunking.",
@@ -695,8 +690,6 @@
           tooltip: "String used to separate non-contiguous chunks (allows \\n).",
           category: "RAG & Document Processing",
         },
-
-        // --- UI & Display Category ---
         maxVisibleChats: {
           default: "",
           tooltip: "Maximum number of chats displayed at once in the sidebar.",
@@ -706,6 +699,53 @@
           default: "",
           tooltip: "Maximum number of files displayed at once in the sidebar.",
           category: "UI & Display",
+        },
+      };
+
+      const FILE_SETTING_DEFAULTS = {
+        maxRagTokens: {
+          default: "",
+          tooltip: "Override global max RAG tokens for this file.",
+          category: "Overrides",
+        },
+        ragThreshold: {
+          default: "",
+          tooltip: "Override global match threshold for this file. (0.0 to 1.0)",
+          category: "Overrides",
+        },
+        chunkSeparator: {
+          default: "",
+          tooltip: "Override global chunk separator. Use \\n for newline.",
+          category: "Overrides",
+        },
+        customChunks: {
+          default: "",
+          tooltip: "A JSON array of strings to bypass all chunking logic.",
+          category: "Chunk Generation",
+        },
+        customChunker: {
+          default: `const chunkSize = parseInt(config.chunkSize) || 1000;\nconst chunkOverlap = parseInt(config.chunkOverlap) || 200;\nconst chunks = [];\nlet start = 0;\nwhile (start < text.length) {\n  let end = start + chunkSize;\n  if (end > text.length) end = text.length;\n  chunks.push(text.substring(start, end));\n  if (end >= text.length) break;\n  start = end - chunkOverlap;\n}\nreturn chunks;`,
+          tooltip:
+            "JS function body (vars: `text`, `config`). Returns an array of string chunks.",
+          category: "Chunk Generation",
+        },
+        captureFunc: {
+          default: "",
+          tooltip:
+            "JS function body (vars: `chunk`). Returns an array of matched components.",
+          category: "Post-Retrieval Processing",
+        },
+        retrievalFunc: {
+          default: "",
+          tooltip:
+            "JS function body (vars: `matches`, `text`). Returns a contextual string retrieved from the original text (empty to omit).",
+          category: "Post-Retrieval Processing",
+        },
+        dedupFunc: {
+          default: "",
+          tooltip:
+            "JS function body (vars: `chunkA`, `chunkB`). Returns boolean true if duplicate.",
+          category: "Post-Retrieval Processing",
         },
       };
 
@@ -771,6 +811,11 @@
       let isSuperSecretSettingsOpen = false;
       let activeSuperSecretSetting = null;
       let uncommittedSuperSecretValue = null;
+
+      let isAdvancedRAGSettingsOpen = false;
+      let activeAdvancedRAGFileId = null;
+      let activeAdvancedRAGSetting = null;
+      let uncommittedAdvancedRAGValue = null;
 
       let cachedContextChars = -1;
 
@@ -842,6 +887,8 @@
       }
 
       function saveSuperSecretSetting() {
+        if (isAdvancedRAGSettingsOpen) return saveAdvancedRAGSetting();
+
         if (!activeSuperSecretSetting) return;
         let val = $("#chat-input").value;
         const key = activeSuperSecretSetting;
@@ -880,6 +927,8 @@
       }
 
       function resetSuperSecretSetting() {
+        if (isAdvancedRAGSettingsOpen) return resetAdvancedRAGSetting();
+
         if (!activeSuperSecretSetting) return;
         const key = activeSuperSecretSetting;
         const oldRAG =
@@ -898,6 +947,8 @@
       }
 
       function cancelSuperSecretSetting() {
+        if (isAdvancedRAGSettingsOpen) return cancelAdvancedRAGSetting();
+
         activeSuperSecretSetting = null;
         uncommittedSuperSecretValue = null;
         renderApp(true);
@@ -923,6 +974,151 @@
               config[activeSuperSecretSetting] !== undefined
                 ? config[activeSuperSecretSetting]
                 : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+          }
+          renderApp(true);
+          updateTokenCount();
+        }
+      }
+
+      // --- ADVANCED RAG SPECIFIC FUNCTIONS ---
+      function selectAdvancedRAGSetting(key) {
+        activeAdvancedRAGSetting = key;
+        uncommittedAdvancedRAGValue = null;
+        const area = $("#chat-input");
+        const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+        if (meta) {
+          area.value =
+            meta[key] !== undefined && meta[key] !== ""
+              ? meta[key]
+              : FILE_SETTING_DEFAULTS[key].default;
+        }
+        renderApp(true);
+        area.focus();
+      }
+
+      async function saveAdvancedRAGSetting() {
+        if (!activeAdvancedRAGSetting || !activeAdvancedRAGFileId) return;
+        let val = $("#chat-input").value;
+        const key = activeAdvancedRAGSetting;
+        const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+        if (!meta) return;
+
+        const requiresReembed = ["customChunks", "customChunker"].includes(key);
+        const oldVal = meta[key];
+
+        if (
+          [
+            "customChunks",
+            "customChunker",
+            "captureFunc",
+            "retrievalFunc",
+            "dedupFunc",
+            "chunkSeparator",
+          ].includes(key)
+        ) {
+          meta[key] = val;
+        } else {
+          if (val.trim() === "") {
+            meta[key] = "";
+          } else {
+            const parsed = parseFloat(val);
+            meta[key] = isNaN(parsed) ? "" : parsed;
+          }
+        }
+
+        if (requiresReembed && oldVal !== meta[key]) {
+          meta.progress = 0;
+          meta.embeddedCount = 0;
+          meta.chunkCount = 0;
+          meta.isEmbedding = false;
+          const data = await dbGet(`mf_filedata_${meta.id}`);
+          if (data) {
+            data.chunks = null;
+            await dbSet(`mf_filedata_${meta.id}`, data);
+          }
+        }
+
+        saveState();
+        activeAdvancedRAGSetting = null;
+        uncommittedAdvancedRAGValue = null;
+        renderApp(true);
+        updateTokenCount();
+      }
+
+      async function resetAdvancedRAGSetting() {
+        if (!activeAdvancedRAGSetting || !activeAdvancedRAGFileId) return;
+        const key = activeAdvancedRAGSetting;
+        const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+        if (!meta) return;
+
+        const requiresReembed = ["customChunks", "customChunker"].includes(key);
+        const oldVal = meta[key];
+
+        meta[key] = FILE_SETTING_DEFAULTS[key].default;
+
+        if (requiresReembed && oldVal !== meta[key]) {
+          meta.progress = 0;
+          meta.embeddedCount = 0;
+          meta.chunkCount = 0;
+          meta.isEmbedding = false;
+          const data = await dbGet(`mf_filedata_${meta.id}`);
+          if (data) {
+            data.chunks = null;
+            await dbSet(`mf_filedata_${meta.id}`, data);
+          }
+        }
+
+        saveState();
+        activeAdvancedRAGSetting = null;
+        uncommittedAdvancedRAGValue = null;
+        renderApp(true);
+        updateTokenCount();
+      }
+
+      function cancelAdvancedRAGSetting() {
+        activeAdvancedRAGSetting = null;
+        uncommittedAdvancedRAGValue = null;
+        renderApp(true);
+      }
+
+      async function resetAllAdvancedRAGSettings() {
+        if (!activeAdvancedRAGFileId) return;
+        if (confirm("Reset ALL Advanced RAG parameters to default for this file?")) {
+          const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+          if (!meta) return;
+
+          let requiresReembed = false;
+          for (let key in FILE_SETTING_DEFAULTS) {
+            if (
+              ["customChunks", "customChunker"].includes(key) &&
+              meta[key] !== undefined &&
+              meta[key] !== "" &&
+              meta[key] !== FILE_SETTING_DEFAULTS[key].default
+            ) {
+              requiresReembed = true;
+            }
+            meta[key] = FILE_SETTING_DEFAULTS[key].default;
+          }
+
+          if (requiresReembed) {
+            meta.progress = 0;
+            meta.embeddedCount = 0;
+            meta.chunkCount = 0;
+            meta.isEmbedding = false;
+            const data = await dbGet(`mf_filedata_${meta.id}`);
+            if (data) {
+              data.chunks = null;
+              await dbSet(`mf_filedata_${meta.id}`, data);
+            }
+          }
+
+          saveState();
+          if (activeAdvancedRAGSetting) {
+            uncommittedAdvancedRAGValue = null;
+            $("#chat-input").value =
+              meta[activeAdvancedRAGSetting] !== undefined
+                ? meta[activeAdvancedRAGSetting]
+                : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
           }
           renderApp(true);
           updateTokenCount();
@@ -1008,6 +1204,12 @@
             uncommittedSuperSecretValue = $("#chat-input").value;
           }
           isSuperSecretSettingsOpen = false;
+        }
+        if (isAdvancedRAGSettingsOpen) {
+          if (activeAdvancedRAGSetting) {
+            uncommittedAdvancedRAGValue = $("#chat-input").value;
+          }
+          isAdvancedRAGSettingsOpen = false;
         }
       }
 
@@ -1169,6 +1371,9 @@
       }
 
       async function deleteFile(id) {
+        if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+          toggleAdvancedRAGSettings(null);
+        }
         files = files.filter((f) => f.id !== id);
         await dbDelete(`mf_filedata_${id}`);
         saveState();
@@ -1244,7 +1449,7 @@
         if (area) {
           area.style.whiteSpace = "";
           area.style.overflowX = "";
-          if (!isSuperSecretSettingsOpen) {
+          if (!isSuperSecretSettingsOpen && !isAdvancedRAGSettingsOpen) {
             area.value = "";
             area.style.height = promptHeight;
           }
@@ -1323,6 +1528,15 @@
       }
 
       function toggleSuperSecretSettings() {
+        if (isAdvancedRAGSettingsOpen) {
+          if (activeAdvancedRAGSetting) {
+            uncommittedAdvancedRAGValue = $("#chat-input").value;
+          }
+          isAdvancedRAGSettingsOpen = false;
+          activeAdvancedRAGSetting = null;
+          activeAdvancedRAGFileId = null;
+        }
+
         isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
         if (!isSuperSecretSettingsOpen) {
           activeSuperSecretSetting = null;
@@ -1339,6 +1553,61 @@
                 config[activeSuperSecretSetting] !== undefined
                   ? config[activeSuperSecretSetting]
                   : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+            }
+          }
+        }
+        renderCurrentChat();
+        applyInputAreaState();
+      }
+
+      function toggleAdvancedRAGSettings(id = null) {
+        if (isSuperSecretSettingsOpen) toggleSuperSecretSettings();
+
+        if (id === null && isAdvancedRAGSettingsOpen) {
+          if (activeAdvancedRAGSetting) {
+            uncommittedAdvancedRAGValue = $("#chat-input").value;
+          }
+          isAdvancedRAGSettingsOpen = false;
+          $("#chat-input").value = "";
+          renderCurrentChat();
+          applyInputAreaState();
+          return;
+        }
+
+        if (id !== null) {
+          if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+            if (activeAdvancedRAGSetting) {
+              uncommittedAdvancedRAGValue = $("#chat-input").value;
+            }
+            isAdvancedRAGSettingsOpen = false;
+            $("#chat-input").value = "";
+          } else {
+            if (isAdvancedRAGSettingsOpen && activeAdvancedRAGSetting) {
+              uncommittedAdvancedRAGValue = $("#chat-input").value;
+            }
+            const isReopeningSame = activeAdvancedRAGFileId === id;
+            isAdvancedRAGSettingsOpen = true;
+            activeAdvancedRAGFileId = id;
+
+            if (!isReopeningSame) {
+              activeAdvancedRAGSetting = null;
+              uncommittedAdvancedRAGValue = null;
+              $("#chat-input").value = "";
+            } else {
+              if (activeAdvancedRAGSetting) {
+                const area = $("#chat-input");
+                if (uncommittedAdvancedRAGValue !== null) {
+                  area.value = uncommittedAdvancedRAGValue;
+                } else {
+                  const meta = files.find((f) => f.id === id);
+                  area.value =
+                    meta &&
+                    meta[activeAdvancedRAGSetting] !== undefined &&
+                    meta[activeAdvancedRAGSetting] !== ""
+                      ? meta[activeAdvancedRAGSetting]
+                      : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
+                }
+              }
             }
           }
         }
@@ -1395,29 +1664,68 @@
         if (!data) return;
 
         if (!data.chunks) {
-          const chunkSize = parseInt(config.chunkSize) || 1000;
-          const chunkOverlap = parseInt(config.chunkOverlap) || 200;
           const text = data.text;
-          const chunks = [];
-          let start = 0;
-          let chunkIndex = 0;
+          let chunks = [];
+          const isCustomChunker =
+            meta.customChunker &&
+            meta.customChunker.trim() !== "" &&
+            meta.customChunker !== FILE_SETTING_DEFAULTS.customChunker.default;
 
-          while (start < text.length) {
-            let end = start + chunkSize;
-            if (end > text.length) end = text.length;
-            chunks.push({
-              index: chunkIndex++,
-              start: start,
-              end: end,
-              text: text.substring(start, end),
-              vector: null,
-            });
-            if (end >= text.length) break;
-            start = end - chunkOverlap;
+          if (meta.customChunks && meta.customChunks.trim() !== "") {
+            try {
+              const parsed = JSON.parse(meta.customChunks);
+              if (Array.isArray(parsed)) chunks = parsed;
+            } catch (e) {
+              console.error("Error parsing customChunks:", e);
+            }
+          } else if (isCustomChunker) {
+            try {
+              const fn = new Function("text", "config", meta.customChunker);
+              const res = fn(text, config);
+              if (Array.isArray(res)) chunks = res;
+            } catch (e) {
+              console.error("Error executing customChunker:", e);
+            }
           }
 
-          data.chunks = chunks;
-          meta.chunkCount = chunks.length;
+          if (chunks.length > 0 && typeof chunks[0] === "string") {
+            let chunkIndex = 0;
+            let start = 0;
+            data.chunks = chunks.map((c) => {
+              let end = start + c.length;
+              const mapped = {
+                index: chunkIndex++,
+                start: start,
+                end: end,
+                text: c,
+                vector: null,
+              };
+              start = end;
+              return mapped;
+            });
+          } else {
+            const chunkSize = parseInt(config.chunkSize) || 1000;
+            const chunkOverlap = parseInt(config.chunkOverlap) || 200;
+            let start = 0;
+            let chunkIndex = 0;
+            data.chunks = [];
+
+            while (start < text.length) {
+              let end = start + chunkSize;
+              if (end > text.length) end = text.length;
+              data.chunks.push({
+                index: chunkIndex++,
+                start: start,
+                end: end,
+                text: text.substring(start, end),
+                vector: null,
+              });
+              if (end >= text.length) break;
+              start = end - chunkOverlap;
+            }
+          }
+
+          meta.chunkCount = data.chunks.length;
           meta.embeddedCount = 0;
           await dbSet(`mf_filedata_${id}`, data);
         }
@@ -1523,17 +1831,71 @@
                         queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
                       }
 
+                      // File specific RAG Overrides
+                      const fileMaxTokens =
+                        meta.maxRagTokens !== undefined && meta.maxRagTokens !== ""
+                          ? parseInt(meta.maxRagTokens, 10)
+                          : undefined;
+                      const maxTokens =
+                        fileMaxTokens !== undefined && !isNaN(fileMaxTokens)
+                          ? fileMaxTokens
+                          : msg.maxTokens || 5000;
+
+                      const fileThreshold =
+                        meta.ragThreshold !== undefined && meta.ragThreshold !== ""
+                          ? parseFloat(meta.ragThreshold)
+                          : undefined;
+                      const threshold =
+                        fileThreshold !== undefined && !isNaN(fileThreshold)
+                          ? fileThreshold
+                          : msg.ragThreshold || 0.0;
+
+                      const fileSep =
+                        meta.chunkSeparator !== undefined &&
+                        meta.chunkSeparator !== ""
+                          ? meta.chunkSeparator
+                          : undefined;
+                      let sep =
+                        fileSep !== undefined
+                          ? fileSep
+                          : msg.chunkSeparator !== undefined
+                            ? msg.chunkSeparator
+                            : "...";
+                      sep = sep.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+
                       validChunks.forEach((c) => {
                         c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
                       });
 
-                      const threshold = msg.ragThreshold || 0.0;
                       let topChunks = validChunks.filter(
                         (c) => !queryEmb || c.score >= threshold,
                       );
                       topChunks.sort((a, b) => b.score - a.score);
 
-                      const maxTokens = msg.maxTokens || 5000;
+                      if (meta.dedupFunc && meta.dedupFunc.trim() !== "") {
+                        try {
+                          const dedupFn = new Function(
+                            "chunkA",
+                            "chunkB",
+                            meta.dedupFunc,
+                          );
+                          const deduped = [];
+                          for (const c of topChunks) {
+                            let isDup = false;
+                            for (const d of deduped) {
+                              if (dedupFn(c.text, d.text)) {
+                                isDup = true;
+                                break;
+                              }
+                            }
+                            if (!isDup) deduped.push(c);
+                          }
+                          topChunks = deduped;
+                        } catch (e) {
+                          console.error("Deduplication error:", e);
+                        }
+                      }
+
                       let currentTokens = 0;
                       let selectedChunks = [];
 
@@ -1550,18 +1912,84 @@
 
                       selectedChunks.sort((a, b) => a.index - b.index);
 
-                      let mergedContent = "";
-                      let sep =
-                        msg.chunkSeparator !== undefined ? msg.chunkSeparator : "...";
-                      sep = sep.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+                      let processedChunks = [];
+                      let hasCapture =
+                        meta.captureFunc && meta.captureFunc.trim() !== "";
+                      let hasRetrieval =
+                        meta.retrievalFunc && meta.retrievalFunc.trim() !== "";
+
+                      let captureFn = null;
+                      let retrievalFn = null;
+
+                      if (hasCapture) {
+                        try {
+                          captureFn = new Function("chunk", meta.captureFunc);
+                        } catch (e) {
+                          console.error("Capture function error:", e);
+                          hasCapture = false;
+                        }
+                      }
+                      if (hasRetrieval) {
+                        try {
+                          retrievalFn = new Function(
+                            "matches",
+                            "text",
+                            meta.retrievalFunc,
+                          );
+                        } catch (e) {
+                          console.error("Retrieval function error:", e);
+                          hasRetrieval = false;
+                        }
+                      }
 
                       for (let j = 0; j < selectedChunks.length; j++) {
                         const curr = selectedChunks[j];
+                        let finalStr = curr.text;
+
+                        if (hasCapture) {
+                          try {
+                            const m = captureFn(curr.text);
+                            if (hasRetrieval) {
+                              const retrieved = retrievalFn(m, data.text);
+                              finalStr =
+                                typeof retrieved === "string" ? retrieved : "";
+                            } else {
+                              finalStr = Array.isArray(m)
+                                ? m.join("")
+                                : String(m || "");
+                            }
+                          } catch (e) {
+                            console.error("Post-processing error:", e);
+                          }
+                        }
+
+                        if (finalStr !== "") {
+                          processedChunks.push({
+                            index: curr.index,
+                            start: curr.start,
+                            end: curr.end,
+                            text: finalStr,
+                          });
+                        }
+                      }
+
+                      let mergedContent = "";
+                      let usesCustomChunking =
+                        (meta.customChunks && meta.customChunks.trim() !== "") ||
+                        (meta.customChunker &&
+                          meta.customChunker.trim() !== "" &&
+                          meta.customChunker !==
+                            FILE_SETTING_DEFAULTS.customChunker.default);
+                      let usesPostProcessing =
+                        hasCapture || hasRetrieval || usesCustomChunking;
+
+                      for (let j = 0; j < processedChunks.length; j++) {
+                        const curr = processedChunks[j];
                         if (j === 0) {
                           mergedContent += curr.text;
                         } else {
-                          const prev = selectedChunks[j - 1];
-                          if (curr.index === prev.index + 1) {
+                          const prev = processedChunks[j - 1];
+                          if (!usesPostProcessing && curr.index === prev.index + 1) {
                             mergedContent += data.text.substring(prev.end, curr.end);
                           } else {
                             mergedContent += sep + curr.text;
@@ -2038,12 +2466,18 @@
 
         area.style.height = promptHeight;
 
-        if (isSuperSecretSettingsOpen) {
+        if (isSuperSecretSettingsOpen || isAdvancedRAGSettingsOpen) {
           secSaveBtn.classList.remove("hidden");
           secResetBtn.classList.remove("hidden");
           secCancelBtn.classList.remove("hidden");
 
-          if (!activeSuperSecretSetting) {
+          const isAdvanced = isAdvancedRAGSettingsOpen;
+          const activeSetting = isAdvanced
+            ? activeAdvancedRAGSetting
+            : activeSuperSecretSetting;
+          const defaultsMap = isAdvanced ? FILE_SETTING_DEFAULTS : SETTING_DEFAULTS;
+
+          if (!activeSetting) {
             area.disabled = true;
             if (area.value !== "") area.value = "";
             area.placeholder = "Select a setting above to edit...";
@@ -2055,7 +2489,7 @@
             secSaveBtn.disabled = false;
             secResetBtn.disabled = false;
             secCancelBtn.disabled = false;
-            area.placeholder = SETTING_DEFAULTS[activeSuperSecretSetting].tooltip;
+            area.placeholder = defaultsMap[activeSetting].tooltip;
           }
         } else if (editingMessageIndex !== null) {
           saveBtn.classList.remove("hidden");
@@ -2083,7 +2517,6 @@
 
         const maxVisible = parseInt(config.maxVisibleFiles, 10);
         if (!isNaN(maxVisible) && maxVisible > 0) {
-          // 1.6em (line height) + 17px (box padding, margin, border combined)
           list.style.maxHeight = `calc(${maxVisible} * (1.6em + 17px))`;
           list.style.overflowY = "auto";
         } else {
@@ -2114,7 +2547,7 @@
             }
 
             return `
-          <div class="chat-item" data-id="${f.id}" data-type="file">
+          <div class="chat-item" data-id="${f.id}" data-type="file" title="Ctrl+Click for Advanced RAG Settings">
             <div class="chat-item-title" data-action="load" title="Click to insert full contents into chat\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
             <div class="chat-item-actions">
               ${embedBtn}
@@ -2321,11 +2754,27 @@
         const container = $("#chat-container");
         const prevScroll = container.scrollTop;
 
-        if (isSuperSecretSettingsOpen) {
+        if (isSuperSecretSettingsOpen || isAdvancedRAGSettingsOpen) {
+          const isAdvanced = isAdvancedRAGSettingsOpen;
+          const settingsDefaults = isAdvanced
+            ? FILE_SETTING_DEFAULTS
+            : SETTING_DEFAULTS;
+          const activeSetting = isAdvanced
+            ? activeAdvancedRAGSetting
+            : activeSuperSecretSetting;
+          let targetConfig = config;
+          if (isAdvanced) {
+            targetConfig = files.find((f) => f.id === activeAdvancedRAGFileId) || {};
+          }
+
           const getSettingDisplay = (k) => {
-            const val = config[k];
+            const val = targetConfig[k];
             const isDefault =
-              val === undefined || val === "" || val === SETTING_DEFAULTS[k].default;
+              val === undefined || val === "" || val === settingsDefaults[k].default;
+
+            if (isAdvanced) {
+              return isDefault ? "Default" : "Custom";
+            }
 
             if (k === "godModePrompt") return isDefault ? "Default" : "Custom";
             if (k === "embeddingsKey") return val ? "Custom" : "API Default";
@@ -2359,11 +2808,17 @@
             chunkSeparator: "Chunk Separator",
             maxVisibleChats: "Max Visible Chats",
             maxVisibleFiles: "Max Visible Files",
+
+            customChunks: "Custom Chunks (JSON)",
+            customChunker: "Custom Chunking Function (JS)",
+            captureFunc: "Capture Function (JS)",
+            retrievalFunc: "Retrieval Function (JS)",
+            dedupFunc: "Deduplication Function (JS)",
           };
 
           const categories = {};
-          Object.keys(SETTING_DEFAULTS).forEach((key) => {
-            const cat = SETTING_DEFAULTS[key].category || "Other";
+          Object.keys(settingsDefaults).forEach((key) => {
+            const cat = settingsDefaults[key].category || "Other";
             if (!categories[cat]) categories[cat] = [];
             categories[cat].push(key);
           });
@@ -2378,14 +2833,17 @@
 
             sectionsHTML += keys
               .map((k) => {
-                const isActive = activeSuperSecretSetting === k;
-                const tooltip = SETTING_DEFAULTS[k].tooltip;
+                const isActive = activeSetting === k;
+                const tooltip = settingsDefaults[k].tooltip;
+                const onclickFn = isAdvanced
+                  ? `selectAdvancedRAGSetting('${k}')`
+                  : `selectSuperSecretSetting('${k}')`;
                 return `<button 
                 class="${isActive ? "active-setting" : ""}" 
-                onclick="selectSuperSecretSetting('${k}')" 
+                onclick="${onclickFn}" 
                 title="${escapeHTML(tooltip)}"
                 style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace; display: flex; justify-content: space-between;">
-                  <span>${settingNames[k]}</span>
+                  <span>${settingNames[k] || k}</span>
                   <span style="opacity: 0.7;">${getSettingDisplay(k)}</span>
               </button>`;
               })
@@ -2394,14 +2852,24 @@
             sectionsHTML += `</div>`;
           }
 
+          const resetFn = isAdvanced
+            ? `resetAllAdvancedRAGSettings()`
+            : `resetAllSuperSecretSettings()`;
+          const title = isAdvanced
+            ? `Advanced RAG Settings`
+            : `Super Secret Settings`;
+          const subtitle = isAdvanced
+            ? `Configure specific embedding and retrieval logic for this file. (${escapeHTML(targetConfig.name || "File")})`
+            : `Advanced engine parameters. Hover over a setting to see its description.`;
+
           container.innerHTML = `
             <div>
               <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="margin: 0;">Super Secret Settings</h2>
-                <button onclick="resetAllSuperSecretSettings()">Reset All</button>
+                <h2 style="margin: 0;">${title}</h2>
+                <button onclick="${resetFn}">Reset All</button>
               </div>
               <p style="margin-top: 5px; font-size: 0.85em; color: #555;">
-                Advanced engine parameters. Hover over a setting to see its description.
+                ${subtitle}
               </p>
               ${sectionsHTML}
             </div>
@@ -2502,6 +2970,12 @@
             } else loadChat(id);
           }
         } else if (type === "file") {
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            toggleAdvancedRAGSettings(id);
+            return;
+          }
+
           if (action === "delete") deleteFile(id);
           else if (action === "embed") {
             const meta = files.find((f) => f.id === id);

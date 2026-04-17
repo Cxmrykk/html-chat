@@ -35,10 +35,9 @@ const DEFAULT_GOD_MODE_PROMPT = [
 ].join("\n");
 
 const SETTING_DEFAULTS = {
-  // --- LLM Category ---
   godModePrompt: {
     default: DEFAULT_GOD_MODE_PROMPT,
-    tooltip: "System prompt used when God Mode is enabled.",
+    tooltip: "System prompt used when God Mode is enabled (execute JavaScript).",
     category: "LLM Behavior",
   },
   temperature: {
@@ -71,8 +70,6 @@ const SETTING_DEFAULTS = {
     tooltip: "Stream responses chunk-by-chunk (true/false).",
     category: "LLM Behavior",
   },
-
-  // --- Connection Category ---
   embeddingsUrl: {
     default: "",
     tooltip: "Custom base URL for embeddings (e.g. LiteLLM or OpenAI).",
@@ -88,8 +85,6 @@ const SETTING_DEFAULTS = {
     tooltip: "Model used for processing local RAG commands. Empty to disable.",
     category: "API & Connections",
   },
-
-  // --- RAG Category ---
   chunkSize: {
     default: "1000",
     tooltip: "Character size for file chunking.",
@@ -120,8 +115,6 @@ const SETTING_DEFAULTS = {
     tooltip: "String used to separate non-contiguous chunks (allows \\n).",
     category: "RAG & Document Processing",
   },
-
-  // --- UI & Display Category ---
   maxVisibleChats: {
     default: "",
     tooltip: "Maximum number of chats displayed at once in the sidebar.",
@@ -131,5 +124,52 @@ const SETTING_DEFAULTS = {
     default: "",
     tooltip: "Maximum number of files displayed at once in the sidebar.",
     category: "UI & Display",
+  },
+};
+
+const FILE_SETTING_DEFAULTS = {
+  maxRagTokens: {
+    default: "",
+    tooltip: "Override global max RAG tokens for this file.",
+    category: "Overrides",
+  },
+  ragThreshold: {
+    default: "",
+    tooltip: "Override global match threshold for this file. (0.0 to 1.0)",
+    category: "Overrides",
+  },
+  chunkSeparator: {
+    default: "",
+    tooltip: "Override global chunk separator. Use \\n for newline.",
+    category: "Overrides",
+  },
+  customChunks: {
+    default: "",
+    tooltip: "A JSON array of strings to bypass all chunking logic.",
+    category: "Chunk Generation",
+  },
+  customChunker: {
+    default: `const chunkSize = parseInt(config.chunkSize) || 1000;\nconst chunkOverlap = parseInt(config.chunkOverlap) || 200;\nconst chunks = [];\nlet start = 0;\nwhile (start < text.length) {\n  let end = start + chunkSize;\n  if (end > text.length) end = text.length;\n  chunks.push(text.substring(start, end));\n  if (end >= text.length) break;\n  start = end - chunkOverlap;\n}\nreturn chunks;`,
+    tooltip:
+      "JS function body (vars: `text`, `config`). Returns an array of string chunks.",
+    category: "Chunk Generation",
+  },
+  captureFunc: {
+    default: "",
+    tooltip:
+      "JS function body (vars: `chunk`). Returns an array of matched components.",
+    category: "Post-Retrieval Processing",
+  },
+  retrievalFunc: {
+    default: "",
+    tooltip:
+      "JS function body (vars: `matches`, `text`). Returns a contextual string retrieved from the original text (empty to omit).",
+    category: "Post-Retrieval Processing",
+  },
+  dedupFunc: {
+    default: "",
+    tooltip:
+      "JS function body (vars: `chunkA`, `chunkB`). Returns boolean true if duplicate.",
+    category: "Post-Retrieval Processing",
   },
 };

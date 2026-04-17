@@ -47,29 +47,68 @@ async function startEmbeddingLoop(id) {
   if (!data) return;
 
   if (!data.chunks) {
-    const chunkSize = parseInt(config.chunkSize) || 1000;
-    const chunkOverlap = parseInt(config.chunkOverlap) || 200;
     const text = data.text;
-    const chunks = [];
-    let start = 0;
-    let chunkIndex = 0;
+    let chunks = [];
+    const isCustomChunker =
+      meta.customChunker &&
+      meta.customChunker.trim() !== "" &&
+      meta.customChunker !== FILE_SETTING_DEFAULTS.customChunker.default;
 
-    while (start < text.length) {
-      let end = start + chunkSize;
-      if (end > text.length) end = text.length;
-      chunks.push({
-        index: chunkIndex++,
-        start: start,
-        end: end,
-        text: text.substring(start, end),
-        vector: null,
-      });
-      if (end >= text.length) break;
-      start = end - chunkOverlap;
+    if (meta.customChunks && meta.customChunks.trim() !== "") {
+      try {
+        const parsed = JSON.parse(meta.customChunks);
+        if (Array.isArray(parsed)) chunks = parsed;
+      } catch (e) {
+        console.error("Error parsing customChunks:", e);
+      }
+    } else if (isCustomChunker) {
+      try {
+        const fn = new Function("text", "config", meta.customChunker);
+        const res = fn(text, config);
+        if (Array.isArray(res)) chunks = res;
+      } catch (e) {
+        console.error("Error executing customChunker:", e);
+      }
     }
 
-    data.chunks = chunks;
-    meta.chunkCount = chunks.length;
+    if (chunks.length > 0 && typeof chunks[0] === "string") {
+      let chunkIndex = 0;
+      let start = 0;
+      data.chunks = chunks.map((c) => {
+        let end = start + c.length;
+        const mapped = {
+          index: chunkIndex++,
+          start: start,
+          end: end,
+          text: c,
+          vector: null,
+        };
+        start = end;
+        return mapped;
+      });
+    } else {
+      const chunkSize = parseInt(config.chunkSize) || 1000;
+      const chunkOverlap = parseInt(config.chunkOverlap) || 200;
+      let start = 0;
+      let chunkIndex = 0;
+      data.chunks = [];
+
+      while (start < text.length) {
+        let end = start + chunkSize;
+        if (end > text.length) end = text.length;
+        data.chunks.push({
+          index: chunkIndex++,
+          start: start,
+          end: end,
+          text: text.substring(start, end),
+          vector: null,
+        });
+        if (end >= text.length) break;
+        start = end - chunkOverlap;
+      }
+    }
+
+    meta.chunkCount = data.chunks.length;
     meta.embeddedCount = 0;
     await dbSet(`mf_filedata_${id}`, data);
   }
@@ -175,17 +214,71 @@ async function resolveAllMessages(messages, btnEl) {
                   queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
                 }
 
+                // File specific RAG Overrides
+                const fileMaxTokens =
+                  meta.maxRagTokens !== undefined && meta.maxRagTokens !== ""
+                    ? parseInt(meta.maxRagTokens, 10)
+                    : undefined;
+                const maxTokens =
+                  fileMaxTokens !== undefined && !isNaN(fileMaxTokens)
+                    ? fileMaxTokens
+                    : msg.maxTokens || 5000;
+
+                const fileThreshold =
+                  meta.ragThreshold !== undefined && meta.ragThreshold !== ""
+                    ? parseFloat(meta.ragThreshold)
+                    : undefined;
+                const threshold =
+                  fileThreshold !== undefined && !isNaN(fileThreshold)
+                    ? fileThreshold
+                    : msg.ragThreshold || 0.0;
+
+                const fileSep =
+                  meta.chunkSeparator !== undefined &&
+                  meta.chunkSeparator !== ""
+                    ? meta.chunkSeparator
+                    : undefined;
+                let sep =
+                  fileSep !== undefined
+                    ? fileSep
+                    : msg.chunkSeparator !== undefined
+                      ? msg.chunkSeparator
+                      : "...";
+                sep = sep.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+
                 validChunks.forEach((c) => {
                   c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
                 });
 
-                const threshold = msg.ragThreshold || 0.0;
                 let topChunks = validChunks.filter(
                   (c) => !queryEmb || c.score >= threshold,
                 );
                 topChunks.sort((a, b) => b.score - a.score);
 
-                const maxTokens = msg.maxTokens || 5000;
+                if (meta.dedupFunc && meta.dedupFunc.trim() !== "") {
+                  try {
+                    const dedupFn = new Function(
+                      "chunkA",
+                      "chunkB",
+                      meta.dedupFunc,
+                    );
+                    const deduped = [];
+                    for (const c of topChunks) {
+                      let isDup = false;
+                      for (const d of deduped) {
+                        if (dedupFn(c.text, d.text)) {
+                          isDup = true;
+                          break;
+                        }
+                      }
+                      if (!isDup) deduped.push(c);
+                    }
+                    topChunks = deduped;
+                  } catch (e) {
+                    console.error("Deduplication error:", e);
+                  }
+                }
+
                 let currentTokens = 0;
                 let selectedChunks = [];
 
@@ -202,18 +295,84 @@ async function resolveAllMessages(messages, btnEl) {
 
                 selectedChunks.sort((a, b) => a.index - b.index);
 
-                let mergedContent = "";
-                let sep =
-                  msg.chunkSeparator !== undefined ? msg.chunkSeparator : "...";
-                sep = sep.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+                let processedChunks = [];
+                let hasCapture =
+                  meta.captureFunc && meta.captureFunc.trim() !== "";
+                let hasRetrieval =
+                  meta.retrievalFunc && meta.retrievalFunc.trim() !== "";
+
+                let captureFn = null;
+                let retrievalFn = null;
+
+                if (hasCapture) {
+                  try {
+                    captureFn = new Function("chunk", meta.captureFunc);
+                  } catch (e) {
+                    console.error("Capture function error:", e);
+                    hasCapture = false;
+                  }
+                }
+                if (hasRetrieval) {
+                  try {
+                    retrievalFn = new Function(
+                      "matches",
+                      "text",
+                      meta.retrievalFunc,
+                    );
+                  } catch (e) {
+                    console.error("Retrieval function error:", e);
+                    hasRetrieval = false;
+                  }
+                }
 
                 for (let j = 0; j < selectedChunks.length; j++) {
                   const curr = selectedChunks[j];
+                  let finalStr = curr.text;
+
+                  if (hasCapture) {
+                    try {
+                      const m = captureFn(curr.text);
+                      if (hasRetrieval) {
+                        const retrieved = retrievalFn(m, data.text);
+                        finalStr =
+                          typeof retrieved === "string" ? retrieved : "";
+                      } else {
+                        finalStr = Array.isArray(m)
+                          ? m.join("")
+                          : String(m || "");
+                      }
+                    } catch (e) {
+                      console.error("Post-processing error:", e);
+                    }
+                  }
+
+                  if (finalStr !== "") {
+                    processedChunks.push({
+                      index: curr.index,
+                      start: curr.start,
+                      end: curr.end,
+                      text: finalStr,
+                    });
+                  }
+                }
+
+                let mergedContent = "";
+                let usesCustomChunking =
+                  (meta.customChunks && meta.customChunks.trim() !== "") ||
+                  (meta.customChunker &&
+                    meta.customChunker.trim() !== "" &&
+                    meta.customChunker !==
+                      FILE_SETTING_DEFAULTS.customChunker.default);
+                let usesPostProcessing =
+                  hasCapture || hasRetrieval || usesCustomChunking;
+
+                for (let j = 0; j < processedChunks.length; j++) {
+                  const curr = processedChunks[j];
                   if (j === 0) {
                     mergedContent += curr.text;
                   } else {
-                    const prev = selectedChunks[j - 1];
-                    if (curr.index === prev.index + 1) {
+                    const prev = processedChunks[j - 1];
+                    if (!usesPostProcessing && curr.index === prev.index + 1) {
                       mergedContent += data.text.substring(prev.end, curr.end);
                     } else {
                       mergedContent += sep + curr.text;

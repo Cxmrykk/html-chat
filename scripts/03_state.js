@@ -13,6 +13,11 @@ let isSuperSecretSettingsOpen = false;
 let activeSuperSecretSetting = null;
 let uncommittedSuperSecretValue = null;
 
+let isAdvancedRAGSettingsOpen = false;
+let activeAdvancedRAGFileId = null;
+let activeAdvancedRAGSetting = null;
+let uncommittedAdvancedRAGValue = null;
+
 let cachedContextChars = -1;
 
 function invalidateTokenCache() {

@@ -6,6 +6,12 @@ function suspendSuperSecretSettings() {
     }
     isSuperSecretSettingsOpen = false;
   }
+  if (isAdvancedRAGSettingsOpen) {
+    if (activeAdvancedRAGSetting) {
+      uncommittedAdvancedRAGValue = $("#chat-input").value;
+    }
+    isAdvancedRAGSettingsOpen = false;
+  }
 }
 
 function handleNewChatClick(e) {
@@ -166,6 +172,9 @@ async function uploadFile(name, text, existingId = null) {
 }
 
 async function deleteFile(id) {
+  if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+    toggleAdvancedRAGSettings(null);
+  }
   files = files.filter((f) => f.id !== id);
   await dbDelete(`mf_filedata_${id}`);
   saveState();
@@ -241,7 +250,7 @@ function resetEditState() {
   if (area) {
     area.style.whiteSpace = "";
     area.style.overflowX = "";
-    if (!isSuperSecretSettingsOpen) {
+    if (!isSuperSecretSettingsOpen && !isAdvancedRAGSettingsOpen) {
       area.value = "";
       area.style.height = promptHeight;
     }
@@ -320,6 +329,15 @@ function toggleGlobalWrap() {
 }
 
 function toggleSuperSecretSettings() {
+  if (isAdvancedRAGSettingsOpen) {
+    if (activeAdvancedRAGSetting) {
+      uncommittedAdvancedRAGValue = $("#chat-input").value;
+    }
+    isAdvancedRAGSettingsOpen = false;
+    activeAdvancedRAGSetting = null;
+    activeAdvancedRAGFileId = null;
+  }
+
   isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
   if (!isSuperSecretSettingsOpen) {
     activeSuperSecretSetting = null;
@@ -336,6 +354,61 @@ function toggleSuperSecretSettings() {
           config[activeSuperSecretSetting] !== undefined
             ? config[activeSuperSecretSetting]
             : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+      }
+    }
+  }
+  renderCurrentChat();
+  applyInputAreaState();
+}
+
+function toggleAdvancedRAGSettings(id = null) {
+  if (isSuperSecretSettingsOpen) toggleSuperSecretSettings();
+
+  if (id === null && isAdvancedRAGSettingsOpen) {
+    if (activeAdvancedRAGSetting) {
+      uncommittedAdvancedRAGValue = $("#chat-input").value;
+    }
+    isAdvancedRAGSettingsOpen = false;
+    $("#chat-input").value = "";
+    renderCurrentChat();
+    applyInputAreaState();
+    return;
+  }
+
+  if (id !== null) {
+    if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+      if (activeAdvancedRAGSetting) {
+        uncommittedAdvancedRAGValue = $("#chat-input").value;
+      }
+      isAdvancedRAGSettingsOpen = false;
+      $("#chat-input").value = "";
+    } else {
+      if (isAdvancedRAGSettingsOpen && activeAdvancedRAGSetting) {
+        uncommittedAdvancedRAGValue = $("#chat-input").value;
+      }
+      const isReopeningSame = activeAdvancedRAGFileId === id;
+      isAdvancedRAGSettingsOpen = true;
+      activeAdvancedRAGFileId = id;
+
+      if (!isReopeningSame) {
+        activeAdvancedRAGSetting = null;
+        uncommittedAdvancedRAGValue = null;
+        $("#chat-input").value = "";
+      } else {
+        if (activeAdvancedRAGSetting) {
+          const area = $("#chat-input");
+          if (uncommittedAdvancedRAGValue !== null) {
+            area.value = uncommittedAdvancedRAGValue;
+          } else {
+            const meta = files.find((f) => f.id === id);
+            area.value =
+              meta &&
+              meta[activeAdvancedRAGSetting] !== undefined &&
+              meta[activeAdvancedRAGSetting] !== ""
+                ? meta[activeAdvancedRAGSetting]
+                : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
+          }
+        }
       }
     }
   }

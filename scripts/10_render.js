@@ -50,12 +50,18 @@ function applyInputAreaState() {
 
   area.style.height = promptHeight;
 
-  if (isSuperSecretSettingsOpen) {
+  if (isSuperSecretSettingsOpen || isAdvancedRAGSettingsOpen) {
     secSaveBtn.classList.remove("hidden");
     secResetBtn.classList.remove("hidden");
     secCancelBtn.classList.remove("hidden");
 
-    if (!activeSuperSecretSetting) {
+    const isAdvanced = isAdvancedRAGSettingsOpen;
+    const activeSetting = isAdvanced
+      ? activeAdvancedRAGSetting
+      : activeSuperSecretSetting;
+    const defaultsMap = isAdvanced ? FILE_SETTING_DEFAULTS : SETTING_DEFAULTS;
+
+    if (!activeSetting) {
       area.disabled = true;
       if (area.value !== "") area.value = "";
       area.placeholder = "Select a setting above to edit...";
@@ -67,7 +73,7 @@ function applyInputAreaState() {
       secSaveBtn.disabled = false;
       secResetBtn.disabled = false;
       secCancelBtn.disabled = false;
-      area.placeholder = SETTING_DEFAULTS[activeSuperSecretSetting].tooltip;
+      area.placeholder = defaultsMap[activeSetting].tooltip;
     }
   } else if (editingMessageIndex !== null) {
     saveBtn.classList.remove("hidden");
@@ -95,7 +101,6 @@ function renderFileList() {
 
   const maxVisible = parseInt(config.maxVisibleFiles, 10);
   if (!isNaN(maxVisible) && maxVisible > 0) {
-    // 1.6em (line height) + 17px (box padding, margin, border combined)
     list.style.maxHeight = `calc(${maxVisible} * (1.6em + 17px))`;
     list.style.overflowY = "auto";
   } else {
@@ -126,7 +131,7 @@ function renderFileList() {
       }
 
       return `
-    <div class="chat-item" data-id="${f.id}" data-type="file">
+    <div class="chat-item" data-id="${f.id}" data-type="file" title="Ctrl+Click for Advanced RAG Settings">
       <div class="chat-item-title" data-action="load" title="Click to insert full contents into chat\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
       <div class="chat-item-actions">
         ${embedBtn}
@@ -333,11 +338,27 @@ function renderCurrentChat(preserveScroll = false) {
   const container = $("#chat-container");
   const prevScroll = container.scrollTop;
 
-  if (isSuperSecretSettingsOpen) {
+  if (isSuperSecretSettingsOpen || isAdvancedRAGSettingsOpen) {
+    const isAdvanced = isAdvancedRAGSettingsOpen;
+    const settingsDefaults = isAdvanced
+      ? FILE_SETTING_DEFAULTS
+      : SETTING_DEFAULTS;
+    const activeSetting = isAdvanced
+      ? activeAdvancedRAGSetting
+      : activeSuperSecretSetting;
+    let targetConfig = config;
+    if (isAdvanced) {
+      targetConfig = files.find((f) => f.id === activeAdvancedRAGFileId) || {};
+    }
+
     const getSettingDisplay = (k) => {
-      const val = config[k];
+      const val = targetConfig[k];
       const isDefault =
-        val === undefined || val === "" || val === SETTING_DEFAULTS[k].default;
+        val === undefined || val === "" || val === settingsDefaults[k].default;
+
+      if (isAdvanced) {
+        return isDefault ? "Default" : "Custom";
+      }
 
       if (k === "godModePrompt") return isDefault ? "Default" : "Custom";
       if (k === "embeddingsKey") return val ? "Custom" : "API Default";
@@ -371,11 +392,17 @@ function renderCurrentChat(preserveScroll = false) {
       chunkSeparator: "Chunk Separator",
       maxVisibleChats: "Max Visible Chats",
       maxVisibleFiles: "Max Visible Files",
+
+      customChunks: "Custom Chunks (JSON)",
+      customChunker: "Custom Chunking Function (JS)",
+      captureFunc: "Capture Function (JS)",
+      retrievalFunc: "Retrieval Function (JS)",
+      dedupFunc: "Deduplication Function (JS)",
     };
 
     const categories = {};
-    Object.keys(SETTING_DEFAULTS).forEach((key) => {
-      const cat = SETTING_DEFAULTS[key].category || "Other";
+    Object.keys(settingsDefaults).forEach((key) => {
+      const cat = settingsDefaults[key].category || "Other";
       if (!categories[cat]) categories[cat] = [];
       categories[cat].push(key);
     });
@@ -390,14 +417,17 @@ function renderCurrentChat(preserveScroll = false) {
 
       sectionsHTML += keys
         .map((k) => {
-          const isActive = activeSuperSecretSetting === k;
-          const tooltip = SETTING_DEFAULTS[k].tooltip;
+          const isActive = activeSetting === k;
+          const tooltip = settingsDefaults[k].tooltip;
+          const onclickFn = isAdvanced
+            ? `selectAdvancedRAGSetting('${k}')`
+            : `selectSuperSecretSetting('${k}')`;
           return `<button 
           class="${isActive ? "active-setting" : ""}" 
-          onclick="selectSuperSecretSetting('${k}')" 
+          onclick="${onclickFn}" 
           title="${escapeHTML(tooltip)}"
           style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace; display: flex; justify-content: space-between;">
-            <span>${settingNames[k]}</span>
+            <span>${settingNames[k] || k}</span>
             <span style="opacity: 0.7;">${getSettingDisplay(k)}</span>
         </button>`;
         })
@@ -406,14 +436,24 @@ function renderCurrentChat(preserveScroll = false) {
       sectionsHTML += `</div>`;
     }
 
+    const resetFn = isAdvanced
+      ? `resetAllAdvancedRAGSettings()`
+      : `resetAllSuperSecretSettings()`;
+    const title = isAdvanced
+      ? `Advanced RAG Settings`
+      : `Super Secret Settings`;
+    const subtitle = isAdvanced
+      ? `Configure specific embedding and retrieval logic for this file. (${escapeHTML(targetConfig.name || "File")})`
+      : `Advanced engine parameters. Hover over a setting to see its description.`;
+
     container.innerHTML = `
       <div>
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h2 style="margin: 0;">Super Secret Settings</h2>
-          <button onclick="resetAllSuperSecretSettings()">Reset All</button>
+          <h2 style="margin: 0;">${title}</h2>
+          <button onclick="${resetFn}">Reset All</button>
         </div>
         <p style="margin-top: 5px; font-size: 0.85em; color: #555;">
-          Advanced engine parameters. Hover over a setting to see its description.
+          ${subtitle}
         </p>
         ${sectionsHTML}
       </div>
