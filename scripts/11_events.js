@@ -48,8 +48,6 @@ $("#sidebar").addEventListener("click", (e) => {
       const meta = files.find((f) => f.id === id);
       if (meta && meta.progress >= 100) {
         appendFileMessage(id, "embed");
-      } else {
-        toggleEmbedding(id);
       }
     } else if (action === "load") {
       if (e.altKey) {

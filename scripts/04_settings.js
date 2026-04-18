@@ -131,16 +131,22 @@ function resetAllSuperSecretSettings() {
 }
 
 // --- ADVANCED RAG SPECIFIC FUNCTIONS ---
-function selectAdvancedRAGSetting(key) {
+async function selectAdvancedRAGSetting(key) {
   activeAdvancedRAGSetting = key;
   uncommittedAdvancedRAGValue = null;
   const area = $("#chat-input");
-  const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
-  if (meta) {
-    area.value =
-      meta[key] !== undefined && meta[key] !== ""
-        ? meta[key]
-        : FILE_SETTING_DEFAULTS[key].default;
+
+  if (key === "fileText") {
+    const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
+    area.value = data ? data.text : "";
+  } else {
+    const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+    if (meta) {
+      area.value =
+        meta[key] !== undefined && meta[key] !== ""
+          ? meta[key]
+          : FILE_SETTING_DEFAULTS[key].default;
+    }
   }
   renderApp(true);
   area.focus();
@@ -153,38 +159,40 @@ async function saveAdvancedRAGSetting() {
   const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
   if (!meta) return;
 
-  const requiresReembed = ["customChunks", "customChunker"].includes(key);
-  const oldVal = meta[key];
-
-  if (
-    [
-      "customChunks",
-      "customChunker",
-      "captureFunc",
-      "retrievalFunc",
-      "dedupFunc",
-      "chunkSeparator",
-    ].includes(key)
-  ) {
-    meta[key] = val;
-  } else {
-    if (val.trim() === "") {
-      meta[key] = "";
-    } else {
-      const parsed = parseFloat(val);
-      meta[key] = isNaN(parsed) ? "" : parsed;
-    }
-  }
-
-  if (requiresReembed && oldVal !== meta[key]) {
-    meta.progress = 0;
-    meta.embeddedCount = 0;
-    meta.chunkCount = 0;
-    meta.isEmbedding = false;
-    const data = await dbGet(`mf_filedata_${meta.id}`);
+  if (key === "fileText") {
+    const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
     if (data) {
-      data.chunks = null;
-      await dbSet(`mf_filedata_${meta.id}`, data);
+      data.text = val;
+      meta.textLength = val.length;
+      await dbSet(`mf_filedata_${activeAdvancedRAGFileId}`, data);
+      await refreshFileChunks(meta.id);
+    }
+  } else {
+    const requiresReembed = ["customChunks", "customChunker"].includes(key);
+    const oldVal = meta[key];
+
+    if (
+      [
+        "customChunks",
+        "customChunker",
+        "captureFunc",
+        "retrievalFunc",
+        "dedupFunc",
+        "chunkSeparator",
+      ].includes(key)
+    ) {
+      meta[key] = val;
+    } else {
+      if (val.trim() === "") {
+        meta[key] = "";
+      } else {
+        const parsed = parseFloat(val);
+        meta[key] = isNaN(parsed) ? "" : parsed;
+      }
+    }
+
+    if (requiresReembed && oldVal !== meta[key]) {
+      await refreshFileChunks(meta.id);
     }
   }
 
@@ -198,6 +206,8 @@ async function saveAdvancedRAGSetting() {
 async function resetAdvancedRAGSetting() {
   if (!activeAdvancedRAGSetting || !activeAdvancedRAGFileId) return;
   const key = activeAdvancedRAGSetting;
+  if (key === "fileText") return;
+
   const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
   if (!meta) return;
 
@@ -207,15 +217,7 @@ async function resetAdvancedRAGSetting() {
   meta[key] = FILE_SETTING_DEFAULTS[key].default;
 
   if (requiresReembed && oldVal !== meta[key]) {
-    meta.progress = 0;
-    meta.embeddedCount = 0;
-    meta.chunkCount = 0;
-    meta.isEmbedding = false;
-    const data = await dbGet(`mf_filedata_${meta.id}`);
-    if (data) {
-      data.chunks = null;
-      await dbSet(`mf_filedata_${meta.id}`, data);
-    }
+    await refreshFileChunks(meta.id);
   }
 
   saveState();
@@ -239,6 +241,7 @@ async function resetAllAdvancedRAGSettings() {
 
     let requiresReembed = false;
     for (let key in FILE_SETTING_DEFAULTS) {
+      if (key === "fileText") continue;
       if (
         ["customChunks", "customChunker"].includes(key) &&
         meta[key] !== undefined &&
@@ -251,24 +254,21 @@ async function resetAllAdvancedRAGSettings() {
     }
 
     if (requiresReembed) {
-      meta.progress = 0;
-      meta.embeddedCount = 0;
-      meta.chunkCount = 0;
-      meta.isEmbedding = false;
-      const data = await dbGet(`mf_filedata_${meta.id}`);
-      if (data) {
-        data.chunks = null;
-        await dbSet(`mf_filedata_${meta.id}`, data);
-      }
+      await refreshFileChunks(meta.id);
     }
 
     saveState();
     if (activeAdvancedRAGSetting) {
       uncommittedAdvancedRAGValue = null;
-      $("#chat-input").value =
-        meta[activeAdvancedRAGSetting] !== undefined
-          ? meta[activeAdvancedRAGSetting]
-          : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
+      if (activeAdvancedRAGSetting === "fileText") {
+        const data = await dbGet(`mf_filedata_${meta.id}`);
+        $("#chat-input").value = data ? data.text : "";
+      } else {
+        $("#chat-input").value =
+          meta[activeAdvancedRAGSetting] !== undefined
+            ? meta[activeAdvancedRAGSetting]
+            : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
+      }
     }
     renderApp(true);
     updateTokenCount();

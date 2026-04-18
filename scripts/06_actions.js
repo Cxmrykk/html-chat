@@ -158,15 +158,15 @@ async function uploadFile(name, text, existingId = null) {
       textLength: text.length,
     };
     files.unshift(meta);
+    await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
   } else {
-    meta.progress = 0;
-    meta.isEmbedding = false;
-    meta.chunkCount = 0;
-    meta.embeddedCount = 0;
     meta.textLength = text.length;
+    const data = await dbGet(`mf_filedata_${id}`);
+    data.text = text;
+    await dbSet(`mf_filedata_${id}`, data);
+    await refreshFileChunks(id);
   }
 
-  await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
   saveState();
   renderFileList();
 }
@@ -184,14 +184,167 @@ async function deleteFile(id) {
 async function toggleEmbedding(id) {
   const meta = files.find((f) => f.id === id);
   if (!meta) return;
-  if (!config.embeddingsModel || config.embeddingsModel.trim() === "") return;
+  if (!config.embeddingsModel || config.embeddingsModel.trim() === "") {
+    alert("Please configure an embeddings model in Settings first.");
+    return;
+  }
 
   meta.isEmbedding = !meta.isEmbedding;
   saveState();
   renderFileList();
+  renderApp(true);
   if (meta.isEmbedding) {
     startEmbeddingLoop(id);
   }
+}
+
+async function attemptChunking() {
+  if (!activeAdvancedRAGFileId) return;
+  const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+  const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
+  if (!meta || !data) return;
+
+  const text = data.text || "";
+  let chunks = [];
+  const isCustomChunker =
+    meta.customChunker &&
+    meta.customChunker.trim() !== "" &&
+    meta.customChunker !== FILE_SETTING_DEFAULTS.customChunker.default;
+
+  if (isCustomChunker) {
+    try {
+      const fn = new Function("text", "config", meta.customChunker);
+      const res = fn(text, config);
+      if (Array.isArray(res)) chunks = res;
+    } catch (e) {
+      alert("Error executing customChunker: " + e.message);
+      return;
+    }
+  } else {
+    const chunkSize = parseInt(config.chunkSize) || 1000;
+    const chunkOverlap = parseInt(config.chunkOverlap) || 200;
+    let start = 0;
+    while (start < text.length) {
+      let end = start + chunkSize;
+      if (end > text.length) end = text.length;
+      chunks.push(text.substring(start, end));
+      if (end >= text.length) break;
+      start = end - chunkOverlap;
+    }
+  }
+
+  meta.customChunks = JSON.stringify(chunks, null, 2);
+  saveState();
+  await refreshFileChunks(meta.id);
+
+  if (activeAdvancedRAGSetting === "customChunks") {
+    await selectAdvancedRAGSetting("customChunks");
+  } else {
+    renderApp(true);
+  }
+}
+
+function toggleAdvancedEmbedding() {
+  if (!activeAdvancedRAGFileId) return;
+  toggleEmbedding(activeAdvancedRAGFileId);
+}
+
+async function exportChunksAndVectors() {
+  if (!activeAdvancedRAGFileId) return;
+  const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
+  if (!data || !data.chunks) return alert("No chunks found.");
+
+  const payload = {
+    model: config.embeddingsModel,
+    chunks: data.chunks.map((c) => ({
+      text: c.text,
+      vector_b64: encodeVectorToBase64(c.vector),
+    })),
+  };
+
+  const dataStr = JSON.stringify(payload, null, 2);
+  const blob = new Blob([dataStr], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `file-vectors-${activeAdvancedRAGFileId}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importChunksAndVectors() {
+  if (!activeAdvancedRAGFileId) return;
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json";
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const imported = JSON.parse(event.target.result);
+        if (!imported.chunks || !Array.isArray(imported.chunks))
+          throw new Error("Invalid format.");
+
+        if (imported.model !== config.embeddingsModel) {
+          alert(
+            `Model mismatch!\n\nExported model: '${imported.model}'\nCurrent model: '${config.embeddingsModel}'\n\nImport cancelled. To bypass this, manually edit the 'model' field in the JSON file to match your current model.`,
+          );
+          return;
+        }
+
+        const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
+        if (!data) return;
+
+        const texts = imported.chunks.map((c) => c.text);
+        const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+        meta.customChunks = JSON.stringify(texts, null, 2);
+
+        let start = 0;
+        let chunkIndex = 0;
+        data.chunks = imported.chunks.map((c) => {
+          let end = start + c.text.length;
+          // Fallback support for older unencoded vector formats if you ever switch versions
+          let vec = c.vector_b64
+            ? decodeBase64ToVector(c.vector_b64)
+            : c.vector || null;
+          let mapped = {
+            index: chunkIndex++,
+            start: start,
+            end: end,
+            text: c.text,
+            vector: vec,
+          };
+          start = end;
+          return mapped;
+        });
+
+        meta.chunkCount = data.chunks.length;
+        meta.embeddedCount = data.chunks.filter((c) => c.vector).length;
+        meta.progress =
+          meta.chunkCount > 0
+            ? Math.round((meta.embeddedCount / meta.chunkCount) * 100)
+            : 0;
+        if (meta.progress >= 100) meta.isEmbedding = false;
+
+        await dbSet(`mf_filedata_${activeAdvancedRAGFileId}`, data);
+        saveState();
+        if (activeAdvancedRAGSetting === "customChunks") {
+          await selectAdvancedRAGSetting("customChunks");
+        } else {
+          renderApp(true);
+        }
+        alert("Imported chunks and vectors successfully.");
+      } catch (err) {
+        alert("Failed to import: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
 }
 
 async function appendFileMessage(fileId, mode = "full") {
@@ -361,7 +514,7 @@ function toggleSuperSecretSettings() {
   applyInputAreaState();
 }
 
-function toggleAdvancedRAGSettings(id = null) {
+async function toggleAdvancedRAGSettings(id = null) {
   if (isSuperSecretSettingsOpen) toggleSuperSecretSettings();
 
   if (id === null && isAdvancedRAGSettingsOpen) {
@@ -400,13 +553,18 @@ function toggleAdvancedRAGSettings(id = null) {
           if (uncommittedAdvancedRAGValue !== null) {
             area.value = uncommittedAdvancedRAGValue;
           } else {
-            const meta = files.find((f) => f.id === id);
-            area.value =
-              meta &&
-              meta[activeAdvancedRAGSetting] !== undefined &&
-              meta[activeAdvancedRAGSetting] !== ""
-                ? meta[activeAdvancedRAGSetting]
-                : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
+            if (activeAdvancedRAGSetting === "fileText") {
+              const data = await dbGet(`mf_filedata_${id}`);
+              area.value = data ? data.text : "";
+            } else {
+              const meta = files.find((f) => f.id === id);
+              area.value =
+                meta &&
+                meta[activeAdvancedRAGSetting] !== undefined &&
+                meta[activeAdvancedRAGSetting] !== ""
+                  ? meta[activeAdvancedRAGSetting]
+                  : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
+            }
           }
         }
       }

@@ -37,7 +37,8 @@ const DEFAULT_GOD_MODE_PROMPT = [
 const SETTING_DEFAULTS = {
   godModePrompt: {
     default: DEFAULT_GOD_MODE_PROMPT,
-    tooltip: "System prompt used when God Mode is enabled (execute JavaScript).",
+    tooltip:
+      "System prompt used when God Mode is enabled (execute JavaScript).",
     category: "LLM Behavior",
   },
   temperature: {
@@ -128,6 +129,11 @@ const SETTING_DEFAULTS = {
 };
 
 const FILE_SETTING_DEFAULTS = {
+  fileText: {
+    default: "",
+    tooltip: "The full textual content of the file. Edit and save to update.",
+    category: "Overrides",
+  },
   maxRagTokens: {
     default: "",
     tooltip: "Override global max RAG tokens for this file.",

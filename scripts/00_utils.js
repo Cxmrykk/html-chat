@@ -41,3 +41,26 @@ function cosSim(a, b) {
   if (magA === 0 || magB === 0) return 0;
   return dot / (Math.sqrt(magA) * Math.sqrt(magB));
 }
+
+function encodeVectorToBase64(vector) {
+  if (!vector || !vector.length) return null;
+  // Convert standard numbers (Float64) to Float32 to halve the required storage space
+  const f32 = new Float32Array(vector);
+  const u8 = new Uint8Array(f32.buffer);
+  let binary = "";
+  for (let i = 0; i < u8.byteLength; i++) {
+    binary += String.fromCharCode(u8[i]);
+  }
+  return btoa(binary);
+}
+
+function decodeBase64ToVector(base64) {
+  if (!base64) return null;
+  const binary = atob(base64);
+  const u8 = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    u8[i] = binary.charCodeAt(i);
+  }
+  const f32 = new Float32Array(u8.buffer);
+  return Array.from(f32);
+}

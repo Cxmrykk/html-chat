@@ -38,79 +38,101 @@ async function fetchEmbeddings(texts) {
   return data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }
 
-async function startEmbeddingLoop(id) {
-  if (!config.embeddingsModel || config.embeddingsModel.trim() === "") return;
-
+async function refreshFileChunks(id) {
   const meta = files.find((f) => f.id === id);
-  if (!meta || !meta.isEmbedding) return;
+  if (!meta) return;
   const data = await dbGet(`mf_filedata_${id}`);
   if (!data) return;
 
-  if (!data.chunks) {
-    const text = data.text;
-    let chunks = [];
-    const isCustomChunker =
-      meta.customChunker &&
-      meta.customChunker.trim() !== "" &&
-      meta.customChunker !== FILE_SETTING_DEFAULTS.customChunker.default;
+  const text = data.text || "";
+  let chunks = [];
+  const isCustomChunker =
+    meta.customChunker &&
+    meta.customChunker.trim() !== "" &&
+    meta.customChunker !== FILE_SETTING_DEFAULTS.customChunker.default;
 
-    if (meta.customChunks && meta.customChunks.trim() !== "") {
-      try {
-        const parsed = JSON.parse(meta.customChunks);
-        if (Array.isArray(parsed)) chunks = parsed;
-      } catch (e) {
-        console.error("Error parsing customChunks:", e);
-      }
-    } else if (isCustomChunker) {
-      try {
-        const fn = new Function("text", "config", meta.customChunker);
-        const res = fn(text, config);
-        if (Array.isArray(res)) chunks = res;
-      } catch (e) {
-        console.error("Error executing customChunker:", e);
-      }
+  if (meta.customChunks && meta.customChunks.trim() !== "") {
+    try {
+      const parsed = JSON.parse(meta.customChunks);
+      if (Array.isArray(parsed)) chunks = parsed;
+    } catch (e) {
+      console.error("Error parsing customChunks:", e);
     }
-
-    if (chunks.length > 0 && typeof chunks[0] === "string") {
-      let chunkIndex = 0;
-      let start = 0;
-      data.chunks = chunks.map((c) => {
-        let end = start + c.length;
-        const mapped = {
-          index: chunkIndex++,
-          start: start,
-          end: end,
-          text: c,
-          vector: null,
-        };
-        start = end;
-        return mapped;
-      });
-    } else {
-      const chunkSize = parseInt(config.chunkSize) || 1000;
-      const chunkOverlap = parseInt(config.chunkOverlap) || 200;
-      let start = 0;
-      let chunkIndex = 0;
-      data.chunks = [];
-
-      while (start < text.length) {
-        let end = start + chunkSize;
-        if (end > text.length) end = text.length;
-        data.chunks.push({
-          index: chunkIndex++,
-          start: start,
-          end: end,
-          text: text.substring(start, end),
-          vector: null,
-        });
-        if (end >= text.length) break;
-        start = end - chunkOverlap;
-      }
+  } else if (isCustomChunker) {
+    try {
+      const fn = new Function("text", "config", meta.customChunker);
+      const res = fn(text, config);
+      if (Array.isArray(res)) chunks = res;
+    } catch (e) {
+      console.error("Error executing customChunker:", e);
     }
+  }
 
-    meta.chunkCount = data.chunks.length;
-    meta.embeddedCount = 0;
+  if (chunks.length === 0 || typeof chunks[0] !== "string") {
+    const chunkSize = parseInt(config.chunkSize) || 1000;
+    const chunkOverlap = parseInt(config.chunkOverlap) || 200;
+    let start = 0;
+    while (start < text.length) {
+      let end = start + chunkSize;
+      if (end > text.length) end = text.length;
+      chunks.push(text.substring(start, end));
+      if (end >= text.length) break;
+      start = end - chunkOverlap;
+    }
+  }
+
+  let changed = false;
+  let newChunks = [];
+  let chunkIndex = 0;
+  let start = 0;
+
+  for (const c of chunks) {
+    let end = start + c.length;
+    let existing = data.chunks
+      ? data.chunks.find((old) => old.text === c && old.vector)
+      : null;
+    if (!existing) changed = true;
+
+    newChunks.push({
+      index: chunkIndex++,
+      start: start,
+      end: end,
+      text: c,
+      vector: existing ? existing.vector : null,
+    });
+    start = end;
+  }
+
+  if (!data.chunks || data.chunks.length !== newChunks.length) changed = true;
+  else if (data.chunks.some((old, i) => old.text !== newChunks[i].text))
+    changed = true;
+
+  if (changed) {
+    data.chunks = newChunks;
+    meta.chunkCount = newChunks.length;
+    meta.embeddedCount = newChunks.filter((c) => c.vector).length;
+    meta.progress =
+      meta.chunkCount > 0
+        ? Math.round((meta.embeddedCount / meta.chunkCount) * 100)
+        : 0;
+    if (meta.progress >= 100) meta.isEmbedding = false;
     await dbSet(`mf_filedata_${id}`, data);
+    saveState();
+  }
+}
+
+async function startEmbeddingLoop(id) {
+  if (!config.embeddingsModel || config.embeddingsModel.trim() === "") return;
+
+  const initialMeta = files.find((f) => f.id === id);
+  if (!initialMeta || !initialMeta.isEmbedding) return;
+  const initialData = await dbGet(`mf_filedata_${id}`);
+  if (!initialData) return;
+
+  if (!initialData.chunks) {
+    await refreshFileChunks(id);
+    const m = files.find((f) => f.id === id);
+    if (!m || !m.isEmbedding) return;
   }
 
   const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
@@ -119,10 +141,18 @@ async function startEmbeddingLoop(id) {
     const currentMeta = files.find((f) => f.id === id);
     if (!currentMeta || !currentMeta.isEmbedding) break;
 
-    const batch = data.chunks.filter((c) => !c.vector).slice(0, MAX_BATCH);
+    const currentData = await dbGet(`mf_filedata_${id}`);
+    if (!currentData || !currentData.chunks) break;
+
+    const batch = currentData.chunks
+      .filter((c) => !c.vector)
+      .slice(0, MAX_BATCH);
     if (batch.length === 0) {
       currentMeta.progress = 100;
       currentMeta.isEmbedding = false;
+      renderFileList();
+      if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
+        renderApp(true);
       break;
     }
 
@@ -134,12 +164,15 @@ async function startEmbeddingLoop(id) {
         c.vector = embs[i];
       });
 
-      currentMeta.embeddedCount += batch.length;
+      currentMeta.embeddedCount = currentData.chunks.filter(
+        (c) => c.vector,
+      ).length;
+      currentMeta.chunkCount = currentData.chunks.length;
       currentMeta.progress = Math.round(
         (currentMeta.embeddedCount / currentMeta.chunkCount) * 100,
       );
 
-      await dbSet(`mf_filedata_${id}`, data);
+      await dbSet(`mf_filedata_${id}`, currentData);
       saveState();
       renderFileList();
       await new Promise((r) => setTimeout(r, 100)); // Yield to UI
@@ -148,6 +181,8 @@ async function startEmbeddingLoop(id) {
       currentMeta.isEmbedding = false;
       saveState();
       renderFileList();
+      if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
+        renderApp(true);
       alert(`Embedding failed for ${currentMeta.name}: ${err.message}`);
       break;
     }
@@ -255,54 +290,18 @@ async function resolveAllMessages(messages, btnEl) {
                 );
                 topChunks.sort((a, b) => b.score - a.score);
 
-                if (meta.dedupFunc && meta.dedupFunc.trim() !== "") {
-                  try {
-                    const dedupFn = new Function(
-                      "chunkA",
-                      "chunkB",
-                      meta.dedupFunc,
-                    );
-                    const deduped = [];
-                    for (const c of topChunks) {
-                      let isDup = false;
-                      for (const d of deduped) {
-                        if (dedupFn(c.text, d.text)) {
-                          isDup = true;
-                          break;
-                        }
-                      }
-                      if (!isDup) deduped.push(c);
-                    }
-                    topChunks = deduped;
-                  } catch (e) {
-                    console.error("Deduplication error:", e);
-                  }
-                }
-
                 let currentTokens = 0;
-                let selectedChunks = [];
-
-                for (const c of topChunks) {
-                  const chunkTokens = Math.ceil(c.text.length / 4);
-                  if (
-                    selectedChunks.length > 0 &&
-                    currentTokens + chunkTokens > maxTokens
-                  )
-                    break;
-                  selectedChunks.push(c);
-                  currentTokens += chunkTokens;
-                }
-
-                selectedChunks.sort((a, b) => a.index - b.index);
-
                 let processedChunks = [];
+
                 let hasCapture =
                   meta.captureFunc && meta.captureFunc.trim() !== "";
                 let hasRetrieval =
                   meta.retrievalFunc && meta.retrievalFunc.trim() !== "";
+                let hasDedup = meta.dedupFunc && meta.dedupFunc.trim() !== "";
 
                 let captureFn = null;
                 let retrievalFn = null;
+                let dedupFn = null;
 
                 if (hasCapture) {
                   try {
@@ -324,9 +323,17 @@ async function resolveAllMessages(messages, btnEl) {
                     hasRetrieval = false;
                   }
                 }
+                if (hasDedup) {
+                  try {
+                    dedupFn = new Function("chunkA", "chunkB", meta.dedupFunc);
+                  } catch (e) {
+                    console.error("Dedup function error:", e);
+                    hasDedup = false;
+                  }
+                }
 
-                for (let j = 0; j < selectedChunks.length; j++) {
-                  const curr = selectedChunks[j];
+                for (let j = 0; j < topChunks.length; j++) {
+                  const curr = topChunks[j];
                   let finalStr = curr.text;
 
                   if (hasCapture) {
@@ -347,14 +354,41 @@ async function resolveAllMessages(messages, btnEl) {
                   }
 
                   if (finalStr !== "") {
-                    processedChunks.push({
-                      index: curr.index,
-                      start: curr.start,
-                      end: curr.end,
-                      text: finalStr,
-                    });
+                    let isDup = false;
+                    if (hasDedup) {
+                      try {
+                        for (const d of processedChunks) {
+                          if (dedupFn(finalStr, d.text)) {
+                            isDup = true;
+                            break;
+                          }
+                        }
+                      } catch (e) {
+                        console.error("Deduplication error:", e);
+                      }
+                    }
+
+                    if (!isDup) {
+                      const chunkTokens = Math.ceil(finalStr.length / 4);
+                      if (
+                        processedChunks.length > 0 &&
+                        currentTokens + chunkTokens > maxTokens
+                      ) {
+                        break;
+                      }
+
+                      currentTokens += chunkTokens;
+                      processedChunks.push({
+                        index: curr.index,
+                        start: curr.start,
+                        end: curr.end,
+                        text: finalStr,
+                      });
+                    }
                   }
                 }
+
+                processedChunks.sort((a, b) => a.index - b.index);
 
                 let mergedContent = "";
                 let usesCustomChunking =

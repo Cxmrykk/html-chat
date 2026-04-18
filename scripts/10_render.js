@@ -123,9 +123,7 @@ function renderFileList() {
 
       if (embeddingsEnabled) {
         progressBar = `<div class="file-progress-bar" style="width: ${f.progress}%"></div>`;
-        if (f.progress < 100) {
-          embedBtn = `<button data-action="embed" title="${f.isEmbedding ? "Pause Embedding" : "Start Embedding"}">${f.isEmbedding ? "⏸" : "e"}</button>`;
-        } else {
+        if (f.progress >= 100) {
           embedBtn = `<button data-action="embed" title="Insert Embedding">e</button>`;
         }
       }
@@ -357,6 +355,7 @@ function renderCurrentChat(preserveScroll = false) {
         val === undefined || val === "" || val === settingsDefaults[k].default;
 
       if (isAdvanced) {
+        if (k === "fileText") return "Custom";
         return isDefault ? "Default" : "Custom";
       }
 
@@ -393,6 +392,7 @@ function renderCurrentChat(preserveScroll = false) {
       maxVisibleChats: "Max Visible Chats",
       maxVisibleFiles: "Max Visible Files",
 
+      fileText: "File Content Text",
       customChunks: "Custom Chunks (JSON)",
       customChunker: "Custom Chunking Function (JS)",
       captureFunc: "Capture Function (JS)",
@@ -436,6 +436,18 @@ function renderCurrentChat(preserveScroll = false) {
       sectionsHTML += `</div>`;
     }
 
+    let buttonsHTML = "";
+    if (isAdvanced) {
+      buttonsHTML = `
+        <div style="display:flex; gap:10px; margin-top: 15px; flex-wrap: wrap;">
+          <button onclick="attemptChunking()" title="Generate chunks and overwrite Custom Chunks array">Attempt Chunking</button>
+          <button onclick="toggleAdvancedEmbedding()" title="Start or pause embeddings for this file">${targetConfig.isEmbedding ? "⏸ Pause Embedding" : "▶ Start Embedding"}</button>
+          <button onclick="exportChunksAndVectors()" title="Export JSON of Chunk & Vector pairs">Export Vectors</button>
+          <button onclick="importChunksAndVectors()" title="Import JSON of Chunk & Vector pairs">Import Vectors</button>
+        </div>
+      `;
+    }
+
     const resetFn = isAdvanced
       ? `resetAllAdvancedRAGSettings()`
       : `resetAllSuperSecretSettings()`;
@@ -455,6 +467,7 @@ function renderCurrentChat(preserveScroll = false) {
         <p style="margin-top: 5px; font-size: 0.85em; color: #555;">
           ${subtitle}
         </p>
+        ${buttonsHTML}
         ${sectionsHTML}
       </div>
     `;
