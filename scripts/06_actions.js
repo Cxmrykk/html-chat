@@ -348,11 +348,24 @@ async function appendFileMessage(fileId, mode = "full") {
 
   if (mode === "full") {
     const data = await dbGet(`mf_filedata_${meta.id}`);
-    const fileContent = data ? data.text : "";
-    const extMatch = (meta.name || "").match(/\.([^.]+)$/);
-    const ext = extMatch ? extMatch[1] : "txt";
-    const blockTicks = fileContent.includes("```") ? "````" : "```";
-    content = `\`${meta.name}\`:\n\n${blockTicks}${ext}\n${fileContent}\n${blockTicks}`;
+    const fileText = data ? data.text : "";
+
+    let wrapperFnCode =
+      meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
+        ? meta.fileWrapperFunc
+        : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
+          ? config.fileWrapperFunc
+          : SETTING_DEFAULTS.fileWrapperFunc.default;
+
+    let wrapperFn;
+    try {
+      wrapperFn = new Function("fileContent", "fileName", wrapperFnCode);
+    } catch (e) {
+      console.error("Wrapper Fn Syntax Error:", e);
+      wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+    }
+
+    content = wrapperFn(fileText, meta.name);
     approxTokens = Math.ceil(content.length / 4);
   }
 

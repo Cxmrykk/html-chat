@@ -366,6 +366,7 @@ function renderCurrentChat(preserveScroll = false) {
         return val === "" || val === undefined
           ? "Unlimited"
           : escapeHTML(String(val));
+      if (k === "fileWrapperFunc") return isDefault ? "Default" : "Custom";
 
       let displayVal = val === "" || val === undefined ? "API Default" : val;
       return escapeHTML(String(displayVal));
@@ -387,14 +388,14 @@ function renderCurrentChat(preserveScroll = false) {
       chunkBatchSize: "Chunk Batch Size",
       maxVisibleChats: "Max Visible Chats",
       maxVisibleFiles: "Max Visible Files",
+      fileWrapperFunc: "File Wrapper Function (JS)",
 
       fileText: "File Content Text",
       customChunks: "Custom Chunks (JSON)",
       customChunker: "Custom Chunking Function (JS)",
-      captureFunc: "1. Capture Function (JS)",
-      retrievalFunc: "2. Retrieval Function (JS)",
-      dedupFunc: "3. Deduplication Function (JS)",
-      mergeChunksFunc: "4. Merge Chunks Function (JS)",
+      retrievalFunc: "1. Retrieval Function (JS)",
+      dedupFunc: "2. Deduplication Function (JS)",
+      mergeChunksFunc: "3. Merge Chunks Function (JS)",
     };
 
     const categories = {};

@@ -86,6 +86,12 @@ const SETTING_DEFAULTS = {
     tooltip: "Model used for processing local RAG commands. Empty to disable.",
     category: "API & Connections",
   },
+  fileWrapperFunc: {
+    default: `const extMatch = (fileName || "").match(/\\.([^.]+)$/);\nconst ext = extMatch ? extMatch[1] : "txt";\nconst blockTicks = (fileContent || "").includes("\`\`\`") ? "\`\`\`\`" : "\`\`\`";\nreturn \`\\\`\${fileName}\\\`:\\n\\n\${blockTicks}\${ext}\\n\${fileContent}\\n\${blockTicks}\`;`,
+    tooltip:
+      "JS Function [Vars: fileContent, fileName]: Wrap the final file content/chunks before inserting into the prompt.",
+    category: "RAG & Document Processing",
+  },
   maxRagTokens: {
     default: "5000",
     tooltip: "Maximum estimated tokens to retrieve per file message.",
@@ -119,6 +125,12 @@ const FILE_SETTING_DEFAULTS = {
     tooltip: "The full textual content of the file. Edit and save to update.",
     category: "Overrides",
   },
+  fileWrapperFunc: {
+    default: "",
+    tooltip:
+      "Override global File Wrapper Function for this file. [Vars: fileContent, fileName]",
+    category: "Overrides",
+  },
   maxRagTokens: {
     default: "",
     tooltip: "Override global max RAG tokens for this file.",
@@ -140,28 +152,22 @@ const FILE_SETTING_DEFAULTS = {
       "JS Function [Vars: fileContents]: Create an array of chunks (strings or objects). Default splits by 1000 chars with a 200 char overlap.",
     category: "Chunk Generation",
   },
-  captureFunc: {
+  retrievalFunc: {
     default: `return chunk;`,
     tooltip:
-      "JS Function [Vars: chunk]: Step 1. Extract data (e.g. regex, JSON) from the raw chunk item. Return null to completely skip this chunk.",
-    category: "Post-Retrieval Processing",
-  },
-  retrievalFunc: {
-    default: `return capturedData;`,
-    tooltip:
-      "JS Function [Vars: capturedData, fileContents]: Step 2. Expand context using Capture output. Return null to skip this chunk.",
+      "JS Function [Vars: chunk, fileContents]: Step 1. Process or expand context from the raw chunk item. Return null to skip.",
     category: "Post-Retrieval Processing",
   },
   dedupFunc: {
     default: `return currentData === existingData;`,
     tooltip:
-      "JS Function [Vars: currentData, existingData]: Step 3. Return true if current chunk's data is a duplicate of an existing chunk's data.",
+      "JS Function [Vars: currentData, existingData]: Step 2. Return true if current chunk's data is a duplicate of an existing chunk's data.",
     category: "Post-Retrieval Processing",
   },
   mergeChunksFunc: {
     default: `return finalChunks.map(c => typeof c === 'string' ? c : JSON.stringify(c)).join("...");`,
     tooltip:
-      "JS Function [Vars: finalChunks]: Step 4. Combine the array of final chunks into a single string for the prompt.",
+      "JS Function [Vars: finalChunks]: Step 3. Combine the array of final chunks into a single string for the prompt.",
     category: "Post-Retrieval Processing",
   },
 };

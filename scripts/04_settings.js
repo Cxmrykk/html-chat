@@ -47,7 +47,8 @@ function saveSuperSecretSetting() {
     key === "embeddingsModel" ||
     key === "embeddingsUrl" ||
     key === "embeddingsKey" ||
-    key === "streamResponse"
+    key === "streamResponse" ||
+    key === "fileWrapperFunc"
   ) {
     config[key] = val;
   } else {
@@ -166,10 +167,10 @@ async function saveAdvancedRAGSetting() {
       [
         "customChunks",
         "customChunker",
-        "captureFunc",
         "retrievalFunc",
         "dedupFunc",
         "mergeChunksFunc",
+        "fileWrapperFunc",
       ].includes(key)
     ) {
       meta[key] = val;

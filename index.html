@@ -684,6 +684,12 @@
           tooltip: "Model used for processing local RAG commands. Empty to disable.",
           category: "API & Connections",
         },
+        fileWrapperFunc: {
+          default: `const extMatch = (fileName || "").match(/\\.([^.]+)$/);\nconst ext = extMatch ? extMatch[1] : "txt";\nconst blockTicks = (fileContent || "").includes("\`\`\`") ? "\`\`\`\`" : "\`\`\`";\nreturn \`\\\`\${fileName}\\\`:\\n\\n\${blockTicks}\${ext}\\n\${fileContent}\\n\${blockTicks}\`;`,
+          tooltip:
+            "JS Function [Vars: fileContent, fileName]: Wrap the final file content/chunks before inserting into the prompt.",
+          category: "RAG & Document Processing",
+        },
         maxRagTokens: {
           default: "5000",
           tooltip: "Maximum estimated tokens to retrieve per file message.",
@@ -717,6 +723,12 @@
           tooltip: "The full textual content of the file. Edit and save to update.",
           category: "Overrides",
         },
+        fileWrapperFunc: {
+          default: "",
+          tooltip:
+            "Override global File Wrapper Function for this file. [Vars: fileContent, fileName]",
+          category: "Overrides",
+        },
         maxRagTokens: {
           default: "",
           tooltip: "Override global max RAG tokens for this file.",
@@ -738,28 +750,22 @@
             "JS Function [Vars: fileContents]: Create an array of chunks (strings or objects). Default splits by 1000 chars with a 200 char overlap.",
           category: "Chunk Generation",
         },
-        captureFunc: {
+        retrievalFunc: {
           default: `return chunk;`,
           tooltip:
-            "JS Function [Vars: chunk]: Step 1. Extract data (e.g. regex, JSON) from the raw chunk item. Return null to completely skip this chunk.",
-          category: "Post-Retrieval Processing",
-        },
-        retrievalFunc: {
-          default: `return capturedData;`,
-          tooltip:
-            "JS Function [Vars: capturedData, fileContents]: Step 2. Expand context using Capture output. Return null to skip this chunk.",
+            "JS Function [Vars: chunk, fileContents]: Step 1. Process or expand context from the raw chunk item. Return null to skip.",
           category: "Post-Retrieval Processing",
         },
         dedupFunc: {
           default: `return currentData === existingData;`,
           tooltip:
-            "JS Function [Vars: currentData, existingData]: Step 3. Return true if current chunk's data is a duplicate of an existing chunk's data.",
+            "JS Function [Vars: currentData, existingData]: Step 2. Return true if current chunk's data is a duplicate of an existing chunk's data.",
           category: "Post-Retrieval Processing",
         },
         mergeChunksFunc: {
           default: `return finalChunks.map(c => typeof c === 'string' ? c : JSON.stringify(c)).join("...");`,
           tooltip:
-            "JS Function [Vars: finalChunks]: Step 4. Combine the array of final chunks into a single string for the prompt.",
+            "JS Function [Vars: finalChunks]: Step 3. Combine the array of final chunks into a single string for the prompt.",
           category: "Post-Retrieval Processing",
         },
       };
@@ -912,7 +918,8 @@
           key === "embeddingsModel" ||
           key === "embeddingsUrl" ||
           key === "embeddingsKey" ||
-          key === "streamResponse"
+          key === "streamResponse" ||
+          key === "fileWrapperFunc"
         ) {
           config[key] = val;
         } else {
@@ -1031,10 +1038,10 @@
             [
               "customChunks",
               "customChunker",
-              "captureFunc",
               "retrievalFunc",
               "dedupFunc",
               "mergeChunksFunc",
+              "fileWrapperFunc",
             ].includes(key)
           ) {
             meta[key] = val;
@@ -1553,11 +1560,24 @@
 
         if (mode === "full") {
           const data = await dbGet(`mf_filedata_${meta.id}`);
-          const fileContent = data ? data.text : "";
-          const extMatch = (meta.name || "").match(/\.([^.]+)$/);
-          const ext = extMatch ? extMatch[1] : "txt";
-          const blockTicks = fileContent.includes("```") ? "````" : "```";
-          content = `\`${meta.name}\`:\n\n${blockTicks}${ext}\n${fileContent}\n${blockTicks}`;
+          const fileText = data ? data.text : "";
+
+          let wrapperFnCode =
+            meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
+              ? meta.fileWrapperFunc
+              : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
+                ? config.fileWrapperFunc
+                : SETTING_DEFAULTS.fileWrapperFunc.default;
+
+          let wrapperFn;
+          try {
+            wrapperFn = new Function("fileContent", "fileName", wrapperFnCode);
+          } catch (e) {
+            console.error("Wrapper Fn Syntax Error:", e);
+            wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+          }
+
+          content = wrapperFn(fileText, meta.name);
           approxTokens = Math.ceil(content.length / 4);
         }
 
@@ -1962,10 +1982,26 @@
               if (!fileContent && meta) {
                 const data = await dbGet(`mf_filedata_${meta.id}`);
                 if (data) {
-                  const extMatch = (meta.name || "").match(/\.([^.]+)$/);
-                  const ext = extMatch ? extMatch[1] : "txt";
-                  const blockTicks = data.text.includes("```") ? "````" : "```";
-                  fileContent = `\`${meta.name}\`:\n\n${blockTicks}${ext}\n${data.text}\n${blockTicks}`;
+                  let wrapperFnCode =
+                    meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
+                      ? meta.fileWrapperFunc
+                      : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
+                        ? config.fileWrapperFunc
+                        : SETTING_DEFAULTS.fileWrapperFunc.default;
+
+                  let wrapperFn;
+                  try {
+                    wrapperFn = new Function(
+                      "fileContent",
+                      "fileName",
+                      wrapperFnCode,
+                    );
+                  } catch (e) {
+                    console.error("Wrapper Fn Syntax Error:", e);
+                    wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+                  }
+
+                  fileContent = wrapperFn(data.text, meta.name);
                 }
               }
               resolved.push({
@@ -2034,10 +2070,6 @@
                       let currentTokens = 0;
                       let finalChunksInternal = [];
 
-                      let captureFnCode =
-                        meta.captureFunc && meta.captureFunc.trim() !== ""
-                          ? meta.captureFunc
-                          : FILE_SETTING_DEFAULTS.captureFunc.default;
                       let retrievalFnCode =
                         meta.retrievalFunc && meta.retrievalFunc.trim() !== ""
                           ? meta.retrievalFunc
@@ -2051,23 +2083,17 @@
                           ? meta.mergeChunksFunc
                           : FILE_SETTING_DEFAULTS.mergeChunksFunc.default;
 
-                      let captureFn, retrievalFn, dedupFn, mergeFn;
+                      let retrievalFn, dedupFn, mergeFn;
 
                       try {
-                        captureFn = new Function("chunk", captureFnCode);
-                      } catch (e) {
-                        console.error("Capture Fn Syntax Error:", e);
-                        captureFn = (t) => t;
-                      }
-                      try {
                         retrievalFn = new Function(
-                          "capturedData",
+                          "chunk",
                           "fileContents",
                           retrievalFnCode,
                         );
                       } catch (e) {
                         console.error("Retrieval Fn Syntax Error:", e);
-                        retrievalFn = (d, t) => d;
+                        retrievalFn = (c, t) => c;
                       }
                       try {
                         dedupFn = new Function(
@@ -2099,18 +2125,9 @@
                           // Provide the original chunk object if preserved, else fallback to text
                           const chunkArg =
                             curr.raw !== undefined ? curr.raw : curr.text;
-                          const capturedData = captureFn(chunkArg);
-                          if (capturedData !== null && capturedData !== undefined) {
-                            const retrievedData = retrievalFn(
-                              capturedData,
-                              data.text,
-                            );
-                            if (
-                              retrievedData !== null &&
-                              retrievedData !== undefined
-                            ) {
-                              finalData = retrievedData;
-                            }
+                          const retrievedData = retrievalFn(chunkArg, data.text);
+                          if (retrievedData !== null && retrievedData !== undefined) {
+                            finalData = retrievedData;
                           }
                         } catch (e) {
                           console.error("Post-processing error:", e);
@@ -2176,10 +2193,22 @@
                 }
               }
 
-              const extMatch = (msg.fileName || "").match(/\.([^.]+)$/);
-              const ext = extMatch ? extMatch[1] : "txt";
-              const blockTicks = fileContent.includes("```") ? "````" : "```";
-              const formatted = `\`${msg.fileName}\`:\n\n${blockTicks}${ext}\n${fileContent}\n${blockTicks}`;
+              let wrapperFnCode =
+                meta && meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
+                  ? meta.fileWrapperFunc
+                  : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
+                    ? config.fileWrapperFunc
+                    : SETTING_DEFAULTS.fileWrapperFunc.default;
+
+              let wrapperFn;
+              try {
+                wrapperFn = new Function("fileContent", "fileName", wrapperFnCode);
+              } catch (e) {
+                console.error("Wrapper Fn Syntax Error:", e);
+                wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+              }
+
+              const formatted = wrapperFn(fileContent, msg.fileName);
 
               resolved.push({
                 role: "user",
@@ -2952,6 +2981,7 @@
               return val === "" || val === undefined
                 ? "Unlimited"
                 : escapeHTML(String(val));
+            if (k === "fileWrapperFunc") return isDefault ? "Default" : "Custom";
 
             let displayVal = val === "" || val === undefined ? "API Default" : val;
             return escapeHTML(String(displayVal));
@@ -2973,14 +3003,14 @@
             chunkBatchSize: "Chunk Batch Size",
             maxVisibleChats: "Max Visible Chats",
             maxVisibleFiles: "Max Visible Files",
+            fileWrapperFunc: "File Wrapper Function (JS)",
 
             fileText: "File Content Text",
             customChunks: "Custom Chunks (JSON)",
             customChunker: "Custom Chunking Function (JS)",
-            captureFunc: "1. Capture Function (JS)",
-            retrievalFunc: "2. Retrieval Function (JS)",
-            dedupFunc: "3. Deduplication Function (JS)",
-            mergeChunksFunc: "4. Merge Chunks Function (JS)",
+            retrievalFunc: "1. Retrieval Function (JS)",
+            dedupFunc: "2. Deduplication Function (JS)",
+            mergeChunksFunc: "3. Merge Chunks Function (JS)",
           };
 
           const categories = {};

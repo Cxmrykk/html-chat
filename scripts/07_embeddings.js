@@ -201,10 +201,26 @@ async function resolveAllMessages(messages, btnEl) {
         if (!fileContent && meta) {
           const data = await dbGet(`mf_filedata_${meta.id}`);
           if (data) {
-            const extMatch = (meta.name || "").match(/\.([^.]+)$/);
-            const ext = extMatch ? extMatch[1] : "txt";
-            const blockTicks = data.text.includes("```") ? "````" : "```";
-            fileContent = `\`${meta.name}\`:\n\n${blockTicks}${ext}\n${data.text}\n${blockTicks}`;
+            let wrapperFnCode =
+              meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
+                ? meta.fileWrapperFunc
+                : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
+                  ? config.fileWrapperFunc
+                  : SETTING_DEFAULTS.fileWrapperFunc.default;
+
+            let wrapperFn;
+            try {
+              wrapperFn = new Function(
+                "fileContent",
+                "fileName",
+                wrapperFnCode,
+              );
+            } catch (e) {
+              console.error("Wrapper Fn Syntax Error:", e);
+              wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+            }
+
+            fileContent = wrapperFn(data.text, meta.name);
           }
         }
         resolved.push({
@@ -273,10 +289,6 @@ async function resolveAllMessages(messages, btnEl) {
                 let currentTokens = 0;
                 let finalChunksInternal = [];
 
-                let captureFnCode =
-                  meta.captureFunc && meta.captureFunc.trim() !== ""
-                    ? meta.captureFunc
-                    : FILE_SETTING_DEFAULTS.captureFunc.default;
                 let retrievalFnCode =
                   meta.retrievalFunc && meta.retrievalFunc.trim() !== ""
                     ? meta.retrievalFunc
@@ -290,23 +302,17 @@ async function resolveAllMessages(messages, btnEl) {
                     ? meta.mergeChunksFunc
                     : FILE_SETTING_DEFAULTS.mergeChunksFunc.default;
 
-                let captureFn, retrievalFn, dedupFn, mergeFn;
+                let retrievalFn, dedupFn, mergeFn;
 
                 try {
-                  captureFn = new Function("chunk", captureFnCode);
-                } catch (e) {
-                  console.error("Capture Fn Syntax Error:", e);
-                  captureFn = (t) => t;
-                }
-                try {
                   retrievalFn = new Function(
-                    "capturedData",
+                    "chunk",
                     "fileContents",
                     retrievalFnCode,
                   );
                 } catch (e) {
                   console.error("Retrieval Fn Syntax Error:", e);
-                  retrievalFn = (d, t) => d;
+                  retrievalFn = (c, t) => c;
                 }
                 try {
                   dedupFn = new Function(
@@ -338,18 +344,9 @@ async function resolveAllMessages(messages, btnEl) {
                     // Provide the original chunk object if preserved, else fallback to text
                     const chunkArg =
                       curr.raw !== undefined ? curr.raw : curr.text;
-                    const capturedData = captureFn(chunkArg);
-                    if (capturedData !== null && capturedData !== undefined) {
-                      const retrievedData = retrievalFn(
-                        capturedData,
-                        data.text,
-                      );
-                      if (
-                        retrievedData !== null &&
-                        retrievedData !== undefined
-                      ) {
-                        finalData = retrievedData;
-                      }
+                    const retrievedData = retrievalFn(chunkArg, data.text);
+                    if (retrievedData !== null && retrievedData !== undefined) {
+                      finalData = retrievedData;
                     }
                   } catch (e) {
                     console.error("Post-processing error:", e);
@@ -415,10 +412,22 @@ async function resolveAllMessages(messages, btnEl) {
           }
         }
 
-        const extMatch = (msg.fileName || "").match(/\.([^.]+)$/);
-        const ext = extMatch ? extMatch[1] : "txt";
-        const blockTicks = fileContent.includes("```") ? "````" : "```";
-        const formatted = `\`${msg.fileName}\`:\n\n${blockTicks}${ext}\n${fileContent}\n${blockTicks}`;
+        let wrapperFnCode =
+          meta && meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
+            ? meta.fileWrapperFunc
+            : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
+              ? config.fileWrapperFunc
+              : SETTING_DEFAULTS.fileWrapperFunc.default;
+
+        let wrapperFn;
+        try {
+          wrapperFn = new Function("fileContent", "fileName", wrapperFnCode);
+        } catch (e) {
+          console.error("Wrapper Fn Syntax Error:", e);
+          wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+        }
+
+        const formatted = wrapperFn(fileContent, msg.fileName);
 
         resolved.push({
           role: "user",
