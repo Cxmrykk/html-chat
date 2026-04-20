@@ -213,8 +213,8 @@ async function attemptChunking() {
       : FILE_SETTING_DEFAULTS.customChunker.default;
 
   try {
-    const fn = new Function("fileContents", chunkerCode);
-    const res = fn(text);
+    const fn = new AsyncFunction("fileContents", "config", chunkerCode);
+    const res = await fn(text, config);
     if (Array.isArray(res))
       chunks = res.filter((c) => c !== null && c !== undefined);
   } catch (e) {
@@ -359,13 +359,13 @@ async function appendFileMessage(fileId, mode = "full") {
 
     let wrapperFn;
     try {
-      wrapperFn = new Function("fileContent", "fileName", wrapperFnCode);
+      wrapperFn = new AsyncFunction("fileContent", "fileName", wrapperFnCode);
     } catch (e) {
       console.error("Wrapper Fn Syntax Error:", e);
-      wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+      wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
     }
 
-    content = wrapperFn(fileText, meta.name);
+    content = await wrapperFn(fileText, meta.name);
     approxTokens = Math.ceil(content.length / 4);
   }
 

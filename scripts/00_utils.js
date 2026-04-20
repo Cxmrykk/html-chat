@@ -1,4 +1,6 @@
 // --- PURE UTILITIES ---
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
 const $ = (s) => document.querySelector(s);
 
 const escapeHTML = (str) =>
@@ -44,7 +46,6 @@ function cosSim(a, b) {
 
 function encodeVectorToBase64(vector) {
   if (!vector || !vector.length) return null;
-  // Convert standard numbers (Float64) to Float32 to halve the required storage space
   const f32 = new Float32Array(vector);
   const u8 = new Uint8Array(f32.buffer);
   let binary = "";

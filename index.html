@@ -530,6 +530,8 @@
 
     <script>
       // --- PURE UTILITIES ---
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
       const $ = (s) => document.querySelector(s);
 
       const escapeHTML = (str) =>
@@ -575,7 +577,6 @@
 
       function encodeVectorToBase64(vector) {
         if (!vector || !vector.length) return null;
-        // Convert standard numbers (Float64) to Float32 to halve the required storage space
         const f32 = new Float32Array(vector);
         const u8 = new Uint8Array(f32.buffer);
         let binary = "";
@@ -1425,8 +1426,8 @@
             : FILE_SETTING_DEFAULTS.customChunker.default;
 
         try {
-          const fn = new Function("fileContents", chunkerCode);
-          const res = fn(text);
+          const fn = new AsyncFunction("fileContents", "config", chunkerCode);
+          const res = await fn(text, config);
           if (Array.isArray(res))
             chunks = res.filter((c) => c !== null && c !== undefined);
         } catch (e) {
@@ -1571,13 +1572,13 @@
 
           let wrapperFn;
           try {
-            wrapperFn = new Function("fileContent", "fileName", wrapperFnCode);
+            wrapperFn = new AsyncFunction("fileContent", "fileName", wrapperFnCode);
           } catch (e) {
             console.error("Wrapper Fn Syntax Error:", e);
-            wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+            wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
           }
 
-          content = wrapperFn(fileText, meta.name);
+          content = await wrapperFn(fileText, meta.name);
           approxTokens = Math.ceil(content.length / 4);
         }
 
@@ -1842,8 +1843,8 @@
           }
         } else {
           try {
-            const fn = new Function("fileContents", chunkerCode);
-            const res = fn(text, config);
+            const fn = new AsyncFunction("fileContents", "config", chunkerCode);
+            const res = await fn(text, config);
             if (Array.isArray(res)) chunks = res;
           } catch (e) {
             console.error("Error executing customChunker:", e);
@@ -1991,17 +1992,17 @@
 
                   let wrapperFn;
                   try {
-                    wrapperFn = new Function(
+                    wrapperFn = new AsyncFunction(
                       "fileContent",
                       "fileName",
                       wrapperFnCode,
                     );
                   } catch (e) {
                     console.error("Wrapper Fn Syntax Error:", e);
-                    wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+                    wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
                   }
 
-                  fileContent = wrapperFn(data.text, meta.name);
+                  fileContent = await wrapperFn(data.text, meta.name);
                 }
               }
               resolved.push({
@@ -2086,30 +2087,30 @@
                       let retrievalFn, dedupFn, mergeFn;
 
                       try {
-                        retrievalFn = new Function(
+                        retrievalFn = new AsyncFunction(
                           "chunk",
                           "fileContents",
                           retrievalFnCode,
                         );
                       } catch (e) {
                         console.error("Retrieval Fn Syntax Error:", e);
-                        retrievalFn = (c, t) => c;
+                        retrievalFn = async (c, t) => c;
                       }
                       try {
-                        dedupFn = new Function(
+                        dedupFn = new AsyncFunction(
                           "currentData",
                           "existingData",
                           dedupFnCode,
                         );
                       } catch (e) {
                         console.error("Dedup Fn Syntax Error:", e);
-                        dedupFn = (a, b) => a === b;
+                        dedupFn = async (a, b) => a === b;
                       }
                       try {
-                        mergeFn = new Function("finalChunks", mergeFnCode);
+                        mergeFn = new AsyncFunction("finalChunks", mergeFnCode);
                       } catch (e) {
                         console.error("Merge Fn Syntax Error:", e);
-                        mergeFn = (c, t) =>
+                        mergeFn = async (c) =>
                           c
                             .map((x) =>
                               typeof x === "string" ? x : JSON.stringify(x),
@@ -2125,7 +2126,10 @@
                           // Provide the original chunk object if preserved, else fallback to text
                           const chunkArg =
                             curr.raw !== undefined ? curr.raw : curr.text;
-                          const retrievedData = retrievalFn(chunkArg, data.text);
+                          const retrievedData = await retrievalFn(
+                            chunkArg,
+                            data.text,
+                          );
                           if (retrievedData !== null && retrievedData !== undefined) {
                             finalData = retrievedData;
                           }
@@ -2138,7 +2142,7 @@
                           let isDup = false;
                           try {
                             for (const d of finalChunksInternal) {
-                              if (dedupFn(finalData, d.data)) {
+                              if (await dedupFn(finalData, d.data)) {
                                 isDup = true;
                                 break;
                               }
@@ -2175,7 +2179,7 @@
 
                       let mergedContent = "";
                       try {
-                        mergedContent = mergeFn(finalChunks);
+                        mergedContent = await mergeFn(finalChunks);
                       } catch (e) {
                         console.error("Merge function error:", e);
                         mergedContent = finalChunks
@@ -2202,13 +2206,17 @@
 
               let wrapperFn;
               try {
-                wrapperFn = new Function("fileContent", "fileName", wrapperFnCode);
+                wrapperFn = new AsyncFunction(
+                  "fileContent",
+                  "fileName",
+                  wrapperFnCode,
+                );
               } catch (e) {
                 console.error("Wrapper Fn Syntax Error:", e);
-                wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+                wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
               }
 
-              const formatted = wrapperFn(fileContent, msg.fileName);
+              const formatted = await wrapperFn(fileContent, msg.fileName);
 
               resolved.push({
                 role: "user",

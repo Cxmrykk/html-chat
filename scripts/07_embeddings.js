@@ -61,8 +61,8 @@ async function refreshFileChunks(id) {
     }
   } else {
     try {
-      const fn = new Function("fileContents", chunkerCode);
-      const res = fn(text, config);
+      const fn = new AsyncFunction("fileContents", "config", chunkerCode);
+      const res = await fn(text, config);
       if (Array.isArray(res)) chunks = res;
     } catch (e) {
       console.error("Error executing customChunker:", e);
@@ -210,17 +210,17 @@ async function resolveAllMessages(messages, btnEl) {
 
             let wrapperFn;
             try {
-              wrapperFn = new Function(
+              wrapperFn = new AsyncFunction(
                 "fileContent",
                 "fileName",
                 wrapperFnCode,
               );
             } catch (e) {
               console.error("Wrapper Fn Syntax Error:", e);
-              wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+              wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
             }
 
-            fileContent = wrapperFn(data.text, meta.name);
+            fileContent = await wrapperFn(data.text, meta.name);
           }
         }
         resolved.push({
@@ -305,30 +305,30 @@ async function resolveAllMessages(messages, btnEl) {
                 let retrievalFn, dedupFn, mergeFn;
 
                 try {
-                  retrievalFn = new Function(
+                  retrievalFn = new AsyncFunction(
                     "chunk",
                     "fileContents",
                     retrievalFnCode,
                   );
                 } catch (e) {
                   console.error("Retrieval Fn Syntax Error:", e);
-                  retrievalFn = (c, t) => c;
+                  retrievalFn = async (c, t) => c;
                 }
                 try {
-                  dedupFn = new Function(
+                  dedupFn = new AsyncFunction(
                     "currentData",
                     "existingData",
                     dedupFnCode,
                   );
                 } catch (e) {
                   console.error("Dedup Fn Syntax Error:", e);
-                  dedupFn = (a, b) => a === b;
+                  dedupFn = async (a, b) => a === b;
                 }
                 try {
-                  mergeFn = new Function("finalChunks", mergeFnCode);
+                  mergeFn = new AsyncFunction("finalChunks", mergeFnCode);
                 } catch (e) {
                   console.error("Merge Fn Syntax Error:", e);
-                  mergeFn = (c, t) =>
+                  mergeFn = async (c) =>
                     c
                       .map((x) =>
                         typeof x === "string" ? x : JSON.stringify(x),
@@ -344,7 +344,10 @@ async function resolveAllMessages(messages, btnEl) {
                     // Provide the original chunk object if preserved, else fallback to text
                     const chunkArg =
                       curr.raw !== undefined ? curr.raw : curr.text;
-                    const retrievedData = retrievalFn(chunkArg, data.text);
+                    const retrievedData = await retrievalFn(
+                      chunkArg,
+                      data.text,
+                    );
                     if (retrievedData !== null && retrievedData !== undefined) {
                       finalData = retrievedData;
                     }
@@ -357,7 +360,7 @@ async function resolveAllMessages(messages, btnEl) {
                     let isDup = false;
                     try {
                       for (const d of finalChunksInternal) {
-                        if (dedupFn(finalData, d.data)) {
+                        if (await dedupFn(finalData, d.data)) {
                           isDup = true;
                           break;
                         }
@@ -394,7 +397,7 @@ async function resolveAllMessages(messages, btnEl) {
 
                 let mergedContent = "";
                 try {
-                  mergedContent = mergeFn(finalChunks);
+                  mergedContent = await mergeFn(finalChunks);
                 } catch (e) {
                   console.error("Merge function error:", e);
                   mergedContent = finalChunks
@@ -421,13 +424,17 @@ async function resolveAllMessages(messages, btnEl) {
 
         let wrapperFn;
         try {
-          wrapperFn = new Function("fileContent", "fileName", wrapperFnCode);
+          wrapperFn = new AsyncFunction(
+            "fileContent",
+            "fileName",
+            wrapperFnCode,
+          );
         } catch (e) {
           console.error("Wrapper Fn Syntax Error:", e);
-          wrapperFn = (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+          wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
         }
 
-        const formatted = wrapperFn(fileContent, msg.fileName);
+        const formatted = await wrapperFn(fileContent, msg.fileName);
 
         resolved.push({
           role: "user",
