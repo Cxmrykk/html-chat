@@ -86,16 +86,6 @@ const SETTING_DEFAULTS = {
     tooltip: "Model used for processing local RAG commands. Empty to disable.",
     category: "API & Connections",
   },
-  chunkSize: {
-    default: "1000",
-    tooltip: "Character size for file chunking.",
-    category: "RAG & Document Processing",
-  },
-  chunkOverlap: {
-    default: "200",
-    tooltip: "Character overlap to maintain document continuity.",
-    category: "RAG & Document Processing",
-  },
   maxRagTokens: {
     default: "5000",
     tooltip: "Maximum estimated tokens to retrieve per file message.",
@@ -109,11 +99,6 @@ const SETTING_DEFAULTS = {
   chunkBatchSize: {
     default: "100",
     tooltip: "Max chunks sent to Embeddings API at once.",
-    category: "RAG & Document Processing",
-  },
-  chunkSeparator: {
-    default: "...",
-    tooltip: "String used to separate non-contiguous chunks (allows \\n).",
     category: "RAG & Document Processing",
   },
   maxVisibleChats: {
@@ -144,38 +129,39 @@ const FILE_SETTING_DEFAULTS = {
     tooltip: "Override global match threshold for this file. (0.0 to 1.0)",
     category: "Overrides",
   },
-  chunkSeparator: {
-    default: "",
-    tooltip: "Override global chunk separator. Use \\n for newline.",
-    category: "Overrides",
-  },
   customChunks: {
     default: "",
-    tooltip: "A JSON array of strings to bypass all chunking logic.",
+    tooltip: "A JSON array to bypass all chunking logic.",
     category: "Chunk Generation",
   },
   customChunker: {
-    default: `const chunkSize = parseInt(config.chunkSize) || 1000;\nconst chunkOverlap = parseInt(config.chunkOverlap) || 200;\nconst chunks = [];\nlet start = 0;\nwhile (start < text.length) {\n  let end = start + chunkSize;\n  if (end > text.length) end = text.length;\n  chunks.push(text.substring(start, end));\n  if (end >= text.length) break;\n  start = end - chunkOverlap;\n}\nreturn chunks;`,
+    default: `// Variables: 'fileContents' (full file string)\nconst chunkSize = 1000;\nconst chunkOverlap = 200;\nconst chunks = [];\nlet start = 0;\nwhile (start < fileContents.length) {\n  let end = start + chunkSize;\n  if (end > fileContents.length) end = fileContents.length;\n  chunks.push(fileContents.substring(start, end));\n  if (end >= fileContents.length) break;\n  start = end - chunkOverlap;\n}\nreturn chunks;`,
     tooltip:
-      "JS function body (vars: `text`, `config`). Returns an array of string chunks.",
+      "JS Function [Vars: fileContents]: Create an array of chunks (strings or objects). Default splits by 1000 chars with a 200 char overlap.",
     category: "Chunk Generation",
   },
   captureFunc: {
-    default: "",
+    default: `return chunk;`,
     tooltip:
-      "JS function body (vars: `chunk`). Returns an array of matched components.",
+      "JS Function [Vars: chunk]: Step 1. Extract data (e.g. regex, JSON) from the raw chunk item. Return null to completely skip this chunk.",
     category: "Post-Retrieval Processing",
   },
   retrievalFunc: {
-    default: "",
+    default: `return capturedData;`,
     tooltip:
-      "JS function body (vars: `matches`, `text`). Returns a contextual string retrieved from the original text (empty to omit).",
+      "JS Function [Vars: capturedData, fileContents]: Step 2. Expand context using Capture output. Return null to skip this chunk.",
     category: "Post-Retrieval Processing",
   },
   dedupFunc: {
-    default: "",
+    default: `return currentData === existingData;`,
     tooltip:
-      "JS function body (vars: `chunkA`, `chunkB`). Returns boolean true if duplicate.",
+      "JS Function [Vars: currentData, existingData]: Step 3. Return true if current chunk's data is a duplicate of an existing chunk's data.",
+    category: "Post-Retrieval Processing",
+  },
+  mergeChunksFunc: {
+    default: `return finalChunks.map(c => typeof c === 'string' ? c : JSON.stringify(c)).join("...");`,
+    tooltip:
+      "JS Function [Vars: finalChunks]: Step 4. Combine the array of final chunks into a single string for the prompt.",
     category: "Post-Retrieval Processing",
   },
 };

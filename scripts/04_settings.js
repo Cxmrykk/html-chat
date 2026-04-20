@@ -1,7 +1,6 @@
 // --- CONFIGURATION & SUPER SECRET SETTINGS ---
 function saveConfig() {
-  const oldRAG =
-    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+  const oldRAG = config.embeddingsModel;
 
   config = {
     ...config,
@@ -11,8 +10,7 @@ function saveConfig() {
     godMode: $("#cfg-godmode").checked,
   };
 
-  const newRAG =
-    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+  const newRAG = config.embeddingsModel;
   if (oldRAG !== newRAG) {
     resetAllFileEmbeddings();
   }
@@ -42,15 +40,13 @@ function saveSuperSecretSetting() {
   if (!activeSuperSecretSetting) return;
   let val = $("#chat-input").value;
   const key = activeSuperSecretSetting;
-  const oldRAG =
-    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+  const oldRAG = config.embeddingsModel;
 
   if (
     key === "godModePrompt" ||
     key === "embeddingsModel" ||
     key === "embeddingsUrl" ||
     key === "embeddingsKey" ||
-    key === "chunkSeparator" ||
     key === "streamResponse"
   ) {
     config[key] = val;
@@ -63,8 +59,7 @@ function saveSuperSecretSetting() {
     }
   }
 
-  const newRAG =
-    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+  const newRAG = config.embeddingsModel;
   if (oldRAG !== newRAG) {
     resetAllFileEmbeddings();
   }
@@ -81,12 +76,10 @@ function resetSuperSecretSetting() {
 
   if (!activeSuperSecretSetting) return;
   const key = activeSuperSecretSetting;
-  const oldRAG =
-    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+  const oldRAG = config.embeddingsModel;
   config[key] = SETTING_DEFAULTS[key].default;
 
-  const newRAG =
-    config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+  const newRAG = config.embeddingsModel;
   if (oldRAG !== newRAG) resetAllFileEmbeddings();
 
   saveState();
@@ -106,15 +99,13 @@ function cancelSuperSecretSetting() {
 
 function resetAllSuperSecretSettings() {
   if (confirm("Reset ALL Advanced parameters to default?")) {
-    const oldRAG =
-      config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+    const oldRAG = config.embeddingsModel;
 
     for (let key in SETTING_DEFAULTS) {
       config[key] = SETTING_DEFAULTS[key].default;
     }
 
-    const newRAG =
-      config.embeddingsModel + config.chunkSize + config.chunkOverlap;
+    const newRAG = config.embeddingsModel;
     if (oldRAG !== newRAG) resetAllFileEmbeddings();
 
     saveState();
@@ -178,7 +169,7 @@ async function saveAdvancedRAGSetting() {
         "captureFunc",
         "retrievalFunc",
         "dedupFunc",
-        "chunkSeparator",
+        "mergeChunksFunc",
       ].includes(key)
     ) {
       meta[key] = val;

@@ -193,7 +193,6 @@ function generateMessageHTML(msg, i, isEditing = false) {
 <div style="display:flex; gap:15px; flex-wrap:wrap; margin-top:10px; align-items:center; background: #eee; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
 <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Max Tokens <input type="number" class="embed-cfg-tokens" value="${msg.maxTokens || 5000}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
 <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Match Threshold <input type="number" step="0.1" class="embed-cfg-threshold" value="${msg.ragThreshold || 0.0}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
-<label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Chunk Separator <input type="text" class="embed-cfg-separator" value="${escapeHTML(msg.chunkSeparator !== undefined ? msg.chunkSeparator : "...")}" style="width:120px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
 </div>`;
       }
     } else {
@@ -383,21 +382,19 @@ function renderCurrentChat(preserveScroll = false) {
       embeddingsUrl: "Embeddings Base URL",
       embeddingsKey: "Embeddings API Key",
       embeddingsModel: "Embeddings Model",
-      chunkSize: "Chunk Size",
-      chunkOverlap: "Chunk Overlap",
       maxRagTokens: "Max RAG Tokens",
       ragThreshold: "RAG Match Threshold",
       chunkBatchSize: "Chunk Batch Size",
-      chunkSeparator: "Chunk Separator",
       maxVisibleChats: "Max Visible Chats",
       maxVisibleFiles: "Max Visible Files",
 
       fileText: "File Content Text",
       customChunks: "Custom Chunks (JSON)",
       customChunker: "Custom Chunking Function (JS)",
-      captureFunc: "Capture Function (JS)",
-      retrievalFunc: "Retrieval Function (JS)",
-      dedupFunc: "Deduplication Function (JS)",
+      captureFunc: "1. Capture Function (JS)",
+      retrievalFunc: "2. Retrieval Function (JS)",
+      dedupFunc: "3. Deduplication Function (JS)",
+      mergeChunksFunc: "4. Merge Chunks Function (JS)",
     };
 
     const categories = {};

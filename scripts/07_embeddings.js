@@ -46,10 +46,11 @@ async function refreshFileChunks(id) {
 
   const text = data.text || "";
   let chunks = [];
-  const isCustomChunker =
-    meta.customChunker &&
-    meta.customChunker.trim() !== "" &&
-    meta.customChunker !== FILE_SETTING_DEFAULTS.customChunker.default;
+
+  const chunkerCode =
+    meta.customChunker && meta.customChunker.trim() !== ""
+      ? meta.customChunker
+      : FILE_SETTING_DEFAULTS.customChunker.default;
 
   if (meta.customChunks && meta.customChunks.trim() !== "") {
     try {
@@ -58,9 +59,9 @@ async function refreshFileChunks(id) {
     } catch (e) {
       console.error("Error parsing customChunks:", e);
     }
-  } else if (isCustomChunker) {
+  } else {
     try {
-      const fn = new Function("text", "config", meta.customChunker);
+      const fn = new Function("fileContents", chunkerCode);
       const res = fn(text, config);
       if (Array.isArray(res)) chunks = res;
     } catch (e) {
@@ -68,39 +69,32 @@ async function refreshFileChunks(id) {
     }
   }
 
-  if (chunks.length === 0 || typeof chunks[0] !== "string") {
-    const chunkSize = parseInt(config.chunkSize) || 1000;
-    const chunkOverlap = parseInt(config.chunkOverlap) || 200;
-    let start = 0;
-    while (start < text.length) {
-      let end = start + chunkSize;
-      if (end > text.length) end = text.length;
-      chunks.push(text.substring(start, end));
-      if (end >= text.length) break;
-      start = end - chunkOverlap;
-    }
+  if (!Array.isArray(chunks) || chunks.length === 0) {
+    chunks = [text];
   }
+
+  // Filter out any null chunks returned by the chunker
+  chunks = chunks.filter((c) => c !== null && c !== undefined);
 
   let changed = false;
   let newChunks = [];
   let chunkIndex = 0;
-  let start = 0;
 
   for (const c of chunks) {
-    let end = start + c.length;
+    // Stringify for embedding/indexing purposes if it's an object
+    const stringified = typeof c === "string" ? c : JSON.stringify(c);
+
     let existing = data.chunks
-      ? data.chunks.find((old) => old.text === c && old.vector)
+      ? data.chunks.find((old) => old.text === stringified && old.vector)
       : null;
     if (!existing) changed = true;
 
     newChunks.push({
       index: chunkIndex++,
-      start: start,
-      end: end,
-      text: c,
+      text: stringified,
+      raw: c, // Preserve the raw object for passing to captureFunc
       vector: existing ? existing.vector : null,
     });
-    start = end;
   }
 
   if (!data.chunks || data.chunks.length !== newChunks.length) changed = true;
@@ -249,7 +243,6 @@ async function resolveAllMessages(messages, btnEl) {
                   queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
                 }
 
-                // File specific RAG Overrides
                 const fileMaxTokens =
                   meta.maxRagTokens !== undefined && meta.maxRagTokens !== ""
                     ? parseInt(meta.maxRagTokens, 10)
@@ -268,19 +261,6 @@ async function resolveAllMessages(messages, btnEl) {
                     ? fileThreshold
                     : msg.ragThreshold || 0.0;
 
-                const fileSep =
-                  meta.chunkSeparator !== undefined &&
-                  meta.chunkSeparator !== ""
-                    ? meta.chunkSeparator
-                    : undefined;
-                let sep =
-                  fileSep !== undefined
-                    ? fileSep
-                    : msg.chunkSeparator !== undefined
-                      ? msg.chunkSeparator
-                      : "...";
-                sep = sep.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
-
                 validChunks.forEach((c) => {
                   c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
                 });
@@ -291,128 +271,140 @@ async function resolveAllMessages(messages, btnEl) {
                 topChunks.sort((a, b) => b.score - a.score);
 
                 let currentTokens = 0;
-                let processedChunks = [];
+                let finalChunksInternal = [];
 
-                let hasCapture =
-                  meta.captureFunc && meta.captureFunc.trim() !== "";
-                let hasRetrieval =
-                  meta.retrievalFunc && meta.retrievalFunc.trim() !== "";
-                let hasDedup = meta.dedupFunc && meta.dedupFunc.trim() !== "";
+                let captureFnCode =
+                  meta.captureFunc && meta.captureFunc.trim() !== ""
+                    ? meta.captureFunc
+                    : FILE_SETTING_DEFAULTS.captureFunc.default;
+                let retrievalFnCode =
+                  meta.retrievalFunc && meta.retrievalFunc.trim() !== ""
+                    ? meta.retrievalFunc
+                    : FILE_SETTING_DEFAULTS.retrievalFunc.default;
+                let dedupFnCode =
+                  meta.dedupFunc && meta.dedupFunc.trim() !== ""
+                    ? meta.dedupFunc
+                    : FILE_SETTING_DEFAULTS.dedupFunc.default;
+                let mergeFnCode =
+                  meta.mergeChunksFunc && meta.mergeChunksFunc.trim() !== ""
+                    ? meta.mergeChunksFunc
+                    : FILE_SETTING_DEFAULTS.mergeChunksFunc.default;
 
-                let captureFn = null;
-                let retrievalFn = null;
-                let dedupFn = null;
+                let captureFn, retrievalFn, dedupFn, mergeFn;
 
-                if (hasCapture) {
-                  try {
-                    captureFn = new Function("chunk", meta.captureFunc);
-                  } catch (e) {
-                    console.error("Capture function error:", e);
-                    hasCapture = false;
-                  }
+                try {
+                  captureFn = new Function("chunk", captureFnCode);
+                } catch (e) {
+                  console.error("Capture Fn Syntax Error:", e);
+                  captureFn = (t) => t;
                 }
-                if (hasRetrieval) {
-                  try {
-                    retrievalFn = new Function(
-                      "matches",
-                      "text",
-                      meta.retrievalFunc,
-                    );
-                  } catch (e) {
-                    console.error("Retrieval function error:", e);
-                    hasRetrieval = false;
-                  }
+                try {
+                  retrievalFn = new Function(
+                    "capturedData",
+                    "fileContents",
+                    retrievalFnCode,
+                  );
+                } catch (e) {
+                  console.error("Retrieval Fn Syntax Error:", e);
+                  retrievalFn = (d, t) => d;
                 }
-                if (hasDedup) {
-                  try {
-                    dedupFn = new Function("chunkA", "chunkB", meta.dedupFunc);
-                  } catch (e) {
-                    console.error("Dedup function error:", e);
-                    hasDedup = false;
-                  }
+                try {
+                  dedupFn = new Function(
+                    "currentData",
+                    "existingData",
+                    dedupFnCode,
+                  );
+                } catch (e) {
+                  console.error("Dedup Fn Syntax Error:", e);
+                  dedupFn = (a, b) => a === b;
+                }
+                try {
+                  mergeFn = new Function("finalChunks", mergeFnCode);
+                } catch (e) {
+                  console.error("Merge Fn Syntax Error:", e);
+                  mergeFn = (c, t) =>
+                    c
+                      .map((x) =>
+                        typeof x === "string" ? x : JSON.stringify(x),
+                      )
+                      .join("...");
                 }
 
                 for (let j = 0; j < topChunks.length; j++) {
                   const curr = topChunks[j];
-                  let finalStr = curr.text;
+                  let finalData = null;
 
-                  if (hasCapture) {
-                    try {
-                      const m = captureFn(curr.text);
-                      if (hasRetrieval) {
-                        const retrieved = retrievalFn(m, data.text);
-                        finalStr =
-                          typeof retrieved === "string" ? retrieved : "";
-                      } else {
-                        finalStr = Array.isArray(m)
-                          ? m.join("")
-                          : String(m || "");
+                  try {
+                    // Provide the original chunk object if preserved, else fallback to text
+                    const chunkArg =
+                      curr.raw !== undefined ? curr.raw : curr.text;
+                    const capturedData = captureFn(chunkArg);
+                    if (capturedData !== null && capturedData !== undefined) {
+                      const retrievedData = retrievalFn(
+                        capturedData,
+                        data.text,
+                      );
+                      if (
+                        retrievedData !== null &&
+                        retrievedData !== undefined
+                      ) {
+                        finalData = retrievedData;
                       }
-                    } catch (e) {
-                      console.error("Post-processing error:", e);
                     }
+                  } catch (e) {
+                    console.error("Post-processing error:", e);
+                    finalData = curr.raw !== undefined ? curr.raw : curr.text;
                   }
 
-                  if (finalStr !== "") {
+                  if (finalData !== null && finalData !== undefined) {
                     let isDup = false;
-                    if (hasDedup) {
-                      try {
-                        for (const d of processedChunks) {
-                          if (dedupFn(finalStr, d.text)) {
-                            isDup = true;
-                            break;
-                          }
+                    try {
+                      for (const d of finalChunksInternal) {
+                        if (dedupFn(finalData, d.data)) {
+                          isDup = true;
+                          break;
                         }
-                      } catch (e) {
-                        console.error("Deduplication error:", e);
                       }
+                    } catch (e) {
+                      console.error("Deduplication error:", e);
                     }
 
                     if (!isDup) {
-                      const chunkTokens = Math.ceil(finalStr.length / 4);
+                      const strForTokens =
+                        typeof finalData === "string"
+                          ? finalData
+                          : JSON.stringify(finalData) || "";
+                      const chunkTokens = Math.ceil(strForTokens.length / 4);
+
                       if (
-                        processedChunks.length > 0 &&
+                        finalChunksInternal.length > 0 &&
                         currentTokens + chunkTokens > maxTokens
                       ) {
                         break;
                       }
 
                       currentTokens += chunkTokens;
-                      processedChunks.push({
+                      finalChunksInternal.push({
                         index: curr.index,
-                        start: curr.start,
-                        end: curr.end,
-                        text: finalStr,
+                        data: finalData,
                       });
                     }
                   }
                 }
 
-                processedChunks.sort((a, b) => a.index - b.index);
+                finalChunksInternal.sort((a, b) => a.index - b.index);
+                const finalChunks = finalChunksInternal.map((x) => x.data);
 
                 let mergedContent = "";
-                let usesCustomChunking =
-                  (meta.customChunks && meta.customChunks.trim() !== "") ||
-                  (meta.customChunker &&
-                    meta.customChunker.trim() !== "" &&
-                    meta.customChunker !==
-                      FILE_SETTING_DEFAULTS.customChunker.default);
-                let usesPostProcessing =
-                  hasCapture || hasRetrieval || usesCustomChunking;
-
-                for (let j = 0; j < processedChunks.length; j++) {
-                  const curr = processedChunks[j];
-                  if (j === 0) {
-                    mergedContent += curr.text;
-                  } else {
-                    const prev = processedChunks[j - 1];
-                    if (!usesPostProcessing && curr.index === prev.index + 1) {
-                      mergedContent += data.text.substring(prev.end, curr.end);
-                    } else {
-                      mergedContent += sep + curr.text;
-                    }
-                  }
+                try {
+                  mergedContent = mergeFn(finalChunks);
+                } catch (e) {
+                  console.error("Merge function error:", e);
+                  mergedContent = finalChunks
+                    .map((c) => (typeof c === "string" ? c : JSON.stringify(c)))
+                    .join("...");
                 }
+
                 fileContent = mergedContent;
               } else {
                 fileContent = "*File unindexed or no valid chunks.*";

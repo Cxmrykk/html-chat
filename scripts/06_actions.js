@@ -206,31 +206,20 @@ async function attemptChunking() {
 
   const text = data.text || "";
   let chunks = [];
-  const isCustomChunker =
-    meta.customChunker &&
-    meta.customChunker.trim() !== "" &&
-    meta.customChunker !== FILE_SETTING_DEFAULTS.customChunker.default;
 
-  if (isCustomChunker) {
-    try {
-      const fn = new Function("text", "config", meta.customChunker);
-      const res = fn(text, config);
-      if (Array.isArray(res)) chunks = res;
-    } catch (e) {
-      alert("Error executing customChunker: " + e.message);
-      return;
-    }
-  } else {
-    const chunkSize = parseInt(config.chunkSize) || 1000;
-    const chunkOverlap = parseInt(config.chunkOverlap) || 200;
-    let start = 0;
-    while (start < text.length) {
-      let end = start + chunkSize;
-      if (end > text.length) end = text.length;
-      chunks.push(text.substring(start, end));
-      if (end >= text.length) break;
-      start = end - chunkOverlap;
-    }
+  const chunkerCode =
+    meta.customChunker && meta.customChunker.trim() !== ""
+      ? meta.customChunker
+      : FILE_SETTING_DEFAULTS.customChunker.default;
+
+  try {
+    const fn = new Function("fileContents", chunkerCode);
+    const res = fn(text);
+    if (Array.isArray(res))
+      chunks = res.filter((c) => c !== null && c !== undefined);
+  } catch (e) {
+    alert("Error executing customChunker: " + e.message);
+    return;
   }
 
   meta.customChunks = JSON.stringify(chunks, null, 2);
@@ -258,6 +247,7 @@ async function exportChunksAndVectors() {
     model: config.embeddingsModel,
     chunks: data.chunks.map((c) => ({
       text: c.text,
+      raw: c.raw !== undefined ? c.raw : c.text,
       vector_b64: encodeVectorToBase64(c.vector),
     })),
   };
@@ -299,26 +289,23 @@ function importChunksAndVectors() {
         const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
         if (!data) return;
 
-        const texts = imported.chunks.map((c) => c.text);
+        const raws = imported.chunks.map((c) =>
+          c.raw !== undefined ? c.raw : c.text,
+        );
         const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
-        meta.customChunks = JSON.stringify(texts, null, 2);
+        meta.customChunks = JSON.stringify(raws, null, 2);
 
-        let start = 0;
         let chunkIndex = 0;
         data.chunks = imported.chunks.map((c) => {
-          let end = start + c.text.length;
-          // Fallback support for older unencoded vector formats if you ever switch versions
           let vec = c.vector_b64
             ? decodeBase64ToVector(c.vector_b64)
             : c.vector || null;
           let mapped = {
             index: chunkIndex++,
-            start: start,
-            end: end,
             text: c.text,
+            raw: c.raw !== undefined ? c.raw : c.text,
             vector: vec,
           };
-          start = end;
           return mapped;
         });
 
@@ -379,8 +366,6 @@ async function appendFileMessage(fileId, mode = "full") {
     content: content,
     maxTokens: parseInt(config.maxRagTokens, 10) || 5000,
     ragThreshold: parseFloat(config.ragThreshold) || 0.0,
-    chunkSeparator:
-      config.chunkSeparator !== undefined ? config.chunkSeparator : "...",
   });
 
   if (window.innerWidth <= 768) {
@@ -446,11 +431,6 @@ function saveGlobalEdit() {
         `.msg[data-index="${editingMessageIndex}"] .embed-cfg-threshold`,
       );
       if (thEl) msg.ragThreshold = parseFloat(thEl.value) || 0.0;
-
-      const sEl = document.querySelector(
-        `.msg[data-index="${editingMessageIndex}"] .embed-cfg-separator`,
-      );
-      if (sEl) msg.chunkSeparator = sEl.value;
     } else {
       msg.content = $("#chat-input").value;
       msg.approxTokens = Math.ceil(msg.content.length / 4);
