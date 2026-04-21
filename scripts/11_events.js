@@ -22,14 +22,24 @@ $("#sidebar").addEventListener("click", (e) => {
         exportSingleChat(id);
       } else if (e.ctrlKey || e.metaKey) {
         const chat = chats.find((c) => c.id === id);
+
+        // Filter out errors and local embed config messages to accurately reflect the API payload
+        const apiMessages = chat.messages.filter(
+          (m) =>
+            m.role !== "error" && !(m.role === "file" && m.mode === "embed"),
+        );
+
         const text =
           `# ${chat.title}\n\n` +
-          chat.messages
-            .map(
-              (m) =>
-                `## ${m.role.toUpperCase()}\n${m.content || m.prompt || ""}\n\n`,
-            )
+          apiMessages
+            .map((m) => {
+              // Convert full "file" attachments into standard "user" role text
+              const roleLabel =
+                m.role === "file" ? "USER" : m.role.toUpperCase();
+              return `## ${roleLabel}\n${m.content || ""}\n\n`;
+            })
             .join("");
+
         navigator.clipboard.writeText(text.trim()).then(() => {
           item.style.background = "#ccc";
           setTimeout(() => (item.style.background = ""), 150);
