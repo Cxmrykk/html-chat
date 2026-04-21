@@ -77,6 +77,7 @@ $("#chat-container").addEventListener("click", (e) => {
   else if (action === "fork") forkChat(index);
   else if (action === "retry") retryMessage(index);
   else if (action === "delete") deleteMessage(index);
+  else if (action === "run-embed") executeEmbedMessage(index);
 });
 
 $("#chat-container").addEventListener("change", (e) => {

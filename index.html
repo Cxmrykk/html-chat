@@ -1855,7 +1855,6 @@
           chunks = [text];
         }
 
-        // Filter out any null chunks returned by the chunker
         chunks = chunks.filter((c) => c !== null && c !== undefined);
 
         let changed = false;
@@ -1863,7 +1862,6 @@
         let chunkIndex = 0;
 
         for (const c of chunks) {
-          // Stringify for embedding/indexing purposes if it's an object
           const stringified = typeof c === "string" ? c : JSON.stringify(c);
 
           let existing = data.chunks
@@ -1874,7 +1872,7 @@
           newChunks.push({
             index: chunkIndex++,
             text: stringified,
-            raw: c, // Preserve the raw object for passing to captureFunc
+            raw: c,
             vector: existing ? existing.vector : null,
           });
         }
@@ -2009,226 +2007,243 @@
                 role: "user",
                 content: fileContent || "*File not found.*",
               });
-            } else {
-              let fileContent = "*File not found.*";
-
-              if (meta) {
-                const data = await dbGet(`mf_filedata_${meta.id}`);
-                if (data) {
-                  let actualPrompt = msg.prompt ? msg.prompt.trim() : "";
-                  let implicitSearchUsed = false;
-
-                  if (!actualPrompt) {
-                    let lookaheadText = [];
-                    for (let j = i + 1; j < messages.length; j++) {
-                      const nextMsg = messages[j];
-                      if (nextMsg.role === "assistant") break;
-                      if (nextMsg.role === "user" && nextMsg.content) {
-                        lookaheadText.push(nextMsg.content);
-                      }
-                    }
-                    actualPrompt = lookaheadText.join("\n").trim();
-                    if (actualPrompt) implicitSearchUsed = true;
-                  }
-
-                  if (data.chunks) {
-                    const validChunks = data.chunks.filter((c) => c.vector);
-                    if (validChunks.length > 0) {
-                      let queryEmb = null;
-
-                      if (actualPrompt) {
-                        if (btnEl) btnEl.textContent = "Embedding files...";
-                        queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
-                      }
-
-                      const fileMaxTokens =
-                        meta.maxRagTokens !== undefined && meta.maxRagTokens !== ""
-                          ? parseInt(meta.maxRagTokens, 10)
-                          : undefined;
-                      const maxTokens =
-                        fileMaxTokens !== undefined && !isNaN(fileMaxTokens)
-                          ? fileMaxTokens
-                          : msg.maxTokens || 5000;
-
-                      const fileThreshold =
-                        meta.ragThreshold !== undefined && meta.ragThreshold !== ""
-                          ? parseFloat(meta.ragThreshold)
-                          : undefined;
-                      const threshold =
-                        fileThreshold !== undefined && !isNaN(fileThreshold)
-                          ? fileThreshold
-                          : msg.ragThreshold || 0.0;
-
-                      validChunks.forEach((c) => {
-                        c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
-                      });
-
-                      let topChunks = validChunks.filter(
-                        (c) => !queryEmb || c.score >= threshold,
-                      );
-                      topChunks.sort((a, b) => b.score - a.score);
-
-                      let currentTokens = 0;
-                      let finalChunksInternal = [];
-
-                      let retrievalFnCode =
-                        meta.retrievalFunc && meta.retrievalFunc.trim() !== ""
-                          ? meta.retrievalFunc
-                          : FILE_SETTING_DEFAULTS.retrievalFunc.default;
-                      let dedupFnCode =
-                        meta.dedupFunc && meta.dedupFunc.trim() !== ""
-                          ? meta.dedupFunc
-                          : FILE_SETTING_DEFAULTS.dedupFunc.default;
-                      let mergeFnCode =
-                        meta.mergeChunksFunc && meta.mergeChunksFunc.trim() !== ""
-                          ? meta.mergeChunksFunc
-                          : FILE_SETTING_DEFAULTS.mergeChunksFunc.default;
-
-                      let retrievalFn, dedupFn, mergeFn;
-
-                      try {
-                        retrievalFn = new AsyncFunction(
-                          "chunk",
-                          "fileContents",
-                          retrievalFnCode,
-                        );
-                      } catch (e) {
-                        console.error("Retrieval Fn Syntax Error:", e);
-                        retrievalFn = async (c, t) => c;
-                      }
-                      try {
-                        dedupFn = new AsyncFunction(
-                          "currentData",
-                          "existingData",
-                          dedupFnCode,
-                        );
-                      } catch (e) {
-                        console.error("Dedup Fn Syntax Error:", e);
-                        dedupFn = async (a, b) => a === b;
-                      }
-                      try {
-                        mergeFn = new AsyncFunction("finalChunks", mergeFnCode);
-                      } catch (e) {
-                        console.error("Merge Fn Syntax Error:", e);
-                        mergeFn = async (c) =>
-                          c
-                            .map((x) =>
-                              typeof x === "string" ? x : JSON.stringify(x),
-                            )
-                            .join("...");
-                      }
-
-                      for (let j = 0; j < topChunks.length; j++) {
-                        const curr = topChunks[j];
-                        let finalData = null;
-
-                        try {
-                          // Provide the original chunk object if preserved, else fallback to text
-                          const chunkArg =
-                            curr.raw !== undefined ? curr.raw : curr.text;
-                          const retrievedData = await retrievalFn(
-                            chunkArg,
-                            data.text,
-                          );
-                          if (retrievedData !== null && retrievedData !== undefined) {
-                            finalData = retrievedData;
-                          }
-                        } catch (e) {
-                          console.error("Post-processing error:", e);
-                          finalData = curr.raw !== undefined ? curr.raw : curr.text;
-                        }
-
-                        if (finalData !== null && finalData !== undefined) {
-                          let isDup = false;
-                          try {
-                            for (const d of finalChunksInternal) {
-                              if (await dedupFn(finalData, d.data)) {
-                                isDup = true;
-                                break;
-                              }
-                            }
-                          } catch (e) {
-                            console.error("Deduplication error:", e);
-                          }
-
-                          if (!isDup) {
-                            const strForTokens =
-                              typeof finalData === "string"
-                                ? finalData
-                                : JSON.stringify(finalData) || "";
-                            const chunkTokens = Math.ceil(strForTokens.length / 4);
-
-                            if (
-                              finalChunksInternal.length > 0 &&
-                              currentTokens + chunkTokens > maxTokens
-                            ) {
-                              break;
-                            }
-
-                            currentTokens += chunkTokens;
-                            finalChunksInternal.push({
-                              index: curr.index,
-                              data: finalData,
-                            });
-                          }
-                        }
-                      }
-
-                      finalChunksInternal.sort((a, b) => a.index - b.index);
-                      const finalChunks = finalChunksInternal.map((x) => x.data);
-
-                      let mergedContent = "";
-                      try {
-                        mergedContent = await mergeFn(finalChunks);
-                      } catch (e) {
-                        console.error("Merge function error:", e);
-                        mergedContent = finalChunks
-                          .map((c) => (typeof c === "string" ? c : JSON.stringify(c)))
-                          .join("...");
-                      }
-
-                      fileContent = mergedContent;
-                    } else {
-                      fileContent = "*File unindexed or no valid chunks.*";
-                    }
-                  } else {
-                    fileContent = "*File unindexed.*";
-                  }
-                }
-              }
-
-              let wrapperFnCode =
-                meta && meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
-                  ? meta.fileWrapperFunc
-                  : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
-                    ? config.fileWrapperFunc
-                    : SETTING_DEFAULTS.fileWrapperFunc.default;
-
-              let wrapperFn;
-              try {
-                wrapperFn = new AsyncFunction(
-                  "fileContent",
-                  "fileName",
-                  wrapperFnCode,
-                );
-              } catch (e) {
-                console.error("Wrapper Fn Syntax Error:", e);
-                wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
-              }
-
-              const formatted = await wrapperFn(fileContent, msg.fileName);
-
-              resolved.push({
-                role: "user",
-                content: formatted,
-              });
             }
+            // If mode === "embed", we simply do not add it to the resolved array.
+            // This keeps embed messages local and skips sending them to the API entirely.
           } else {
             resolved.push(msg);
           }
         }
 
         return resolved;
+      }
+
+      async function executeEmbedMessage(msgIndex) {
+        const chat = chats.find((c) => c.id === currentChatId);
+        const msg = chat.messages[msgIndex];
+        if (!msg || msg.role !== "file" || msg.mode !== "embed") return;
+
+        const meta = files.find((f) => f.id === msg.fileId);
+        let fileContent = "*File not found.*";
+
+        const btnEl = document.querySelector(
+          `.msg[data-index="${msgIndex}"] button[data-action="run-embed"]`,
+        );
+        const origText = btnEl ? btnEl.textContent : "Embed";
+        if (btnEl) btnEl.textContent = "Embedding...";
+
+        if (meta) {
+          const data = await dbGet(`mf_filedata_${meta.id}`);
+          if (data) {
+            let actualPrompt = msg.prompt ? msg.prompt.trim() : "";
+
+            if (!actualPrompt) {
+              let lookaheadText = [];
+              for (let j = msgIndex + 1; j < chat.messages.length; j++) {
+                const nextMsg = chat.messages[j];
+                if (nextMsg.role === "assistant") break;
+                if (nextMsg.role === "user" && nextMsg.content) {
+                  lookaheadText.push(nextMsg.content);
+                }
+              }
+              actualPrompt = lookaheadText.join("\n").trim();
+            }
+
+            if (data.chunks) {
+              const validChunks = data.chunks.filter((c) => c.vector);
+              if (validChunks.length > 0) {
+                let queryEmb = null;
+
+                if (actualPrompt) {
+                  try {
+                    queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
+                  } catch (err) {
+                    if (btnEl) btnEl.textContent = origText;
+                    alert("Error fetching embeddings: " + err.message);
+                    return;
+                  }
+                }
+
+                const fileMaxTokens =
+                  meta.maxRagTokens !== undefined && meta.maxRagTokens !== ""
+                    ? parseInt(meta.maxRagTokens, 10)
+                    : undefined;
+                const maxTokens =
+                  fileMaxTokens !== undefined && !isNaN(fileMaxTokens)
+                    ? fileMaxTokens
+                    : msg.maxTokens || 5000;
+
+                const fileThreshold =
+                  meta.ragThreshold !== undefined && meta.ragThreshold !== ""
+                    ? parseFloat(meta.ragThreshold)
+                    : undefined;
+                const threshold =
+                  fileThreshold !== undefined && !isNaN(fileThreshold)
+                    ? fileThreshold
+                    : msg.ragThreshold || 0.0;
+
+                validChunks.forEach((c) => {
+                  c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
+                });
+
+                let topChunks = validChunks.filter(
+                  (c) => !queryEmb || c.score >= threshold,
+                );
+                topChunks.sort((a, b) => b.score - a.score);
+
+                let currentTokens = 0;
+                let finalChunksInternal = [];
+
+                let retrievalFnCode =
+                  meta.retrievalFunc && meta.retrievalFunc.trim() !== ""
+                    ? meta.retrievalFunc
+                    : FILE_SETTING_DEFAULTS.retrievalFunc.default;
+                let dedupFnCode =
+                  meta.dedupFunc && meta.dedupFunc.trim() !== ""
+                    ? meta.dedupFunc
+                    : FILE_SETTING_DEFAULTS.dedupFunc.default;
+                let mergeFnCode =
+                  meta.mergeChunksFunc && meta.mergeChunksFunc.trim() !== ""
+                    ? meta.mergeChunksFunc
+                    : FILE_SETTING_DEFAULTS.mergeChunksFunc.default;
+
+                let retrievalFn, dedupFn, mergeFn;
+
+                try {
+                  retrievalFn = new AsyncFunction(
+                    "chunk",
+                    "fileContents",
+                    retrievalFnCode,
+                  );
+                } catch (e) {
+                  console.error("Retrieval Fn Syntax Error:", e);
+                  retrievalFn = async (c, t) => c;
+                }
+                try {
+                  dedupFn = new AsyncFunction(
+                    "currentData",
+                    "existingData",
+                    dedupFnCode,
+                  );
+                } catch (e) {
+                  console.error("Dedup Fn Syntax Error:", e);
+                  dedupFn = async (a, b) => a === b;
+                }
+                try {
+                  mergeFn = new AsyncFunction("finalChunks", mergeFnCode);
+                } catch (e) {
+                  console.error("Merge Fn Syntax Error:", e);
+                  mergeFn = async (c) =>
+                    c
+                      .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
+                      .join("...");
+                }
+
+                for (let j = 0; j < topChunks.length; j++) {
+                  const curr = topChunks[j];
+                  let finalData = null;
+
+                  try {
+                    const chunkArg = curr.raw !== undefined ? curr.raw : curr.text;
+                    const retrievedData = await retrievalFn(chunkArg, data.text);
+                    if (retrievedData !== null && retrievedData !== undefined) {
+                      finalData = retrievedData;
+                    }
+                  } catch (e) {
+                    console.error("Post-processing error:", e);
+                    finalData = curr.raw !== undefined ? curr.raw : curr.text;
+                  }
+
+                  if (finalData !== null && finalData !== undefined) {
+                    let isDup = false;
+                    try {
+                      for (const d of finalChunksInternal) {
+                        if (await dedupFn(finalData, d.data)) {
+                          isDup = true;
+                          break;
+                        }
+                      }
+                    } catch (e) {
+                      console.error("Deduplication error:", e);
+                    }
+
+                    if (!isDup) {
+                      const strForTokens =
+                        typeof finalData === "string"
+                          ? finalData
+                          : JSON.stringify(finalData) || "";
+                      const chunkTokens = Math.ceil(strForTokens.length / 4);
+
+                      if (
+                        finalChunksInternal.length > 0 &&
+                        currentTokens + chunkTokens > maxTokens
+                      ) {
+                        break;
+                      }
+
+                      currentTokens += chunkTokens;
+                      finalChunksInternal.push({
+                        index: curr.index,
+                        data: finalData,
+                      });
+                    }
+                  }
+                }
+
+                finalChunksInternal.sort((a, b) => a.index - b.index);
+                const finalChunks = finalChunksInternal.map((x) => x.data);
+
+                let mergedContent = "";
+                try {
+                  mergedContent = await mergeFn(finalChunks);
+                } catch (e) {
+                  console.error("Merge function error:", e);
+                  mergedContent = finalChunks
+                    .map((c) => (typeof c === "string" ? c : JSON.stringify(c)))
+                    .join("...");
+                }
+
+                fileContent = mergedContent;
+              } else {
+                fileContent = "*File unindexed or no valid chunks.*";
+              }
+            } else {
+              fileContent = "*File unindexed.*";
+            }
+          }
+        }
+
+        let wrapperFnCode =
+          meta && meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
+            ? meta.fileWrapperFunc
+            : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
+              ? config.fileWrapperFunc
+              : SETTING_DEFAULTS.fileWrapperFunc.default;
+
+        let wrapperFn;
+        try {
+          wrapperFn = new AsyncFunction("fileContent", "fileName", wrapperFnCode);
+        } catch (e) {
+          console.error("Wrapper Fn Syntax Error:", e);
+          wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+        }
+
+        const formatted = await wrapperFn(fileContent, msg.fileName);
+
+        if (btnEl) btnEl.textContent = origText;
+
+        chat.messages.push({
+          role: "user",
+          content: formatted,
+        });
+
+        invalidateTokenCache();
+        saveState();
+        appendMessageToDOM(
+          chat.messages[chat.messages.length - 1],
+          chat.messages.length - 1,
+        );
+        updateTokenCount();
       }
 
       async function resetAllFileEmbeddings() {
@@ -2591,7 +2606,8 @@
               contextChars = chat.messages.reduce((acc, m) => {
                 if (m.role === "file") {
                   if (m.mode === "full") return acc + (m.content || "").length;
-                  return acc + (m.maxTokens || 5000) * 4;
+                  // Config message logic (embed) is no longer sent to the API!
+                  return acc;
                 }
                 return acc + (m.content || "").length;
               }, 0);
@@ -2834,13 +2850,20 @@
           let editBtn = `<button data-action="edit">Edit</button>`;
           if (msg.role === "file" && msg.mode === "embed") {
             editBtn = `<button data-action="edit">Config</button>`;
+            actionsHtml = `
+              ${editBtn}
+              <button data-action="run-embed">Embed</button>
+              <button data-action="fork">Fork</button>
+              <button data-action="delete">Delete</button>
+            `;
+          } else {
+            actionsHtml = `
+              ${editBtn}
+              <button data-action="fork">Fork</button>
+              ${msg.role === "user" || (msg.role === "file" && msg.mode === "full") ? `<button data-action="retry">Retry</button>` : ""}
+              <button data-action="delete">Delete</button>
+            `;
           }
-          actionsHtml = `
-            ${editBtn}
-            <button data-action="fork">Fork</button>
-            ${msg.role === "user" || msg.role === "file" ? `<button data-action="retry">Retry</button>` : ""}
-            <button data-action="delete">Delete</button>
-          `;
         }
 
         return `
@@ -3228,6 +3251,7 @@
         else if (action === "fork") forkChat(index);
         else if (action === "retry") retryMessage(index);
         else if (action === "delete") deleteMessage(index);
+        else if (action === "run-embed") executeEmbedMessage(index);
       });
 
       $("#chat-container").addEventListener("change", (e) => {

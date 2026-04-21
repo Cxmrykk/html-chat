@@ -67,7 +67,8 @@ function updateTokenCount() {
         contextChars = chat.messages.reduce((acc, m) => {
           if (m.role === "file") {
             if (m.mode === "full") return acc + (m.content || "").length;
-            return acc + (m.maxTokens || 5000) * 4;
+            // Config message logic (embed) is no longer sent to the API!
+            return acc;
           }
           return acc + (m.content || "").length;
         }, 0);

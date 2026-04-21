@@ -211,13 +211,20 @@ function generateMessageHTML(msg, i, isEditing = false) {
     let editBtn = `<button data-action="edit">Edit</button>`;
     if (msg.role === "file" && msg.mode === "embed") {
       editBtn = `<button data-action="edit">Config</button>`;
+      actionsHtml = `
+        ${editBtn}
+        <button data-action="run-embed">Embed</button>
+        <button data-action="fork">Fork</button>
+        <button data-action="delete">Delete</button>
+      `;
+    } else {
+      actionsHtml = `
+        ${editBtn}
+        <button data-action="fork">Fork</button>
+        ${msg.role === "user" || (msg.role === "file" && msg.mode === "full") ? `<button data-action="retry">Retry</button>` : ""}
+        <button data-action="delete">Delete</button>
+      `;
     }
-    actionsHtml = `
-      ${editBtn}
-      <button data-action="fork">Fork</button>
-      ${msg.role === "user" || msg.role === "file" ? `<button data-action="retry">Retry</button>` : ""}
-      <button data-action="delete">Delete</button>
-    `;
   }
 
   return `
