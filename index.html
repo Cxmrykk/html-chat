@@ -706,6 +706,11 @@
           tooltip: "Max chunks sent to Embeddings API at once.",
           category: "RAG & Document Processing",
         },
+        chunkBatchMaxTokens: {
+          default: "8192",
+          tooltip: "Max estimated tokens sent to Embeddings API per batch.",
+          category: "RAG & Document Processing",
+        },
         maxVisibleChats: {
           default: "",
           tooltip: "Maximum number of chats displayed at once in the sidebar.",
@@ -1932,6 +1937,7 @@
         embeddingAbortControllers[id] = new AbortController();
 
         const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
+        const MAX_TOKENS = parseInt(config.chunkBatchMaxTokens) || 8192;
         let loopStartTime = Date.now();
         let loopStartEmbeddedCount = null;
 
@@ -1950,7 +1956,24 @@
             const data = await dbGet(`mf_filedata_${id}`);
             if (!data || !data.chunks) break;
 
-            const batch = data.chunks.filter((c) => !c.vector).slice(0, MAX_BATCH);
+            const unEmbedded = data.chunks.filter((c) => !c.vector);
+            const batch = [];
+            let currentTokens = 0;
+
+            for (const c of unEmbedded) {
+              if (batch.length >= MAX_BATCH) break;
+
+              const chunkStr =
+                typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
+              const chunkTokens = Math.ceil(chunkStr.length / 4);
+
+              if (batch.length > 0 && currentTokens + chunkTokens > MAX_TOKENS) {
+                break; // Stop adding to batch if it exceeds max tokens (unless it's the very first chunk)
+              }
+
+              batch.push(c);
+              currentTokens += chunkTokens;
+            }
 
             if (batch.length === 0) {
               meta.exactProgress = 100.0;
@@ -3137,6 +3160,7 @@
             maxRagTokens: "Max RAG Tokens",
             ragThreshold: "RAG Match Threshold",
             chunkBatchSize: "Chunk Batch Size",
+            chunkBatchMaxTokens: "Chunk Batch Max Tokens",
             maxVisibleChats: "Max Visible Chats",
             maxVisibleFiles: "Max Visible Files",
             fileWrapperFunc: "File Wrapper Function (JS)",

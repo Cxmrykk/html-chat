@@ -107,6 +107,11 @@ const SETTING_DEFAULTS = {
     tooltip: "Max chunks sent to Embeddings API at once.",
     category: "RAG & Document Processing",
   },
+  chunkBatchMaxTokens: {
+    default: "8192",
+    tooltip: "Max estimated tokens sent to Embeddings API per batch.",
+    category: "RAG & Document Processing",
+  },
   maxVisibleChats: {
     default: "",
     tooltip: "Maximum number of chats displayed at once in the sidebar.",

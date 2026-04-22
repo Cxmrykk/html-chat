@@ -128,6 +128,7 @@ async function startEmbeddingLoop(id) {
   embeddingAbortControllers[id] = new AbortController();
 
   const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
+  const MAX_TOKENS = parseInt(config.chunkBatchMaxTokens) || 8192;
   let loopStartTime = Date.now();
   let loopStartEmbeddedCount = null;
 
@@ -146,7 +147,24 @@ async function startEmbeddingLoop(id) {
       const data = await dbGet(`mf_filedata_${id}`);
       if (!data || !data.chunks) break;
 
-      const batch = data.chunks.filter((c) => !c.vector).slice(0, MAX_BATCH);
+      const unEmbedded = data.chunks.filter((c) => !c.vector);
+      const batch = [];
+      let currentTokens = 0;
+
+      for (const c of unEmbedded) {
+        if (batch.length >= MAX_BATCH) break;
+
+        const chunkStr =
+          typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
+        const chunkTokens = Math.ceil(chunkStr.length / 4);
+
+        if (batch.length > 0 && currentTokens + chunkTokens > MAX_TOKENS) {
+          break; // Stop adding to batch if it exceeds max tokens (unless it's the very first chunk)
+        }
+
+        batch.push(c);
+        currentTokens += chunkTokens;
+      }
 
       if (batch.length === 0) {
         meta.exactProgress = 100.0;

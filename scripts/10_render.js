@@ -429,6 +429,7 @@ function renderCurrentChat(preserveScroll = false) {
       maxRagTokens: "Max RAG Tokens",
       ragThreshold: "RAG Match Threshold",
       chunkBatchSize: "Chunk Batch Size",
+      chunkBatchMaxTokens: "Chunk Batch Max Tokens",
       maxVisibleChats: "Max Visible Chats",
       maxVisibleFiles: "Max Visible Files",
       fileWrapperFunc: "File Wrapper Function (JS)",
