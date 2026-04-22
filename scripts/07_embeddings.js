@@ -1,5 +1,5 @@
 // --- EMBEDDINGS & RAG ---
-async function fetchEmbeddings(texts) {
+async function fetchEmbeddings(texts, signal = null) {
   let base =
     config.embeddingsUrl && config.embeddingsUrl.trim() !== ""
       ? config.embeddingsUrl.trim().replace(/\/+$/, "")
@@ -24,6 +24,7 @@ async function fetchEmbeddings(texts) {
       model: config.embeddingsModel || "text-embedding-3-small",
       input: texts,
     }),
+    signal: signal || undefined,
   });
 
   if (!res.ok) {
@@ -103,10 +104,9 @@ async function refreshFileChunks(id) {
     data.chunks = newChunks;
     meta.chunkCount = newChunks.length;
     meta.embeddedCount = newChunks.filter((c) => c.vector).length;
-    meta.progress =
-      meta.chunkCount > 0
-        ? Math.round((meta.embeddedCount / meta.chunkCount) * 100)
-        : 0;
+    meta.exactProgress =
+      meta.chunkCount > 0 ? (meta.embeddedCount / meta.chunkCount) * 100 : 0;
+    meta.progress = Math.round(meta.exactProgress);
     if (meta.progress >= 100) meta.isEmbedding = false;
     await dbSet(`mf_filedata_${id}`, data);
     saveState();
@@ -116,72 +116,112 @@ async function refreshFileChunks(id) {
 async function startEmbeddingLoop(id) {
   if (!config.embeddingsModel || config.embeddingsModel.trim() === "") return;
 
-  const initialMeta = files.find((f) => f.id === id);
-  if (!initialMeta || !initialMeta.isEmbedding) return;
-  const initialData = await dbGet(`mf_filedata_${id}`);
-  if (!initialData) return;
+  const currentMeta = files.find((f) => f.id === id);
+  if (!currentMeta || !currentMeta.isEmbedding) return;
 
-  if (!initialData.chunks) {
-    await refreshFileChunks(id);
-    const m = files.find((f) => f.id === id);
-    if (!m || !m.isEmbedding) return;
+  if (currentMeta._embeddingLoopActive) return; // Concurrency block
+  currentMeta._embeddingLoopActive = true;
+
+  if (embeddingAbortControllers[id]) {
+    embeddingAbortControllers[id].abort();
   }
+  embeddingAbortControllers[id] = new AbortController();
 
   const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
+  let loopStartTime = Date.now();
+  let loopStartEmbeddedCount = null;
 
-  while (true) {
-    const currentMeta = files.find((f) => f.id === id);
-    if (!currentMeta || !currentMeta.isEmbedding) break;
+  try {
+    while (true) {
+      const meta = files.find((f) => f.id === id);
+      if (!meta || !meta.isEmbedding) break;
 
-    const currentData = await dbGet(`mf_filedata_${id}`);
-    if (!currentData || !currentData.chunks) break;
+      const currentData = await dbGet(`mf_filedata_${id}`);
+      if (!currentData || !currentData.chunks) {
+        await refreshFileChunks(id);
+        const m = files.find((f) => f.id === id);
+        if (!m || !m.isEmbedding) break;
+      }
 
-    const batch = currentData.chunks
-      .filter((c) => !c.vector)
-      .slice(0, MAX_BATCH);
-    if (batch.length === 0) {
-      currentMeta.progress = 100;
-      currentMeta.isEmbedding = false;
-      renderFileList();
-      if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
-        renderApp(true);
-      break;
+      const data = await dbGet(`mf_filedata_${id}`);
+      if (!data || !data.chunks) break;
+
+      const batch = data.chunks.filter((c) => !c.vector).slice(0, MAX_BATCH);
+
+      if (batch.length === 0) {
+        meta.exactProgress = 100.0;
+        meta.progress = 100;
+        meta.isEmbedding = false;
+        meta.embeddingSpeed = null;
+        meta.embeddingEta = null;
+        renderFileList();
+        if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
+          renderApp(true);
+        break;
+      }
+
+      try {
+        const batchTexts = batch.map((c) => c.text);
+        const signal = embeddingAbortControllers[id].signal;
+        const embs = await fetchEmbeddings(batchTexts, signal);
+
+        batch.forEach((c, i) => {
+          c.vector = embs[i];
+        });
+
+        meta.embeddedCount = data.chunks.filter((c) => c.vector).length;
+        meta.chunkCount = data.chunks.length;
+        meta.exactProgress = (meta.embeddedCount / meta.chunkCount) * 100;
+        meta.progress = Math.round(meta.exactProgress);
+
+        if (loopStartEmbeddedCount === null) {
+          loopStartEmbeddedCount = meta.embeddedCount - batch.length;
+        }
+
+        const elapsedSec = (Date.now() - loopStartTime) / 1000;
+        const chunksDone = meta.embeddedCount - loopStartEmbeddedCount;
+        if (elapsedSec > 0 && chunksDone > 0) {
+          meta.embeddingSpeed = chunksDone / elapsedSec;
+          meta.embeddingEta =
+            (meta.chunkCount - meta.embeddedCount) / meta.embeddingSpeed;
+        }
+
+        await dbSet(`mf_filedata_${id}`, data);
+        saveState();
+        renderFileList();
+        if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
+          renderApp(true);
+
+        await new Promise((r) => setTimeout(r, 100)); // Yield to UI
+      } catch (err) {
+        if (err.name === "AbortError") {
+          console.log(`Embedding paused for ${meta.name}`);
+        } else {
+          console.error("Embedding error:", err);
+          meta.isEmbedding = false;
+          alert(`Embedding failed for ${meta.name}: ${err.message}`);
+        }
+        break;
+      }
+    }
+  } catch (outerErr) {
+    console.error("Unexpected error in embedding loop:", outerErr);
+    const m = files.find((f) => f.id === id);
+    if (m) m.isEmbedding = false;
+  } finally {
+    const finalMeta = files.find((f) => f.id === id);
+    if (finalMeta) {
+      finalMeta._embeddingLoopActive = false;
+      finalMeta.embeddingSpeed = null;
+      finalMeta.embeddingEta = null;
     }
 
-    try {
-      const batchTexts = batch.map((c) => c.text);
-      const embs = await fetchEmbeddings(batchTexts);
-
-      batch.forEach((c, i) => {
-        c.vector = embs[i];
-      });
-
-      currentMeta.embeddedCount = currentData.chunks.filter(
-        (c) => c.vector,
-      ).length;
-      currentMeta.chunkCount = currentData.chunks.length;
-      currentMeta.progress = Math.round(
-        (currentMeta.embeddedCount / currentMeta.chunkCount) * 100,
-      );
-
-      await dbSet(`mf_filedata_${id}`, currentData);
-      saveState();
-      renderFileList();
-      await new Promise((r) => setTimeout(r, 100)); // Yield to UI
-    } catch (err) {
-      console.error("Embedding error:", err);
-      currentMeta.isEmbedding = false;
-      saveState();
-      renderFileList();
-      if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
-        renderApp(true);
-      alert(`Embedding failed for ${currentMeta.name}: ${err.message}`);
-      break;
+    if (embeddingAbortControllers[id]) {
+      delete embeddingAbortControllers[id];
     }
+    saveState();
+    renderFileList();
   }
-
-  saveState();
-  renderFileList();
 }
 
 async function resolveAllMessages(messages, btnEl) {
@@ -467,9 +507,16 @@ async function executeEmbedMessage(msgIndex) {
 async function resetAllFileEmbeddings() {
   for (const meta of files) {
     meta.progress = 0;
+    meta.exactProgress = 0;
     meta.embeddedCount = 0;
     meta.chunkCount = 0;
     meta.isEmbedding = false;
+    meta.embeddingSpeed = null;
+    meta.embeddingEta = null;
+    if (embeddingAbortControllers[meta.id]) {
+      embeddingAbortControllers[meta.id].abort();
+      delete embeddingAbortControllers[meta.id];
+    }
     const data = await dbGet(`mf_filedata_${meta.id}`);
     if (data) {
       data.chunks = null;

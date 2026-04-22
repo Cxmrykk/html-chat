@@ -120,21 +120,57 @@ function renderFileList() {
     .map((f) => {
       let embedBtn = "";
       let progressBar = "";
+      let progressStats = "";
 
       if (embeddingsEnabled) {
-        progressBar = `<div class="file-progress-bar" style="width: ${f.progress}%"></div>`;
+        if (f.isEmbedding && f.progress < 100) {
+          const speed = f.embeddingSpeed
+            ? `${f.embeddingSpeed.toFixed(1)} c/s`
+            : "...";
+          let eta = "...";
+          if (f.embeddingEta !== undefined && f.embeddingEta !== null) {
+            if (f.embeddingEta > 3600) {
+              const h = Math.floor(f.embeddingEta / 3600);
+              const m = Math.floor((f.embeddingEta % 3600) / 60);
+              const s = Math.round(f.embeddingEta % 60);
+              eta = `${h}h ${m}m ${s}s`;
+            } else if (f.embeddingEta > 60) {
+              const m = Math.floor(f.embeddingEta / 60);
+              const s = Math.round(f.embeddingEta % 60);
+              eta = `${m}m ${s}s`;
+            } else {
+              eta = `${Math.round(f.embeddingEta)}s`;
+            }
+          }
+          const pct =
+            f.exactProgress !== undefined
+              ? f.exactProgress.toFixed(1)
+              : (f.progress || 0).toFixed(1);
+          progressStats = `
+            <div style="font-size: 0.75em; color: #666; text-align: left; margin-top: 2px;">
+              <div>Progress: ${pct}% (${speed})</div>
+              <div>ETA: ${eta}</div>
+            </div>`;
+        }
+
+        const widthPct =
+          f.exactProgress !== undefined ? f.exactProgress : f.progress;
+        progressBar = `<div class="file-progress-bar" style="width: ${widthPct}%"></div>`;
         if (f.progress >= 100) {
           embedBtn = `<button data-action="embed" title="Insert Embedding">e</button>`;
         }
       }
 
       return `
-    <div class="chat-item" data-id="${f.id}" data-type="file" title="Ctrl+Click for Advanced RAG Settings">
-      <div class="chat-item-title" data-action="load" title="Click to insert full contents into chat\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
-      <div class="chat-item-actions">
-        ${embedBtn}
-        <button data-action="delete" title="Delete File">d</button>
+    <div class="chat-item" style="display:block;" data-id="${f.id}" data-type="file" title="Ctrl+Click for Advanced RAG Settings">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="chat-item-title" data-action="load" title="Click to insert full contents into chat\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
+        <div class="chat-item-actions">
+          ${embedBtn}
+          <button data-action="delete" title="Delete File">d</button>
+        </div>
       </div>
+      ${progressStats}
       ${progressBar}
     </div>
   `;

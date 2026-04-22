@@ -4,6 +4,7 @@ let chats = [];
 let files = [];
 let currentChatId = null;
 let currentAbortController = null;
+let embeddingAbortControllers = {};
 let isSidebarHidden = false;
 let isTitleHidden = false;
 let editingMessageIndex = null;

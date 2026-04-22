@@ -62,6 +62,7 @@ async function init() {
   if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
 
   for (const f of files) {
+    f._embeddingLoopActive = false; // Reset any stuck state from local storage on reload
     if (f.isEmbedding && f.progress < 100) {
       startEmbeddingLoop(f.id);
     } else if (f.progress >= 100) {

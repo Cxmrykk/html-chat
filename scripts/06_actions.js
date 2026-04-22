@@ -152,6 +152,7 @@ async function uploadFile(name, text, existingId = null) {
       id,
       name,
       progress: 0,
+      exactProgress: 0,
       isEmbedding: false,
       chunkCount: 0,
       embeddedCount: 0,
@@ -190,11 +191,30 @@ async function toggleEmbedding(id) {
   }
 
   meta.isEmbedding = !meta.isEmbedding;
+
+  if (!meta.isEmbedding) {
+    // Abort active fetch requests cleanly when pausing
+    if (embeddingAbortControllers[id]) {
+      embeddingAbortControllers[id].abort();
+      delete embeddingAbortControllers[id];
+    }
+    meta.embeddingSpeed = null;
+    meta.embeddingEta = null;
+  }
+
   saveState();
   renderFileList();
   renderApp(true);
+
   if (meta.isEmbedding) {
-    startEmbeddingLoop(id);
+    // Wait for any previous loop to finish cleaning up if spam-clicked
+    while (meta._embeddingLoopActive) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    // Verify it wasn't paused again while waiting
+    if (meta.isEmbedding) {
+      startEmbeddingLoop(id);
+    }
   }
 }
 
@@ -311,10 +331,11 @@ function importChunksAndVectors() {
 
         meta.chunkCount = data.chunks.length;
         meta.embeddedCount = data.chunks.filter((c) => c.vector).length;
-        meta.progress =
+        meta.exactProgress =
           meta.chunkCount > 0
-            ? Math.round((meta.embeddedCount / meta.chunkCount) * 100)
+            ? (meta.embeddedCount / meta.chunkCount) * 100
             : 0;
+        meta.progress = Math.round(meta.exactProgress);
         if (meta.progress >= 100) meta.isEmbedding = false;
 
         await dbSet(`mf_filedata_${activeAdvancedRAGFileId}`, data);
