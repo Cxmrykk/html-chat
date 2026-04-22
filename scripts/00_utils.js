@@ -62,6 +62,6 @@ function decodeBase64ToVector(base64) {
   for (let i = 0; i < binary.length; i++) {
     u8[i] = binary.charCodeAt(i);
   }
-  const f32 = new Float32Array(u8.buffer);
-  return Array.from(f32);
+  // Return typed array directly to compress DB payload drastically
+  return new Float32Array(u8.buffer);
 }

@@ -45,3 +45,40 @@ async function dbDelete(key) {
     request.onerror = () => reject(request.error);
   });
 }
+
+async function dbGetByPrefix(prefix) {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readonly");
+    const store = transaction.objectStore(STORE_NAME);
+    const range = IDBKeyRange.bound(prefix, prefix + "\uffff");
+    const request = store.getAll(range);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function dbDeleteByPrefix(prefix) {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const range = IDBKeyRange.bound(prefix, prefix + "\uffff");
+    const request = store.delete(range);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function dbSetMultiple(entries) {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    for (const [key, val] of entries) {
+      store.put(val, key);
+    }
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+}

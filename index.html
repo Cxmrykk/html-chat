@@ -593,8 +593,8 @@
         for (let i = 0; i < binary.length; i++) {
           u8[i] = binary.charCodeAt(i);
         }
-        const f32 = new Float32Array(u8.buffer);
-        return Array.from(f32);
+        // Return typed array directly to compress DB payload drastically
+        return new Float32Array(u8.buffer);
       }
 
       // --- CONSTANTS & DEFAULTS ---
@@ -832,6 +832,43 @@
           const request = store.delete(key);
           request.onsuccess = () => resolve();
           request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function dbGetByPrefix(prefix) {
+        const db = await getDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_NAME, "readonly");
+          const store = transaction.objectStore(STORE_NAME);
+          const range = IDBKeyRange.bound(prefix, prefix + "\uffff");
+          const request = store.getAll(range);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function dbDeleteByPrefix(prefix) {
+        const db = await getDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_NAME, "readwrite");
+          const store = transaction.objectStore(STORE_NAME);
+          const range = IDBKeyRange.bound(prefix, prefix + "\uffff");
+          const request = store.delete(range);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function dbSetMultiple(entries) {
+        const db = await getDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_NAME, "readwrite");
+          const store = transaction.objectStore(STORE_NAME);
+          for (const [key, val] of entries) {
+            store.put(val, key);
+          }
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
         });
       }
 
@@ -1389,7 +1426,7 @@
             textLength: text.length,
           };
           files.unshift(meta);
-          await dbSet(`mf_filedata_${id}`, { id, name, text, chunks: null });
+          await dbSet(`mf_filedata_${id}`, { id, name, text });
         } else {
           meta.textLength = text.length;
           const data = await dbGet(`mf_filedata_${id}`);
@@ -1407,7 +1444,11 @@
           toggleAdvancedRAGSettings(null);
         }
         files = files.filter((f) => f.id !== id);
+
+        // Clean up normalized records
         await dbDelete(`mf_filedata_${id}`);
+        await dbDeleteByPrefix(`mf_chunk_${id}_`);
+
         saveState();
         renderFileList();
       }
@@ -1486,164 +1527,6 @@
       function toggleAdvancedEmbedding() {
         if (!activeAdvancedRAGFileId) return;
         toggleEmbedding(activeAdvancedRAGFileId);
-      }
-
-      async function exportChunksAndVectors() {
-        if (!activeAdvancedRAGFileId) return;
-        const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
-        if (!data || !data.chunks) return alert("No chunks found.");
-
-        const payload = {
-          model: config.embeddingsModel,
-          chunks: data.chunks.map((c) => ({
-            text: c.text,
-            raw: c.raw !== undefined ? c.raw : c.text,
-            vector_b64: encodeVectorToBase64(c.vector),
-          })),
-        };
-
-        const dataStr = JSON.stringify(payload, null, 2);
-        const blob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `file-vectors-${activeAdvancedRAGFileId}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-
-      function importChunksAndVectors() {
-        if (!activeAdvancedRAGFileId) return;
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = ".json";
-        input.onchange = (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = async (event) => {
-            try {
-              const imported = JSON.parse(event.target.result);
-              if (!imported.chunks || !Array.isArray(imported.chunks))
-                throw new Error("Invalid format.");
-
-              if (imported.model !== config.embeddingsModel) {
-                alert(
-                  `Model mismatch!\n\nExported model: '${imported.model}'\nCurrent model: '${config.embeddingsModel}'\n\nImport cancelled. To bypass this, manually edit the 'model' field in the JSON file to match your current model.`,
-                );
-                return;
-              }
-
-              const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
-              if (!data) return;
-
-              const raws = imported.chunks.map((c) =>
-                c.raw !== undefined ? c.raw : c.text,
-              );
-              const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
-              meta.customChunks = JSON.stringify(raws, null, 2);
-
-              let chunkIndex = 0;
-              data.chunks = imported.chunks.map((c) => {
-                let vec = c.vector_b64
-                  ? decodeBase64ToVector(c.vector_b64)
-                  : c.vector || null;
-                let mapped = {
-                  index: chunkIndex++,
-                  text: c.text,
-                  raw: c.raw !== undefined ? c.raw : c.text,
-                  vector: vec,
-                };
-                return mapped;
-              });
-
-              meta.chunkCount = data.chunks.length;
-              meta.embeddedCount = data.chunks.filter((c) => c.vector).length;
-              meta.exactProgress =
-                meta.chunkCount > 0
-                  ? (meta.embeddedCount / meta.chunkCount) * 100
-                  : 0;
-              meta.progress = Math.round(meta.exactProgress);
-              if (meta.progress >= 100) meta.isEmbedding = false;
-
-              await dbSet(`mf_filedata_${activeAdvancedRAGFileId}`, data);
-              saveState();
-              if (activeAdvancedRAGSetting === "customChunks") {
-                await selectAdvancedRAGSetting("customChunks");
-              } else {
-                renderApp(true);
-              }
-              alert("Imported chunks and vectors successfully.");
-            } catch (err) {
-              alert("Failed to import: " + err.message);
-            }
-          };
-          reader.readAsText(file);
-        };
-        input.click();
-      }
-
-      async function appendFileMessage(fileId, mode = "full") {
-        const meta = files.find((f) => f.id === fileId);
-        if (!meta) return;
-        suspendSuperSecretSettings();
-        resetEditState();
-
-        if (!currentChatId) newChat();
-        const chat = chats.find((c) => c.id === currentChatId);
-
-        let approxTokens = Math.ceil((meta.textLength || 0) / 4);
-        let content = "";
-
-        if (mode === "full") {
-          const data = await dbGet(`mf_filedata_${meta.id}`);
-          const fileText = data ? data.text : "";
-
-          let wrapperFnCode =
-            meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
-              ? meta.fileWrapperFunc
-              : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
-                ? config.fileWrapperFunc
-                : SETTING_DEFAULTS.fileWrapperFunc.default;
-
-          let wrapperFn;
-          try {
-            wrapperFn = new AsyncFunction("fileContent", "fileName", wrapperFnCode);
-          } catch (e) {
-            console.error("Wrapper Fn Syntax Error:", e);
-            wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
-          }
-
-          content = await wrapperFn(fileText, meta.name);
-          approxTokens = Math.ceil(content.length / 4);
-        }
-
-        chat.messages.push({
-          role: "file",
-          fileId: meta.id,
-          fileName: meta.name,
-          prompt: "",
-          mode: mode,
-          approxTokens: approxTokens,
-          content: content,
-          maxTokens: parseInt(config.maxRagTokens, 10) || 5000,
-          ragThreshold: parseFloat(config.ragThreshold) || 0.0,
-        });
-
-        if (window.innerWidth <= 768) {
-          isSidebarHidden = true;
-          applySidebarState();
-        }
-
-        invalidateTokenCache();
-        saveState();
-        appendMessageToDOM(
-          chat.messages[chat.messages.length - 1],
-          chat.messages.length - 1,
-        );
-        updateTokenCount();
       }
 
       function resetEditState() {
@@ -1859,6 +1742,12 @@
         return data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
       }
 
+      // Helper function to fetch all individual chunk records for a file
+      async function getFileChunks(id) {
+        const chunks = await dbGetByPrefix(`mf_chunk_${id}_`);
+        return chunks.sort((a, b) => a.index - b.index);
+      }
+
       async function refreshFileChunks(id) {
         const meta = files.find((f) => f.id === id);
         if (!meta) return;
@@ -1896,6 +1785,7 @@
 
         chunks = chunks.filter((c) => c !== null && c !== undefined);
 
+        const oldChunks = await getFileChunks(id);
         let changed = false;
         let newChunks = [];
         let chunkIndex = 0;
@@ -1903,9 +1793,9 @@
         for (const c of chunks) {
           const stringified = typeof c === "string" ? c : JSON.stringify(c);
 
-          let existing = data.chunks
-            ? data.chunks.find((old) => old.text === stringified && old.vector)
-            : null;
+          let existing = oldChunks.find(
+            (old) => old.text === stringified && old.vector,
+          );
           if (!existing) changed = true;
 
           newChunks.push({
@@ -1916,12 +1806,21 @@
           });
         }
 
-        if (!data.chunks || data.chunks.length !== newChunks.length) changed = true;
-        else if (data.chunks.some((old, i) => old.text !== newChunks[i].text))
+        if (oldChunks.length !== newChunks.length) changed = true;
+        else if (oldChunks.some((old, i) => old.text !== newChunks[i].text))
           changed = true;
 
         if (changed) {
-          data.chunks = newChunks;
+          // Purge the old chunks from IndexedDB
+          await dbDeleteByPrefix(`mf_chunk_${id}_`);
+
+          // Use multiple sets to quickly write out the separated chunk records
+          const entries = newChunks.map((c) => [
+            `mf_chunk_${id}_${String(c.index).padStart(6, "0")}`,
+            c,
+          ]);
+          await dbSetMultiple(entries);
+
           meta.chunkCount = newChunks.length;
           meta.embeddedCount = newChunks.filter((c) => c.vector).length;
 
@@ -1950,6 +1849,8 @@
           meta.progress = Math.round(meta.exactProgress);
 
           if (meta.progress >= 100) meta.isEmbedding = false;
+
+          // Save metadata without chunks attached
           await dbSet(`mf_filedata_${id}`, data);
           saveState();
         }
@@ -1985,22 +1886,26 @@
             const meta = files.find((f) => f.id === id);
             if (!meta || !meta.isEmbedding) break;
 
-            const currentData = await dbGet(`mf_filedata_${id}`);
-            if (!currentData || !currentData.chunks) {
+            const data = await dbGet(`mf_filedata_${id}`);
+            if (!data) break;
+
+            // Always load chunks FRESH in the while loop to prevent race conditions
+            // where the user edited/overwrote the file mid-embedding
+            let chunks = await getFileChunks(id);
+
+            if (!chunks || chunks.length === 0) {
               await refreshFileChunks(id);
+              chunks = await getFileChunks(id);
               const m = files.find((f) => f.id === id);
               if (!m || !m.isEmbedding) break;
             }
 
-            const data = await dbGet(`mf_filedata_${id}`);
-            if (!data || !data.chunks) break;
-
-            const unEmbedded = data.chunks.filter((c) => !c.vector);
+            const unEmbedded = chunks.filter((c) => !c.vector);
 
             let ignoredCount = 0;
             const validUnEmbedded = [];
 
-            // Filter out chunks that exceed token limits on the fly (leave them untouched in DB)
+            // Filter out chunks that exceed token limits on the fly
             for (const c of unEmbedded) {
               const chunkStr =
                 typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
@@ -2049,12 +1954,21 @@
               const signal = embeddingAbortControllers[id].signal;
               const embs = await fetchEmbeddings(batchTexts, signal);
 
+              const updateEntries = [];
               batch.forEach((c, i) => {
-                c.vector = embs[i];
+                // Convert array to Float32Array to compress Vector by 50-70% in memory
+                c.vector = new Float32Array(embs[i]);
+                updateEntries.push([
+                  `mf_chunk_${id}_${String(c.index).padStart(6, "0")}`,
+                  c,
+                ]);
               });
 
-              meta.embeddedCount = data.chunks.filter((c) => c.vector).length;
-              meta.chunkCount = data.chunks.length;
+              // Save ONLY the freshly processed chunk batches back to the DB to prevent massive rewrites
+              await dbSetMultiple(updateEntries);
+
+              meta.embeddedCount = chunks.filter((c) => c.vector).length;
+              meta.chunkCount = chunks.length;
 
               // Progress is computed as (Successfully Embedded + Ignored) / Total Chunks
               const processedCount = meta.embeddedCount + ignoredCount;
@@ -2197,166 +2111,164 @@
               actualPrompt = lookaheadText.join("\n").trim();
             }
 
-            if (data.chunks) {
-              const validChunks = data.chunks.filter((c) => c.vector);
-              if (validChunks.length > 0) {
-                let queryEmb = null;
+            const chunks = await getFileChunks(meta.id);
+            const validChunks = chunks.filter((c) => c.vector);
 
-                if (actualPrompt) {
-                  try {
-                    queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
-                  } catch (err) {
-                    if (btnEl) btnEl.textContent = origText;
-                    alert("Error fetching embeddings: " + err.message);
-                    return;
-                  }
+            if (validChunks.length > 0) {
+              let queryEmb = null;
+
+              if (actualPrompt) {
+                try {
+                  queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
+                } catch (err) {
+                  if (btnEl) btnEl.textContent = origText;
+                  alert("Error fetching embeddings: " + err.message);
+                  return;
                 }
+              }
 
-                const fileMaxTokens =
-                  meta.maxRagTokens !== undefined && meta.maxRagTokens !== ""
-                    ? parseInt(meta.maxRagTokens, 10)
-                    : undefined;
-                const maxTokens =
-                  fileMaxTokens !== undefined && !isNaN(fileMaxTokens)
-                    ? fileMaxTokens
-                    : msg.maxTokens || 5000;
+              const fileMaxTokens =
+                meta.maxRagTokens !== undefined && meta.maxRagTokens !== ""
+                  ? parseInt(meta.maxRagTokens, 10)
+                  : undefined;
+              const maxTokens =
+                fileMaxTokens !== undefined && !isNaN(fileMaxTokens)
+                  ? fileMaxTokens
+                  : msg.maxTokens || 5000;
 
-                const fileThreshold =
-                  meta.ragThreshold !== undefined && meta.ragThreshold !== ""
-                    ? parseFloat(meta.ragThreshold)
-                    : undefined;
-                const threshold =
-                  fileThreshold !== undefined && !isNaN(fileThreshold)
-                    ? fileThreshold
-                    : msg.ragThreshold || 0.0;
+              const fileThreshold =
+                meta.ragThreshold !== undefined && meta.ragThreshold !== ""
+                  ? parseFloat(meta.ragThreshold)
+                  : undefined;
+              const threshold =
+                fileThreshold !== undefined && !isNaN(fileThreshold)
+                  ? fileThreshold
+                  : msg.ragThreshold || 0.0;
 
-                validChunks.forEach((c) => {
-                  c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
-                });
+              validChunks.forEach((c) => {
+                c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
+              });
 
-                let topChunks = validChunks.filter(
-                  (c) => !queryEmb || c.score >= threshold,
+              let topChunks = validChunks.filter(
+                (c) => !queryEmb || c.score >= threshold,
+              );
+              topChunks.sort((a, b) => b.score - a.score);
+
+              let currentTokens = 0;
+              let finalChunksInternal = [];
+
+              let retrievalFnCode =
+                meta.retrievalFunc && meta.retrievalFunc.trim() !== ""
+                  ? meta.retrievalFunc
+                  : FILE_SETTING_DEFAULTS.retrievalFunc.default;
+              let dedupFnCode =
+                meta.dedupFunc && meta.dedupFunc.trim() !== ""
+                  ? meta.dedupFunc
+                  : FILE_SETTING_DEFAULTS.dedupFunc.default;
+              let mergeFnCode =
+                meta.mergeChunksFunc && meta.mergeChunksFunc.trim() !== ""
+                  ? meta.mergeChunksFunc
+                  : FILE_SETTING_DEFAULTS.mergeChunksFunc.default;
+
+              let retrievalFn, dedupFn, mergeFn;
+
+              try {
+                retrievalFn = new AsyncFunction(
+                  "chunk",
+                  "fileContents",
+                  retrievalFnCode,
                 );
-                topChunks.sort((a, b) => b.score - a.score);
+              } catch (e) {
+                console.error("Retrieval Fn Syntax Error:", e);
+                retrievalFn = async (c, t) => c;
+              }
+              try {
+                dedupFn = new AsyncFunction(
+                  "currentData",
+                  "existingData",
+                  dedupFnCode,
+                );
+              } catch (e) {
+                console.error("Dedup Fn Syntax Error:", e);
+                dedupFn = async (a, b) => a === b;
+              }
+              try {
+                mergeFn = new AsyncFunction("finalChunks", mergeFnCode);
+              } catch (e) {
+                console.error("Merge Fn Syntax Error:", e);
+                mergeFn = async (c) =>
+                  c
+                    .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
+                    .join("...");
+              }
 
-                let currentTokens = 0;
-                let finalChunksInternal = [];
-
-                let retrievalFnCode =
-                  meta.retrievalFunc && meta.retrievalFunc.trim() !== ""
-                    ? meta.retrievalFunc
-                    : FILE_SETTING_DEFAULTS.retrievalFunc.default;
-                let dedupFnCode =
-                  meta.dedupFunc && meta.dedupFunc.trim() !== ""
-                    ? meta.dedupFunc
-                    : FILE_SETTING_DEFAULTS.dedupFunc.default;
-                let mergeFnCode =
-                  meta.mergeChunksFunc && meta.mergeChunksFunc.trim() !== ""
-                    ? meta.mergeChunksFunc
-                    : FILE_SETTING_DEFAULTS.mergeChunksFunc.default;
-
-                let retrievalFn, dedupFn, mergeFn;
+              for (let j = 0; j < topChunks.length; j++) {
+                const curr = topChunks[j];
+                let finalData = null;
 
                 try {
-                  retrievalFn = new AsyncFunction(
-                    "chunk",
-                    "fileContents",
-                    retrievalFnCode,
-                  );
-                } catch (e) {
-                  console.error("Retrieval Fn Syntax Error:", e);
-                  retrievalFn = async (c, t) => c;
-                }
-                try {
-                  dedupFn = new AsyncFunction(
-                    "currentData",
-                    "existingData",
-                    dedupFnCode,
-                  );
-                } catch (e) {
-                  console.error("Dedup Fn Syntax Error:", e);
-                  dedupFn = async (a, b) => a === b;
-                }
-                try {
-                  mergeFn = new AsyncFunction("finalChunks", mergeFnCode);
-                } catch (e) {
-                  console.error("Merge Fn Syntax Error:", e);
-                  mergeFn = async (c) =>
-                    c
-                      .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
-                      .join("...");
-                }
-
-                for (let j = 0; j < topChunks.length; j++) {
-                  const curr = topChunks[j];
-                  let finalData = null;
-
-                  try {
-                    const chunkArg = curr.raw !== undefined ? curr.raw : curr.text;
-                    const retrievedData = await retrievalFn(chunkArg, data.text);
-                    if (retrievedData !== null && retrievedData !== undefined) {
-                      finalData = retrievedData;
-                    }
-                  } catch (e) {
-                    console.error("Post-processing error:", e);
-                    finalData = curr.raw !== undefined ? curr.raw : curr.text;
+                  const chunkArg = curr.raw !== undefined ? curr.raw : curr.text;
+                  const retrievedData = await retrievalFn(chunkArg, data.text);
+                  if (retrievedData !== null && retrievedData !== undefined) {
+                    finalData = retrievedData;
                   }
+                } catch (e) {
+                  console.error("Post-processing error:", e);
+                  finalData = curr.raw !== undefined ? curr.raw : curr.text;
+                }
 
-                  if (finalData !== null && finalData !== undefined) {
-                    let isDup = false;
-                    try {
-                      for (const d of finalChunksInternal) {
-                        if (await dedupFn(finalData, d.data)) {
-                          isDup = true;
-                          break;
-                        }
-                      }
-                    } catch (e) {
-                      console.error("Deduplication error:", e);
-                    }
-
-                    if (!isDup) {
-                      const strForTokens =
-                        typeof finalData === "string"
-                          ? finalData
-                          : JSON.stringify(finalData) || "";
-                      const chunkTokens = Math.ceil(strForTokens.length / 4);
-
-                      if (
-                        finalChunksInternal.length > 0 &&
-                        currentTokens + chunkTokens > maxTokens
-                      ) {
+                if (finalData !== null && finalData !== undefined) {
+                  let isDup = false;
+                  try {
+                    for (const d of finalChunksInternal) {
+                      if (await dedupFn(finalData, d.data)) {
+                        isDup = true;
                         break;
                       }
-
-                      currentTokens += chunkTokens;
-                      finalChunksInternal.push({
-                        index: curr.index,
-                        data: finalData,
-                      });
                     }
+                  } catch (e) {
+                    console.error("Deduplication error:", e);
+                  }
+
+                  if (!isDup) {
+                    const strForTokens =
+                      typeof finalData === "string"
+                        ? finalData
+                        : JSON.stringify(finalData) || "";
+                    const chunkTokens = Math.ceil(strForTokens.length / 4);
+
+                    if (
+                      finalChunksInternal.length > 0 &&
+                      currentTokens + chunkTokens > maxTokens
+                    ) {
+                      break;
+                    }
+
+                    currentTokens += chunkTokens;
+                    finalChunksInternal.push({
+                      index: curr.index,
+                      data: finalData,
+                    });
                   }
                 }
-
-                finalChunksInternal.sort((a, b) => a.index - b.index);
-                const finalChunks = finalChunksInternal.map((x) => x.data);
-
-                let mergedContent = "";
-                try {
-                  mergedContent = await mergeFn(finalChunks);
-                } catch (e) {
-                  console.error("Merge function error:", e);
-                  mergedContent = finalChunks
-                    .map((c) => (typeof c === "string" ? c : JSON.stringify(c)))
-                    .join("...");
-                }
-
-                fileContent = mergedContent;
-              } else {
-                fileContent = "*File unindexed or no valid chunks.*";
               }
+
+              finalChunksInternal.sort((a, b) => a.index - b.index);
+              const finalChunks = finalChunksInternal.map((x) => x.data);
+
+              let mergedContent = "";
+              try {
+                mergedContent = await mergeFn(finalChunks);
+              } catch (e) {
+                console.error("Merge function error:", e);
+                mergedContent = finalChunks
+                  .map((c) => (typeof c === "string" ? c : JSON.stringify(c)))
+                  .join("...");
+              }
+
+              fileContent = mergedContent;
             } else {
-              fileContent = "*File unindexed.*";
+              fileContent = "*File unindexed or no valid chunks.*";
             }
           }
         }
@@ -2394,6 +2306,176 @@
         updateTokenCount();
       }
 
+      async function exportChunksAndVectors() {
+        if (!activeAdvancedRAGFileId) return;
+        const chunks = await getFileChunks(activeAdvancedRAGFileId);
+        if (!chunks || chunks.length === 0) return alert("No chunks found.");
+
+        const payload = {
+          model: config.embeddingsModel,
+          chunks: chunks.map((c) => ({
+            text: c.text,
+            raw: c.raw !== undefined ? c.raw : c.text,
+            vector_b64: encodeVectorToBase64(c.vector),
+          })),
+        };
+
+        const dataStr = JSON.stringify(payload, null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `file-vectors-${activeAdvancedRAGFileId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      function importChunksAndVectors() {
+        if (!activeAdvancedRAGFileId) return;
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".json";
+        input.onchange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            try {
+              const imported = JSON.parse(event.target.result);
+              if (!imported.chunks || !Array.isArray(imported.chunks))
+                throw new Error("Invalid format.");
+
+              if (imported.model !== config.embeddingsModel) {
+                alert(
+                  `Model mismatch!\n\nExported model: '${imported.model}'\nCurrent model: '${config.embeddingsModel}'\n\nImport cancelled. To bypass this, manually edit the 'model' field in the JSON file to match your current model.`,
+                );
+                return;
+              }
+
+              const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
+              if (!data) return;
+
+              const raws = imported.chunks.map((c) =>
+                c.raw !== undefined ? c.raw : c.text,
+              );
+              const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+              meta.customChunks = JSON.stringify(raws, null, 2);
+
+              // Wipe old chunks
+              await dbDeleteByPrefix(`mf_chunk_${activeAdvancedRAGFileId}_`);
+
+              let chunkIndex = 0;
+              const entries = [];
+              const chunks = imported.chunks.map((c) => {
+                let vec = c.vector_b64
+                  ? decodeBase64ToVector(c.vector_b64)
+                  : c.vector
+                    ? new Float32Array(c.vector)
+                    : null;
+                let mapped = {
+                  index: chunkIndex++,
+                  text: c.text,
+                  raw: c.raw !== undefined ? c.raw : c.text,
+                  vector: vec,
+                };
+                entries.push([
+                  `mf_chunk_${activeAdvancedRAGFileId}_${String(mapped.index).padStart(6, "0")}`,
+                  mapped,
+                ]);
+                return mapped;
+              });
+
+              await dbSetMultiple(entries);
+
+              meta.chunkCount = chunks.length;
+              meta.embeddedCount = chunks.filter((c) => c.vector).length;
+              meta.exactProgress =
+                meta.chunkCount > 0
+                  ? (meta.embeddedCount / meta.chunkCount) * 100
+                  : 0;
+              meta.progress = Math.round(meta.exactProgress);
+              if (meta.progress >= 100) meta.isEmbedding = false;
+
+              await dbSet(`mf_filedata_${activeAdvancedRAGFileId}`, data);
+              saveState();
+              if (activeAdvancedRAGSetting === "customChunks") {
+                await selectAdvancedRAGSetting("customChunks");
+              } else {
+                renderApp(true);
+              }
+              alert("Imported chunks and vectors successfully.");
+            } catch (err) {
+              alert("Failed to import: " + err.message);
+            }
+          };
+          reader.readAsText(file);
+        };
+        input.click();
+      }
+
+      async function appendFileMessage(fileId, mode = "full") {
+        const meta = files.find((f) => f.id === fileId);
+        if (!meta) return;
+        suspendSuperSecretSettings();
+        resetEditState();
+
+        if (!currentChatId) newChat();
+        const chat = chats.find((c) => c.id === currentChatId);
+
+        let approxTokens = Math.ceil((meta.textLength || 0) / 4);
+        let content = "";
+
+        if (mode === "full") {
+          const data = await dbGet(`mf_filedata_${meta.id}`);
+          const fileText = data ? data.text : "";
+
+          let wrapperFnCode =
+            meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
+              ? meta.fileWrapperFunc
+              : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
+                ? config.fileWrapperFunc
+                : SETTING_DEFAULTS.fileWrapperFunc.default;
+
+          let wrapperFn;
+          try {
+            wrapperFn = new AsyncFunction("fileContent", "fileName", wrapperFnCode);
+          } catch (e) {
+            console.error("Wrapper Fn Syntax Error:", e);
+            wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
+          }
+
+          content = await wrapperFn(fileText, meta.name);
+          approxTokens = Math.ceil(content.length / 4);
+        }
+
+        chat.messages.push({
+          role: "file",
+          fileId: meta.id,
+          fileName: meta.name,
+          prompt: "",
+          mode: mode,
+          approxTokens: approxTokens,
+          content: content,
+          maxTokens: parseInt(config.maxRagTokens, 10) || 5000,
+          ragThreshold: parseFloat(config.ragThreshold) || 0.0,
+        });
+
+        if (window.innerWidth <= 768) {
+          isSidebarHidden = true;
+          applySidebarState();
+        }
+
+        invalidateTokenCache();
+        saveState();
+        appendMessageToDOM(
+          chat.messages[chat.messages.length - 1],
+          chat.messages.length - 1,
+        );
+        updateTokenCount();
+      }
+
       async function resetAllFileEmbeddings() {
         for (const meta of files) {
           meta.progress = 0;
@@ -2407,11 +2489,7 @@
             embeddingAbortControllers[meta.id].abort();
             delete embeddingAbortControllers[meta.id];
           }
-          const data = await dbGet(`mf_filedata_${meta.id}`);
-          if (data) {
-            data.chunks = null;
-            await dbSet(`mf_filedata_${meta.id}`, data);
-          }
+          await dbDeleteByPrefix(`mf_chunk_${meta.id}_`);
         }
         saveState();
         renderApp();
