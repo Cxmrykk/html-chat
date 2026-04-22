@@ -428,6 +428,7 @@ function renderCurrentChat(preserveScroll = false) {
       embeddingsModel: "Embeddings Model",
       maxRagTokens: "Max RAG Tokens",
       ragThreshold: "RAG Match Threshold",
+      chunkMaxTokens: "Max Tokens Per Chunk",
       chunkBatchSize: "Chunk Batch Size",
       chunkBatchMaxTokens: "Chunk Batch Max Tokens",
       maxVisibleChats: "Max Visible Chats",

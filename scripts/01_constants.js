@@ -102,6 +102,12 @@ const SETTING_DEFAULTS = {
     tooltip: "Min similarity threshold (0.0 to 1.0). 0.0 allows anything.",
     category: "RAG & Document Processing",
   },
+  chunkMaxTokens: {
+    default: "1024",
+    tooltip:
+      "Maximum tokens allowed per single chunk. Oversized chunks are discarded.",
+    category: "RAG & Document Processing",
+  },
   chunkBatchSize: {
     default: "100",
     tooltip: "Max chunks sent to Embeddings API at once.",
@@ -144,6 +150,11 @@ const FILE_SETTING_DEFAULTS = {
   ragThreshold: {
     default: "",
     tooltip: "Override global match threshold for this file. (0.0 to 1.0)",
+    category: "Overrides",
+  },
+  chunkMaxTokens: {
+    default: "",
+    tooltip: "Override global max tokens per chunk for this file.",
     category: "Overrides",
   },
   customChunks: {

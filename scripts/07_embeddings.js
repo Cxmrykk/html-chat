@@ -104,9 +104,31 @@ async function refreshFileChunks(id) {
     data.chunks = newChunks;
     meta.chunkCount = newChunks.length;
     meta.embeddedCount = newChunks.filter((c) => c.vector).length;
+
+    // Calculate ignored count so the progress bar is accurate even before the loop starts
+    const CHUNK_LIMIT =
+      meta.chunkMaxTokens !== undefined && meta.chunkMaxTokens !== ""
+        ? parseInt(meta.chunkMaxTokens, 10)
+        : parseInt(config.chunkMaxTokens, 10) || 1024;
+    const MAX_TOKENS = parseInt(config.chunkBatchMaxTokens) || 8192;
+
+    let ignoredCount = 0;
+    for (const c of newChunks) {
+      if (!c.vector) {
+        const chunkStr =
+          typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
+        const chunkTokens = Math.ceil(chunkStr.length / 4);
+        if (chunkTokens > CHUNK_LIMIT || chunkTokens > MAX_TOKENS) {
+          ignoredCount++;
+        }
+      }
+    }
+
+    const processedCount = meta.embeddedCount + ignoredCount;
     meta.exactProgress =
-      meta.chunkCount > 0 ? (meta.embeddedCount / meta.chunkCount) * 100 : 0;
+      meta.chunkCount > 0 ? (processedCount / meta.chunkCount) * 100 : 0;
     meta.progress = Math.round(meta.exactProgress);
+
     if (meta.progress >= 100) meta.isEmbedding = false;
     await dbSet(`mf_filedata_${id}`, data);
     saveState();
@@ -129,6 +151,12 @@ async function startEmbeddingLoop(id) {
 
   const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
   const MAX_TOKENS = parseInt(config.chunkBatchMaxTokens) || 8192;
+  const CHUNK_LIMIT =
+    currentMeta.chunkMaxTokens !== undefined &&
+    currentMeta.chunkMaxTokens !== ""
+      ? parseInt(currentMeta.chunkMaxTokens, 10)
+      : parseInt(config.chunkMaxTokens, 10) || 1024;
+
   let loopStartTime = Date.now();
   let loopStartEmbeddedCount = null;
 
@@ -148,18 +176,35 @@ async function startEmbeddingLoop(id) {
       if (!data || !data.chunks) break;
 
       const unEmbedded = data.chunks.filter((c) => !c.vector);
+
+      let ignoredCount = 0;
+      const validUnEmbedded = [];
+
+      // Filter out chunks that exceed token limits on the fly (leave them untouched in DB)
+      for (const c of unEmbedded) {
+        const chunkStr =
+          typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
+        const chunkTokens = Math.ceil(chunkStr.length / 4);
+
+        if (chunkTokens > CHUNK_LIMIT || chunkTokens > MAX_TOKENS) {
+          ignoredCount++;
+        } else {
+          validUnEmbedded.push(c);
+        }
+      }
+
       const batch = [];
       let currentTokens = 0;
 
-      for (const c of unEmbedded) {
+      for (const c of validUnEmbedded) {
         if (batch.length >= MAX_BATCH) break;
 
         const chunkStr =
           typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
         const chunkTokens = Math.ceil(chunkStr.length / 4);
 
-        if (batch.length > 0 && currentTokens + chunkTokens > MAX_TOKENS) {
-          break; // Stop adding to batch if it exceeds max tokens (unless it's the very first chunk)
+        if (currentTokens + chunkTokens > MAX_TOKENS) {
+          break; // Batch is full based on total token limits
         }
 
         batch.push(c);
@@ -167,6 +212,7 @@ async function startEmbeddingLoop(id) {
       }
 
       if (batch.length === 0) {
+        // If batch is 0, we either finished or the remaining chunks are permanently ignored
         meta.exactProgress = 100.0;
         meta.progress = 100;
         meta.isEmbedding = false;
@@ -189,7 +235,13 @@ async function startEmbeddingLoop(id) {
 
         meta.embeddedCount = data.chunks.filter((c) => c.vector).length;
         meta.chunkCount = data.chunks.length;
-        meta.exactProgress = (meta.embeddedCount / meta.chunkCount) * 100;
+
+        // Progress is computed as (Successfully Embedded + Ignored) / Total Chunks
+        const processedCount = meta.embeddedCount + ignoredCount;
+        meta.exactProgress =
+          meta.chunkCount > 0
+            ? (processedCount / meta.chunkCount) * 100
+            : 100.0;
         meta.progress = Math.round(meta.exactProgress);
 
         if (loopStartEmbeddedCount === null) {
@@ -201,7 +253,7 @@ async function startEmbeddingLoop(id) {
         if (elapsedSec > 0 && chunksDone > 0) {
           meta.embeddingSpeed = chunksDone / elapsedSec;
           meta.embeddingEta =
-            (meta.chunkCount - meta.embeddedCount) / meta.embeddingSpeed;
+            (meta.chunkCount - processedCount) / meta.embeddingSpeed;
         }
 
         await dbSet(`mf_filedata_${id}`, data);
