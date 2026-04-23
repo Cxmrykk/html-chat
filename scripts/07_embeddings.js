@@ -153,6 +153,54 @@ async function refreshFileChunks(id) {
   }
 }
 
+async function getNextChunkBatch(id, maxBatch, maxTokens, chunkLimit) {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, "readonly");
+    const store = transaction.objectStore(STORE_NAME);
+    const prefix = `mf_chunk_${id}_`;
+    const range = IDBKeyRange.bound(prefix, prefix + "\uffff");
+    const request = store.openCursor(range);
+
+    const batch = [];
+    let currentTokens = 0;
+    let ignoredCount = 0;
+    let embeddedCount = 0;
+    let chunkCount = 0;
+
+    request.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        chunkCount++;
+        const c = cursor.value;
+        if (c.vector) {
+          embeddedCount++;
+        } else {
+          const chunkStr =
+            typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
+          const chunkTokens = Math.ceil(chunkStr.length / 4);
+
+          if (chunkTokens > chunkLimit || chunkTokens > maxTokens) {
+            ignoredCount++;
+          } else {
+            if (
+              batch.length < maxBatch &&
+              currentTokens + chunkTokens <= maxTokens
+            ) {
+              batch.push(c);
+              currentTokens += chunkTokens;
+            }
+          }
+        }
+        cursor.continue();
+      } else {
+        resolve({ batch, ignoredCount, embeddedCount, chunkCount });
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 async function startEmbeddingLoop(id) {
   if (!config.embeddingsModel || config.embeddingsModel.trim() === "") return;
 
@@ -187,51 +235,27 @@ async function startEmbeddingLoop(id) {
       if (!data) break;
 
       // Always load chunks FRESH in the while loop to prevent race conditions
-      // where the user edited/overwrote the file mid-embedding
-      let chunks = await getFileChunks(id);
+      // Using cursor-based stream to bypass IPC limits and reduce massive RAM spikes
+      let batchData = await getNextChunkBatch(
+        id,
+        MAX_BATCH,
+        MAX_TOKENS,
+        CHUNK_LIMIT,
+      );
 
-      if (!chunks || chunks.length === 0) {
+      if (batchData.chunkCount === 0) {
         await refreshFileChunks(id);
-        chunks = await getFileChunks(id);
+        batchData = await getNextChunkBatch(
+          id,
+          MAX_BATCH,
+          MAX_TOKENS,
+          CHUNK_LIMIT,
+        );
         const m = files.find((f) => f.id === id);
         if (!m || !m.isEmbedding) break;
       }
 
-      const unEmbedded = chunks.filter((c) => !c.vector);
-
-      let ignoredCount = 0;
-      const validUnEmbedded = [];
-
-      // Filter out chunks that exceed token limits on the fly
-      for (const c of unEmbedded) {
-        const chunkStr =
-          typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
-        const chunkTokens = Math.ceil(chunkStr.length / 4);
-
-        if (chunkTokens > CHUNK_LIMIT || chunkTokens > MAX_TOKENS) {
-          ignoredCount++;
-        } else {
-          validUnEmbedded.push(c);
-        }
-      }
-
-      const batch = [];
-      let currentTokens = 0;
-
-      for (const c of validUnEmbedded) {
-        if (batch.length >= MAX_BATCH) break;
-
-        const chunkStr =
-          typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
-        const chunkTokens = Math.ceil(chunkStr.length / 4);
-
-        if (currentTokens + chunkTokens > MAX_TOKENS) {
-          break; // Batch is full based on total token limits
-        }
-
-        batch.push(c);
-        currentTokens += chunkTokens;
-      }
+      const { batch, ignoredCount } = batchData;
 
       if (batch.length === 0) {
         // If batch is 0, we either finished or the remaining chunks are permanently ignored
@@ -264,8 +288,8 @@ async function startEmbeddingLoop(id) {
         // Save ONLY the freshly processed chunk batches back to the DB to prevent massive rewrites
         await dbSetMultiple(updateEntries);
 
-        meta.embeddedCount = chunks.filter((c) => c.vector).length;
-        meta.chunkCount = chunks.length;
+        meta.embeddedCount = batchData.embeddedCount + batch.length;
+        meta.chunkCount = batchData.chunkCount;
 
         // Progress is computed as (Successfully Embedded + Ignored) / Total Chunks
         const processedCount = meta.embeddedCount + ignoredCount;

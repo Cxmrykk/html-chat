@@ -52,8 +52,20 @@ async function dbGetByPrefix(prefix) {
     const transaction = db.transaction(STORE_NAME, "readonly");
     const store = transaction.objectStore(STORE_NAME);
     const range = IDBKeyRange.bound(prefix, prefix + "\uffff");
-    const request = store.getAll(range);
-    request.onsuccess = () => resolve(request.result);
+
+    // Use a cursor instead of getAll to prevent Chromium IPC message size limits
+    // from crashing the browser when fetching very large arrays of embedded vectors.
+    const request = store.openCursor(range);
+    const results = [];
+    request.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        results.push(cursor.value);
+        cursor.continue();
+      } else {
+        resolve(results);
+      }
+    };
     request.onerror = () => reject(request.error);
   });
 }
