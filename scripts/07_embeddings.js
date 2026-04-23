@@ -87,12 +87,19 @@ async function refreshFileChunks(id) {
   let newChunks = [];
   let chunkIndex = 0;
 
-  for (const c of chunks) {
+  // Use a map to convert an O(N^2) operation to O(N) when evaluating chunks
+  const oldChunksMap = new Map();
+  for (const old of oldChunks) {
+    if (old.vector && !oldChunksMap.has(old.text)) {
+      oldChunksMap.set(old.text, old);
+    }
+  }
+
+  for (let i = 0; i < chunks.length; i++) {
+    const c = chunks[i];
     const stringified = typeof c === "string" ? c : JSON.stringify(c);
 
-    let existing = oldChunks.find(
-      (old) => old.text === stringified && old.vector,
-    );
+    let existing = oldChunksMap.get(stringified);
     if (!existing) changed = true;
 
     newChunks.push({
@@ -101,6 +108,9 @@ async function refreshFileChunks(id) {
       raw: c,
       vector: existing ? existing.vector : null,
     });
+
+    // Yield to the UI event loop to prevent blocking on massive files
+    if (i % 500 === 0) await new Promise((r) => setTimeout(r, 0));
   }
 
   if (oldChunks.length !== newChunks.length) changed = true;
@@ -129,7 +139,8 @@ async function refreshFileChunks(id) {
     const MAX_TOKENS = parseInt(config.chunkBatchMaxTokens) || 8192;
 
     let ignoredCount = 0;
-    for (const c of newChunks) {
+    for (let i = 0; i < newChunks.length; i++) {
+      const c = newChunks[i];
       if (!c.vector) {
         const chunkStr =
           typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
@@ -138,6 +149,7 @@ async function refreshFileChunks(id) {
           ignoredCount++;
         }
       }
+      if (i % 1000 === 0) await new Promise((r) => setTimeout(r, 0));
     }
 
     const processedCount = meta.embeddedCount + ignoredCount;
@@ -264,9 +276,7 @@ async function startEmbeddingLoop(id) {
         meta.isEmbedding = false;
         meta.embeddingSpeed = null;
         meta.embeddingEta = null;
-        renderFileList();
-        if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
-          renderApp(true);
+        updateFileProgressDOM(id);
         break;
       }
 
@@ -312,10 +322,8 @@ async function startEmbeddingLoop(id) {
         }
 
         await dbSet(`mf_filedata_${id}`, data);
-        saveState();
-        renderFileList();
-        if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
-          renderApp(true);
+        await dbSet("mf_files", files); // Avoid global saveState() chunk dump spam
+        updateFileProgressDOM(id); // Visually update progress without tearing down the DOM
 
         await new Promise((r) => setTimeout(r, 100)); // Yield to UI
       } catch (err) {
@@ -346,6 +354,8 @@ async function startEmbeddingLoop(id) {
     }
     saveState();
     renderFileList();
+    if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
+      renderApp(true);
   }
 }
 
@@ -466,9 +476,11 @@ async function executeEmbedMessage(msgIndex) {
             ? fileThreshold
             : msg.ragThreshold || 0.0;
 
-        validChunks.forEach((c) => {
+        for (let i = 0; i < validChunks.length; i++) {
+          const c = validChunks[i];
           c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
-        });
+          if (i % 500 === 0) await new Promise((r) => setTimeout(r, 0));
+        }
 
         let topChunks = validChunks.filter(
           (c) => !queryEmb || c.score >= threshold,
@@ -572,6 +584,9 @@ async function executeEmbedMessage(msgIndex) {
               });
             }
           }
+
+          // Yield if processing high counts of custom logic to prevent locking UI
+          if (j % 50 === 0) await new Promise((r) => setTimeout(r, 0));
         }
 
         finalChunksInternal.sort((a, b) => a.index - b.index);

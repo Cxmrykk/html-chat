@@ -96,6 +96,88 @@ function applyInputAreaState() {
   }
 }
 
+// Visually updates the File List progress elements without tearing down the DOM
+function updateFileProgressDOM(id) {
+  const f = files.find((meta) => meta.id === id);
+  if (!f) return;
+
+  const itemEl = document.querySelector(
+    `.chat-item[data-id="${id}"][data-type="file"]`,
+  );
+  if (itemEl) {
+    let statsEl = itemEl.querySelector(".file-progress-stats");
+    let barEl = itemEl.querySelector(".file-progress-bar");
+
+    if (f.isEmbedding && f.progress < 100) {
+      const speed = f.embeddingSpeed
+        ? `${f.embeddingSpeed.toFixed(1)} c/s`
+        : "...";
+      let eta = "...";
+      if (f.embeddingEta !== undefined && f.embeddingEta !== null) {
+        if (f.embeddingEta > 3600) {
+          const h = Math.floor(f.embeddingEta / 3600);
+          const m = Math.floor((f.embeddingEta % 3600) / 60);
+          const s = Math.round(f.embeddingEta % 60);
+          eta = `${h}h ${m}m ${s}s`;
+        } else if (f.embeddingEta > 60) {
+          const m = Math.floor(f.embeddingEta / 60);
+          const s = Math.round(f.embeddingEta % 60);
+          eta = `${m}m ${s}s`;
+        } else {
+          eta = `${Math.round(f.embeddingEta)}s`;
+        }
+      }
+      const pct =
+        f.exactProgress !== undefined
+          ? f.exactProgress.toFixed(1)
+          : (f.progress || 0).toFixed(1);
+
+      if (!statsEl) {
+        statsEl = document.createElement("div");
+        statsEl.className = "file-progress-stats";
+        statsEl.style.cssText =
+          "font-size: 0.75em; color: #666; text-align: left; margin-top: 2px;";
+        itemEl.insertBefore(statsEl, barEl || null);
+      }
+      statsEl.innerHTML = `<div>Progress: ${pct}% (${speed})</div><div>ETA: ${eta}</div>`;
+    } else {
+      if (statsEl) statsEl.remove();
+    }
+
+    if (barEl) {
+      const widthPct =
+        f.exactProgress !== undefined ? f.exactProgress : f.progress;
+      barEl.style.width = `${widthPct}%`;
+    }
+
+    const actionsEl = itemEl.querySelector(".chat-item-actions");
+    if (actionsEl) {
+      let embedBtn = actionsEl.querySelector('button[data-action="embed"]');
+      if (f.progress >= 100 && !embedBtn) {
+        embedBtn = document.createElement("button");
+        embedBtn.dataset.action = "embed";
+        embedBtn.title = "Insert Embedding";
+        embedBtn.textContent = "e";
+        actionsEl.insertBefore(embedBtn, actionsEl.firstChild);
+      } else if (f.progress < 100 && embedBtn) {
+        embedBtn.remove();
+      }
+    }
+  }
+
+  // Soft-update the Advanced RAG Settings page button toggle if it is currently being viewed
+  if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+    const toggleBtn = document.querySelector(
+      'button[onclick="toggleAdvancedEmbedding()"]',
+    );
+    if (toggleBtn) {
+      toggleBtn.textContent = f.isEmbedding
+        ? "⏸ Pause Embedding"
+        : "▶ Start Embedding";
+    }
+  }
+}
+
 function renderFileList() {
   const list = $("#file-list");
 
@@ -147,7 +229,7 @@ function renderFileList() {
               ? f.exactProgress.toFixed(1)
               : (f.progress || 0).toFixed(1);
           progressStats = `
-            <div style="font-size: 0.75em; color: #666; text-align: left; margin-top: 2px;">
+            <div class="file-progress-stats" style="font-size: 0.75em; color: #666; text-align: left; margin-top: 2px;">
               <div>Progress: ${pct}% (${speed})</div>
               <div>ETA: ${eta}</div>
             </div>`;

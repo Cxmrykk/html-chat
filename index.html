@@ -1802,12 +1802,19 @@
         let newChunks = [];
         let chunkIndex = 0;
 
-        for (const c of chunks) {
+        // Use a map to convert an O(N^2) operation to O(N) when evaluating chunks
+        const oldChunksMap = new Map();
+        for (const old of oldChunks) {
+          if (old.vector && !oldChunksMap.has(old.text)) {
+            oldChunksMap.set(old.text, old);
+          }
+        }
+
+        for (let i = 0; i < chunks.length; i++) {
+          const c = chunks[i];
           const stringified = typeof c === "string" ? c : JSON.stringify(c);
 
-          let existing = oldChunks.find(
-            (old) => old.text === stringified && old.vector,
-          );
+          let existing = oldChunksMap.get(stringified);
           if (!existing) changed = true;
 
           newChunks.push({
@@ -1816,6 +1823,9 @@
             raw: c,
             vector: existing ? existing.vector : null,
           });
+
+          // Yield to the UI event loop to prevent blocking on massive files
+          if (i % 500 === 0) await new Promise((r) => setTimeout(r, 0));
         }
 
         if (oldChunks.length !== newChunks.length) changed = true;
@@ -1844,7 +1854,8 @@
           const MAX_TOKENS = parseInt(config.chunkBatchMaxTokens) || 8192;
 
           let ignoredCount = 0;
-          for (const c of newChunks) {
+          for (let i = 0; i < newChunks.length; i++) {
+            const c = newChunks[i];
             if (!c.vector) {
               const chunkStr =
                 typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
@@ -1853,6 +1864,7 @@
                 ignoredCount++;
               }
             }
+            if (i % 1000 === 0) await new Promise((r) => setTimeout(r, 0));
           }
 
           const processedCount = meta.embeddedCount + ignoredCount;
@@ -1979,9 +1991,7 @@
               meta.isEmbedding = false;
               meta.embeddingSpeed = null;
               meta.embeddingEta = null;
-              renderFileList();
-              if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
-                renderApp(true);
+              updateFileProgressDOM(id);
               break;
             }
 
@@ -2027,10 +2037,8 @@
               }
 
               await dbSet(`mf_filedata_${id}`, data);
-              saveState();
-              renderFileList();
-              if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
-                renderApp(true);
+              await dbSet("mf_files", files); // Avoid global saveState() chunk dump spam
+              updateFileProgressDOM(id); // Visually update progress without tearing down the DOM
 
               await new Promise((r) => setTimeout(r, 100)); // Yield to UI
             } catch (err) {
@@ -2061,6 +2069,8 @@
           }
           saveState();
           renderFileList();
+          if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
+            renderApp(true);
         }
       }
 
@@ -2181,9 +2191,11 @@
                   ? fileThreshold
                   : msg.ragThreshold || 0.0;
 
-              validChunks.forEach((c) => {
+              for (let i = 0; i < validChunks.length; i++) {
+                const c = validChunks[i];
                 c.score = queryEmb ? cosSim(queryEmb, c.vector) : -c.index;
-              });
+                if (i % 500 === 0) await new Promise((r) => setTimeout(r, 0));
+              }
 
               let topChunks = validChunks.filter(
                 (c) => !queryEmb || c.score >= threshold,
@@ -2287,6 +2299,9 @@
                     });
                   }
                 }
+
+                // Yield if processing high counts of custom logic to prevent locking UI
+                if (j % 50 === 0) await new Promise((r) => setTimeout(r, 0));
               }
 
               finalChunksInternal.sort((a, b) => a.index - b.index);
@@ -3004,6 +3019,88 @@
         }
       }
 
+      // Visually updates the File List progress elements without tearing down the DOM
+      function updateFileProgressDOM(id) {
+        const f = files.find((meta) => meta.id === id);
+        if (!f) return;
+
+        const itemEl = document.querySelector(
+          `.chat-item[data-id="${id}"][data-type="file"]`,
+        );
+        if (itemEl) {
+          let statsEl = itemEl.querySelector(".file-progress-stats");
+          let barEl = itemEl.querySelector(".file-progress-bar");
+
+          if (f.isEmbedding && f.progress < 100) {
+            const speed = f.embeddingSpeed
+              ? `${f.embeddingSpeed.toFixed(1)} c/s`
+              : "...";
+            let eta = "...";
+            if (f.embeddingEta !== undefined && f.embeddingEta !== null) {
+              if (f.embeddingEta > 3600) {
+                const h = Math.floor(f.embeddingEta / 3600);
+                const m = Math.floor((f.embeddingEta % 3600) / 60);
+                const s = Math.round(f.embeddingEta % 60);
+                eta = `${h}h ${m}m ${s}s`;
+              } else if (f.embeddingEta > 60) {
+                const m = Math.floor(f.embeddingEta / 60);
+                const s = Math.round(f.embeddingEta % 60);
+                eta = `${m}m ${s}s`;
+              } else {
+                eta = `${Math.round(f.embeddingEta)}s`;
+              }
+            }
+            const pct =
+              f.exactProgress !== undefined
+                ? f.exactProgress.toFixed(1)
+                : (f.progress || 0).toFixed(1);
+
+            if (!statsEl) {
+              statsEl = document.createElement("div");
+              statsEl.className = "file-progress-stats";
+              statsEl.style.cssText =
+                "font-size: 0.75em; color: #666; text-align: left; margin-top: 2px;";
+              itemEl.insertBefore(statsEl, barEl || null);
+            }
+            statsEl.innerHTML = `<div>Progress: ${pct}% (${speed})</div><div>ETA: ${eta}</div>`;
+          } else {
+            if (statsEl) statsEl.remove();
+          }
+
+          if (barEl) {
+            const widthPct =
+              f.exactProgress !== undefined ? f.exactProgress : f.progress;
+            barEl.style.width = `${widthPct}%`;
+          }
+
+          const actionsEl = itemEl.querySelector(".chat-item-actions");
+          if (actionsEl) {
+            let embedBtn = actionsEl.querySelector('button[data-action="embed"]');
+            if (f.progress >= 100 && !embedBtn) {
+              embedBtn = document.createElement("button");
+              embedBtn.dataset.action = "embed";
+              embedBtn.title = "Insert Embedding";
+              embedBtn.textContent = "e";
+              actionsEl.insertBefore(embedBtn, actionsEl.firstChild);
+            } else if (f.progress < 100 && embedBtn) {
+              embedBtn.remove();
+            }
+          }
+        }
+
+        // Soft-update the Advanced RAG Settings page button toggle if it is currently being viewed
+        if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+          const toggleBtn = document.querySelector(
+            'button[onclick="toggleAdvancedEmbedding()"]',
+          );
+          if (toggleBtn) {
+            toggleBtn.textContent = f.isEmbedding
+              ? "⏸ Pause Embedding"
+              : "▶ Start Embedding";
+          }
+        }
+      }
+
       function renderFileList() {
         const list = $("#file-list");
 
@@ -3055,7 +3152,7 @@
                     ? f.exactProgress.toFixed(1)
                     : (f.progress || 0).toFixed(1);
                 progressStats = `
-                  <div style="font-size: 0.75em; color: #666; text-align: left; margin-top: 2px;">
+                  <div class="file-progress-stats" style="font-size: 0.75em; color: #666; text-align: left; margin-top: 2px;">
                     <div>Progress: ${pct}% (${speed})</div>
                     <div>ETA: ${eta}</div>
                   </div>`;
