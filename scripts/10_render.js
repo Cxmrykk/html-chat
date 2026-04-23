@@ -637,10 +637,7 @@ function renderCurrentChat(preserveScroll = false) {
     output: "htmlAndMathml",
     throwOnError: false,
   });
-
-  // Optimization: Only target valid Prism codeblocks to prevent freezing on full DOM traversals
-  const codeBlocks = container.querySelectorAll('pre code[class*="language-"]');
-  codeBlocks.forEach((block) => Prism.highlightElement(block));
+  Prism.highlightAllUnder(container);
 
   if (preserveScroll) container.scrollTop = prevScroll;
   else {

@@ -101,8 +101,6 @@ $("#chat-container").addEventListener("change", (e) => {
 
     chat.messages[index].role = e.target.value;
     saveState();
-
-    // Specifically target the exact message element instead of blowing away the whole chat
-    updateMessageInDOM(index);
+    renderApp(true);
   }
 });

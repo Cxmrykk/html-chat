@@ -93,31 +93,18 @@ function retryMessage(msgIndex) {
   const chat = chats.find((c) => c.id === currentChatId);
   const msg = chat.messages[msgIndex];
 
-  const container = $("#chat-container");
-  const msgs = container.querySelectorAll(".msg");
-
   if (msg.role === "file") {
     chat.messages = chat.messages.slice(0, msgIndex + 1);
     invalidateTokenCache();
     saveState();
-
-    // Soft DOM removal (prevents full thread-blocking render)
-    for (let i = 0; i < msgs.length; i++) {
-      const idx = parseInt(msgs[i].dataset.index, 10);
-      if (idx > msgIndex) msgs[i].remove();
-    }
+    renderCurrentChat();
     sendMessage();
   } else {
     $("#chat-input").value = msg.content;
     chat.messages = chat.messages.slice(0, msgIndex);
     invalidateTokenCache();
     saveState();
-
-    // Soft DOM removal
-    for (let i = 0; i < msgs.length; i++) {
-      const idx = parseInt(msgs[i].dataset.index, 10);
-      if (idx >= msgIndex) msgs[i].remove();
-    }
+    renderCurrentChat();
     sendMessage();
   }
 }
@@ -130,19 +117,7 @@ function deleteMessage(msgIndex) {
   chats.find((c) => c.id === currentChatId).messages.splice(msgIndex, 1);
   invalidateTokenCache();
   saveState();
-
-  // Soft DOM update to prevent lag and maintain text selection
-  const container = $("#chat-container");
-  const msgEl = container.querySelector(`.msg[data-index="${msgIndex}"]`);
-  if (msgEl) msgEl.remove();
-
-  const msgs = container.querySelectorAll(".msg");
-  msgs.forEach((el) => {
-    const idx = parseInt(el.dataset.index, 10);
-    if (idx > msgIndex) {
-      el.dataset.index = idx - 1;
-    }
-  });
+  renderCurrentChat();
 }
 
 async function handleUploadClick() {
@@ -233,11 +208,7 @@ async function toggleEmbedding(id) {
 
   saveState();
   renderFileList();
-
-  // Re-render ONLY if looking at the settings for this specific file
-  if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
-    renderCurrentChat(true);
-  }
+  renderApp(true);
 
   if (meta.isEmbedding) {
     // Wait for any previous loop to finish cleaning up if spam-clicked
