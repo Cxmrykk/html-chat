@@ -1372,18 +1372,31 @@
         const chat = chats.find((c) => c.id === currentChatId);
         const msg = chat.messages[msgIndex];
 
+        const container = $("#chat-container");
+        const msgs = container.querySelectorAll(".msg");
+
         if (msg.role === "file") {
           chat.messages = chat.messages.slice(0, msgIndex + 1);
           invalidateTokenCache();
           saveState();
-          renderCurrentChat();
+
+          // Soft DOM removal (prevents full thread-blocking render)
+          for (let i = 0; i < msgs.length; i++) {
+            const idx = parseInt(msgs[i].dataset.index, 10);
+            if (idx > msgIndex) msgs[i].remove();
+          }
           sendMessage();
         } else {
           $("#chat-input").value = msg.content;
           chat.messages = chat.messages.slice(0, msgIndex);
           invalidateTokenCache();
           saveState();
-          renderCurrentChat();
+
+          // Soft DOM removal
+          for (let i = 0; i < msgs.length; i++) {
+            const idx = parseInt(msgs[i].dataset.index, 10);
+            if (idx >= msgIndex) msgs[i].remove();
+          }
           sendMessage();
         }
       }
@@ -1396,7 +1409,19 @@
         chats.find((c) => c.id === currentChatId).messages.splice(msgIndex, 1);
         invalidateTokenCache();
         saveState();
-        renderCurrentChat();
+
+        // Soft DOM update to prevent lag and maintain text selection
+        const container = $("#chat-container");
+        const msgEl = container.querySelector(`.msg[data-index="${msgIndex}"]`);
+        if (msgEl) msgEl.remove();
+
+        const msgs = container.querySelectorAll(".msg");
+        msgs.forEach((el) => {
+          const idx = parseInt(el.dataset.index, 10);
+          if (idx > msgIndex) {
+            el.dataset.index = idx - 1;
+          }
+        });
       }
 
       async function handleUploadClick() {
@@ -1487,7 +1512,11 @@
 
         saveState();
         renderFileList();
-        renderApp(true);
+
+        // Re-render ONLY if looking at the settings for this specific file
+        if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+          renderCurrentChat(true);
+        }
 
         if (meta.isEmbedding) {
           // Wait for any previous loop to finish cleaning up if spam-clicked
@@ -2671,7 +2700,6 @@
 
           cleanMessages = await resolveAllMessages(cleanMessages, btn);
 
-          // After resolving file embeddings, we wait on the API. Set state to Thinking...
           btn.textContent = isAutoLoop
             ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
             : "Thinking...";
@@ -2714,7 +2742,6 @@
                 `HTTP ${response.status}`,
             );
 
-          // Target API Responded. Generating text...
           btn.textContent = isAutoLoop
             ? `Generating (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
             : "Generating...";
@@ -2761,8 +2788,8 @@
                 chat.messages[msgIndex].content = reply;
 
                 const now = Date.now();
-                // Throttle UI rendering to ~10fps to avoid blocking thread
-                if (now - lastRenderTime > 100) {
+                // Throttle UI rendering to ~6fps (150ms) to ensure smooth scrolling
+                if (now - lastRenderTime > 150) {
                   updateMessageContentInDOM(msgIndex, reply, false);
                   lastRenderTime = now;
                 }
@@ -3560,7 +3587,10 @@
           output: "htmlAndMathml",
           throwOnError: false,
         });
-        Prism.highlightAllUnder(container);
+
+        // Optimization: Only target valid Prism codeblocks to prevent freezing on full DOM traversals
+        const codeBlocks = container.querySelectorAll('pre code[class*="language-"]');
+        codeBlocks.forEach((block) => Prism.highlightElement(block));
 
         if (preserveScroll) container.scrollTop = prevScroll;
         else {
@@ -3679,7 +3709,9 @@
 
           chat.messages[index].role = e.target.value;
           saveState();
-          renderApp(true);
+
+          // Specifically target the exact message element instead of blowing away the whole chat
+          updateMessageInDOM(index);
         }
       });
 

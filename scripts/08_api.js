@@ -123,7 +123,6 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
 
     cleanMessages = await resolveAllMessages(cleanMessages, btn);
 
-    // After resolving file embeddings, we wait on the API. Set state to Thinking...
     btn.textContent = isAutoLoop
       ? `Thinking (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
       : "Thinking...";
@@ -166,7 +165,6 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
           `HTTP ${response.status}`,
       );
 
-    // Target API Responded. Generating text...
     btn.textContent = isAutoLoop
       ? `Generating (Loop ${autoLoopDepth}/${MAX_LOOPS})...`
       : "Generating...";
@@ -213,8 +211,8 @@ async function sendMessage(autoLoopDepth = 0, skipApi = false) {
           chat.messages[msgIndex].content = reply;
 
           const now = Date.now();
-          // Throttle UI rendering to ~10fps to avoid blocking thread
-          if (now - lastRenderTime > 100) {
+          // Throttle UI rendering to ~6fps (150ms) to ensure smooth scrolling
+          if (now - lastRenderTime > 150) {
             updateMessageContentInDOM(msgIndex, reply, false);
             lastRenderTime = now;
           }
