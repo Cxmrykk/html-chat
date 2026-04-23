@@ -1,4 +1,4 @@
-// --- CONFIGURATION & SUPER SECRET SETTINGS ---
+// --- SETTINGS LOGIC & TOGGLES ---
 function saveConfig() {
   const oldRAG = config.embeddingsModel;
 
@@ -19,7 +19,52 @@ function saveConfig() {
   updateModelDropdown();
   renderApp(true);
   updateTokenCount();
-  alert("Settings saved, don't fuck them up.");
+  alert("Settings saved.");
+}
+
+function suspendSuperSecretSettings() {
+  if (isSuperSecretSettingsOpen) {
+    if (activeSuperSecretSetting)
+      uncommittedSuperSecretValue = $("#chat-input").value;
+    isSuperSecretSettingsOpen = false;
+  }
+  if (isAdvancedRAGSettingsOpen) {
+    if (activeAdvancedRAGSetting)
+      uncommittedAdvancedRAGValue = $("#chat-input").value;
+    isAdvancedRAGSettingsOpen = false;
+  }
+}
+
+function toggleSuperSecretSettings() {
+  if (isAdvancedRAGSettingsOpen) {
+    if (activeAdvancedRAGSetting)
+      uncommittedAdvancedRAGValue = $("#chat-input").value;
+    isAdvancedRAGSettingsOpen = false;
+    activeAdvancedRAGSetting = null;
+    activeAdvancedRAGFileId = null;
+  }
+
+  isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
+  if (!isSuperSecretSettingsOpen) {
+    activeSuperSecretSetting = null;
+    uncommittedSuperSecretValue = null;
+    $("#chat-input").value = "";
+  } else {
+    if (activeSuperSecretSetting) {
+      const area = $("#chat-input");
+      if (uncommittedSuperSecretValue !== null) {
+        area.value = uncommittedSuperSecretValue;
+      } else {
+        area.value =
+          config[activeSuperSecretSetting] !== "" &&
+          config[activeSuperSecretSetting] !== undefined
+            ? config[activeSuperSecretSetting]
+            : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+      }
+    }
+  }
+  renderCurrentChat();
+  applyInputAreaState();
 }
 
 function selectSuperSecretSetting(key) {
@@ -36,34 +81,32 @@ function selectSuperSecretSetting(key) {
 
 function saveSuperSecretSetting() {
   if (isAdvancedRAGSettingsOpen) return saveAdvancedRAGSetting();
-
   if (!activeSuperSecretSetting) return;
+
   let val = $("#chat-input").value;
   const key = activeSuperSecretSetting;
   const oldRAG = config.embeddingsModel;
 
   if (
-    key === "godModePrompt" ||
-    key === "embeddingsModel" ||
-    key === "embeddingsUrl" ||
-    key === "embeddingsKey" ||
-    key === "streamResponse" ||
-    key === "fileWrapperFunc"
+    [
+      "godModePrompt",
+      "embeddingsModel",
+      "embeddingsUrl",
+      "embeddingsKey",
+      "streamResponse",
+      "fileWrapperFunc",
+    ].includes(key)
   ) {
     config[key] = val;
   } else {
-    if (val.trim() === "") {
-      config[key] = "";
-    } else {
+    if (val.trim() === "") config[key] = "";
+    else {
       const parsed = parseFloat(val);
       config[key] = isNaN(parsed) ? "" : parsed;
     }
   }
 
-  const newRAG = config.embeddingsModel;
-  if (oldRAG !== newRAG) {
-    resetAllFileEmbeddings();
-  }
+  if (oldRAG !== config.embeddingsModel) resetAllFileEmbeddings();
 
   saveState();
   activeSuperSecretSetting = null;
@@ -74,14 +117,13 @@ function saveSuperSecretSetting() {
 
 function resetSuperSecretSetting() {
   if (isAdvancedRAGSettingsOpen) return resetAdvancedRAGSetting();
-
   if (!activeSuperSecretSetting) return;
+
   const key = activeSuperSecretSetting;
   const oldRAG = config.embeddingsModel;
   config[key] = SETTING_DEFAULTS[key].default;
 
-  const newRAG = config.embeddingsModel;
-  if (oldRAG !== newRAG) resetAllFileEmbeddings();
+  if (oldRAG !== config.embeddingsModel) resetAllFileEmbeddings();
 
   saveState();
   activeSuperSecretSetting = null;
@@ -92,37 +134,89 @@ function resetSuperSecretSetting() {
 
 function cancelSuperSecretSetting() {
   if (isAdvancedRAGSettingsOpen) return cancelAdvancedRAGSetting();
-
   activeSuperSecretSetting = null;
   uncommittedSuperSecretValue = null;
   renderApp(true);
 }
 
 function resetAllSuperSecretSettings() {
-  if (confirm("Reset ALL Advanced parameters to default?")) {
-    const oldRAG = config.embeddingsModel;
+  if (!confirm("Reset ALL Advanced parameters to default?")) return;
+  const oldRAG = config.embeddingsModel;
 
-    for (let key in SETTING_DEFAULTS) {
-      config[key] = SETTING_DEFAULTS[key].default;
-    }
-
-    const newRAG = config.embeddingsModel;
-    if (oldRAG !== newRAG) resetAllFileEmbeddings();
-
-    saveState();
-    if (activeSuperSecretSetting) {
-      uncommittedSuperSecretValue = null;
-      $("#chat-input").value =
-        config[activeSuperSecretSetting] !== undefined
-          ? config[activeSuperSecretSetting]
-          : SETTING_DEFAULTS[activeSuperSecretSetting].default;
-    }
-    renderApp(true);
-    updateTokenCount();
+  for (let key in SETTING_DEFAULTS) {
+    config[key] = SETTING_DEFAULTS[key].default;
   }
+
+  if (oldRAG !== config.embeddingsModel) resetAllFileEmbeddings();
+
+  saveState();
+  if (activeSuperSecretSetting) {
+    uncommittedSuperSecretValue = null;
+    $("#chat-input").value =
+      config[activeSuperSecretSetting] !== undefined
+        ? config[activeSuperSecretSetting]
+        : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+  }
+  renderApp(true);
+  updateTokenCount();
 }
 
-// --- ADVANCED RAG SPECIFIC FUNCTIONS ---
+async function toggleAdvancedRAGSettings(id = null) {
+  if (isSuperSecretSettingsOpen) toggleSuperSecretSettings();
+
+  if (id === null && isAdvancedRAGSettingsOpen) {
+    if (activeAdvancedRAGSetting)
+      uncommittedAdvancedRAGValue = $("#chat-input").value;
+    isAdvancedRAGSettingsOpen = false;
+    $("#chat-input").value = "";
+    renderCurrentChat();
+    applyInputAreaState();
+    return;
+  }
+
+  if (id !== null) {
+    if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+      if (activeAdvancedRAGSetting)
+        uncommittedAdvancedRAGValue = $("#chat-input").value;
+      isAdvancedRAGSettingsOpen = false;
+      $("#chat-input").value = "";
+    } else {
+      if (isAdvancedRAGSettingsOpen && activeAdvancedRAGSetting)
+        uncommittedAdvancedRAGValue = $("#chat-input").value;
+
+      const isReopeningSame = activeAdvancedRAGFileId === id;
+      isAdvancedRAGSettingsOpen = true;
+      activeAdvancedRAGFileId = id;
+
+      if (!isReopeningSame) {
+        activeAdvancedRAGSetting = null;
+        uncommittedAdvancedRAGValue = null;
+        $("#chat-input").value = "";
+      } else if (activeAdvancedRAGSetting) {
+        const area = $("#chat-input");
+        if (uncommittedAdvancedRAGValue !== null)
+          area.value = uncommittedAdvancedRAGValue;
+        else {
+          if (activeAdvancedRAGSetting === "fileText") {
+            const data = await dbGet(`mf_filedata_${id}`);
+            area.value = data ? data.text : "";
+          } else {
+            const meta = files.find((f) => f.id === id);
+            area.value =
+              meta &&
+              meta[activeAdvancedRAGSetting] !== undefined &&
+              meta[activeAdvancedRAGSetting] !== ""
+                ? meta[activeAdvancedRAGSetting]
+                : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
+          }
+        }
+      }
+    }
+  }
+  renderCurrentChat();
+  applyInputAreaState();
+}
+
 async function selectAdvancedRAGSetting(key) {
   activeAdvancedRAGSetting = key;
   uncommittedAdvancedRAGValue = null;
@@ -133,12 +227,11 @@ async function selectAdvancedRAGSetting(key) {
     area.value = data ? data.text : "";
   } else {
     const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
-    if (meta) {
+    if (meta)
       area.value =
         meta[key] !== undefined && meta[key] !== ""
           ? meta[key]
           : FILE_SETTING_DEFAULTS[key].default;
-    }
   }
   renderApp(true);
   area.focus();
@@ -175,17 +268,15 @@ async function saveAdvancedRAGSetting() {
     ) {
       meta[key] = val;
     } else {
-      if (val.trim() === "") {
-        meta[key] = "";
-      } else {
+      if (val.trim() === "") meta[key] = "";
+      else {
         const parsed = parseFloat(val);
         meta[key] = isNaN(parsed) ? "" : parsed;
       }
     }
 
-    if (requiresReembed && oldVal !== meta[key]) {
+    if (requiresReembed && oldVal !== meta[key])
       await refreshFileChunks(meta.id);
-    }
   }
 
   saveState();
@@ -205,12 +296,9 @@ async function resetAdvancedRAGSetting() {
 
   const requiresReembed = ["customChunks", "customChunker"].includes(key);
   const oldVal = meta[key];
-
   meta[key] = FILE_SETTING_DEFAULTS[key].default;
 
-  if (requiresReembed && oldVal !== meta[key]) {
-    await refreshFileChunks(meta.id);
-  }
+  if (requiresReembed && oldVal !== meta[key]) await refreshFileChunks(meta.id);
 
   saveState();
   activeAdvancedRAGSetting = null;
@@ -227,42 +315,41 @@ function cancelAdvancedRAGSetting() {
 
 async function resetAllAdvancedRAGSettings() {
   if (!activeAdvancedRAGFileId) return;
-  if (confirm("Reset ALL Advanced RAG parameters to default for this file?")) {
-    const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
-    if (!meta) return;
+  if (!confirm("Reset ALL Advanced RAG parameters to default for this file?"))
+    return;
 
-    let requiresReembed = false;
-    for (let key in FILE_SETTING_DEFAULTS) {
-      if (key === "fileText") continue;
-      if (
-        ["customChunks", "customChunker"].includes(key) &&
-        meta[key] !== undefined &&
-        meta[key] !== "" &&
-        meta[key] !== FILE_SETTING_DEFAULTS[key].default
-      ) {
-        requiresReembed = true;
-      }
-      meta[key] = FILE_SETTING_DEFAULTS[key].default;
-    }
+  const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+  if (!meta) return;
 
-    if (requiresReembed) {
-      await refreshFileChunks(meta.id);
+  let requiresReembed = false;
+  for (let key in FILE_SETTING_DEFAULTS) {
+    if (key === "fileText") continue;
+    if (
+      ["customChunks", "customChunker"].includes(key) &&
+      meta[key] !== undefined &&
+      meta[key] !== "" &&
+      meta[key] !== FILE_SETTING_DEFAULTS[key].default
+    ) {
+      requiresReembed = true;
     }
-
-    saveState();
-    if (activeAdvancedRAGSetting) {
-      uncommittedAdvancedRAGValue = null;
-      if (activeAdvancedRAGSetting === "fileText") {
-        const data = await dbGet(`mf_filedata_${meta.id}`);
-        $("#chat-input").value = data ? data.text : "";
-      } else {
-        $("#chat-input").value =
-          meta[activeAdvancedRAGSetting] !== undefined
-            ? meta[activeAdvancedRAGSetting]
-            : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
-      }
-    }
-    renderApp(true);
-    updateTokenCount();
+    meta[key] = FILE_SETTING_DEFAULTS[key].default;
   }
+
+  if (requiresReembed) await refreshFileChunks(meta.id);
+
+  saveState();
+  if (activeAdvancedRAGSetting) {
+    uncommittedAdvancedRAGValue = null;
+    if (activeAdvancedRAGSetting === "fileText") {
+      const data = await dbGet(`mf_filedata_${meta.id}`);
+      $("#chat-input").value = data ? data.text : "";
+    } else {
+      $("#chat-input").value =
+        meta[activeAdvancedRAGSetting] !== undefined
+          ? meta[activeAdvancedRAGSetting]
+          : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
+    }
+  }
+  renderApp(true);
+  updateTokenCount();
 }

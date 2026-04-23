@@ -936,7 +936,7 @@
         }
       }
 
-      // --- CONFIGURATION & SUPER SECRET SETTINGS ---
+      // --- SETTINGS LOGIC & TOGGLES ---
       function saveConfig() {
         const oldRAG = config.embeddingsModel;
 
@@ -957,7 +957,52 @@
         updateModelDropdown();
         renderApp(true);
         updateTokenCount();
-        alert("Settings saved, don't fuck them up.");
+        alert("Settings saved.");
+      }
+
+      function suspendSuperSecretSettings() {
+        if (isSuperSecretSettingsOpen) {
+          if (activeSuperSecretSetting)
+            uncommittedSuperSecretValue = $("#chat-input").value;
+          isSuperSecretSettingsOpen = false;
+        }
+        if (isAdvancedRAGSettingsOpen) {
+          if (activeAdvancedRAGSetting)
+            uncommittedAdvancedRAGValue = $("#chat-input").value;
+          isAdvancedRAGSettingsOpen = false;
+        }
+      }
+
+      function toggleSuperSecretSettings() {
+        if (isAdvancedRAGSettingsOpen) {
+          if (activeAdvancedRAGSetting)
+            uncommittedAdvancedRAGValue = $("#chat-input").value;
+          isAdvancedRAGSettingsOpen = false;
+          activeAdvancedRAGSetting = null;
+          activeAdvancedRAGFileId = null;
+        }
+
+        isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
+        if (!isSuperSecretSettingsOpen) {
+          activeSuperSecretSetting = null;
+          uncommittedSuperSecretValue = null;
+          $("#chat-input").value = "";
+        } else {
+          if (activeSuperSecretSetting) {
+            const area = $("#chat-input");
+            if (uncommittedSuperSecretValue !== null) {
+              area.value = uncommittedSuperSecretValue;
+            } else {
+              area.value =
+                config[activeSuperSecretSetting] !== "" &&
+                config[activeSuperSecretSetting] !== undefined
+                  ? config[activeSuperSecretSetting]
+                  : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+            }
+          }
+        }
+        renderCurrentChat();
+        applyInputAreaState();
       }
 
       function selectSuperSecretSetting(key) {
@@ -974,34 +1019,32 @@
 
       function saveSuperSecretSetting() {
         if (isAdvancedRAGSettingsOpen) return saveAdvancedRAGSetting();
-
         if (!activeSuperSecretSetting) return;
+
         let val = $("#chat-input").value;
         const key = activeSuperSecretSetting;
         const oldRAG = config.embeddingsModel;
 
         if (
-          key === "godModePrompt" ||
-          key === "embeddingsModel" ||
-          key === "embeddingsUrl" ||
-          key === "embeddingsKey" ||
-          key === "streamResponse" ||
-          key === "fileWrapperFunc"
+          [
+            "godModePrompt",
+            "embeddingsModel",
+            "embeddingsUrl",
+            "embeddingsKey",
+            "streamResponse",
+            "fileWrapperFunc",
+          ].includes(key)
         ) {
           config[key] = val;
         } else {
-          if (val.trim() === "") {
-            config[key] = "";
-          } else {
+          if (val.trim() === "") config[key] = "";
+          else {
             const parsed = parseFloat(val);
             config[key] = isNaN(parsed) ? "" : parsed;
           }
         }
 
-        const newRAG = config.embeddingsModel;
-        if (oldRAG !== newRAG) {
-          resetAllFileEmbeddings();
-        }
+        if (oldRAG !== config.embeddingsModel) resetAllFileEmbeddings();
 
         saveState();
         activeSuperSecretSetting = null;
@@ -1012,14 +1055,13 @@
 
       function resetSuperSecretSetting() {
         if (isAdvancedRAGSettingsOpen) return resetAdvancedRAGSetting();
-
         if (!activeSuperSecretSetting) return;
+
         const key = activeSuperSecretSetting;
         const oldRAG = config.embeddingsModel;
         config[key] = SETTING_DEFAULTS[key].default;
 
-        const newRAG = config.embeddingsModel;
-        if (oldRAG !== newRAG) resetAllFileEmbeddings();
+        if (oldRAG !== config.embeddingsModel) resetAllFileEmbeddings();
 
         saveState();
         activeSuperSecretSetting = null;
@@ -1030,37 +1072,89 @@
 
       function cancelSuperSecretSetting() {
         if (isAdvancedRAGSettingsOpen) return cancelAdvancedRAGSetting();
-
         activeSuperSecretSetting = null;
         uncommittedSuperSecretValue = null;
         renderApp(true);
       }
 
       function resetAllSuperSecretSettings() {
-        if (confirm("Reset ALL Advanced parameters to default?")) {
-          const oldRAG = config.embeddingsModel;
+        if (!confirm("Reset ALL Advanced parameters to default?")) return;
+        const oldRAG = config.embeddingsModel;
 
-          for (let key in SETTING_DEFAULTS) {
-            config[key] = SETTING_DEFAULTS[key].default;
-          }
-
-          const newRAG = config.embeddingsModel;
-          if (oldRAG !== newRAG) resetAllFileEmbeddings();
-
-          saveState();
-          if (activeSuperSecretSetting) {
-            uncommittedSuperSecretValue = null;
-            $("#chat-input").value =
-              config[activeSuperSecretSetting] !== undefined
-                ? config[activeSuperSecretSetting]
-                : SETTING_DEFAULTS[activeSuperSecretSetting].default;
-          }
-          renderApp(true);
-          updateTokenCount();
+        for (let key in SETTING_DEFAULTS) {
+          config[key] = SETTING_DEFAULTS[key].default;
         }
+
+        if (oldRAG !== config.embeddingsModel) resetAllFileEmbeddings();
+
+        saveState();
+        if (activeSuperSecretSetting) {
+          uncommittedSuperSecretValue = null;
+          $("#chat-input").value =
+            config[activeSuperSecretSetting] !== undefined
+              ? config[activeSuperSecretSetting]
+              : SETTING_DEFAULTS[activeSuperSecretSetting].default;
+        }
+        renderApp(true);
+        updateTokenCount();
       }
 
-      // --- ADVANCED RAG SPECIFIC FUNCTIONS ---
+      async function toggleAdvancedRAGSettings(id = null) {
+        if (isSuperSecretSettingsOpen) toggleSuperSecretSettings();
+
+        if (id === null && isAdvancedRAGSettingsOpen) {
+          if (activeAdvancedRAGSetting)
+            uncommittedAdvancedRAGValue = $("#chat-input").value;
+          isAdvancedRAGSettingsOpen = false;
+          $("#chat-input").value = "";
+          renderCurrentChat();
+          applyInputAreaState();
+          return;
+        }
+
+        if (id !== null) {
+          if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+            if (activeAdvancedRAGSetting)
+              uncommittedAdvancedRAGValue = $("#chat-input").value;
+            isAdvancedRAGSettingsOpen = false;
+            $("#chat-input").value = "";
+          } else {
+            if (isAdvancedRAGSettingsOpen && activeAdvancedRAGSetting)
+              uncommittedAdvancedRAGValue = $("#chat-input").value;
+
+            const isReopeningSame = activeAdvancedRAGFileId === id;
+            isAdvancedRAGSettingsOpen = true;
+            activeAdvancedRAGFileId = id;
+
+            if (!isReopeningSame) {
+              activeAdvancedRAGSetting = null;
+              uncommittedAdvancedRAGValue = null;
+              $("#chat-input").value = "";
+            } else if (activeAdvancedRAGSetting) {
+              const area = $("#chat-input");
+              if (uncommittedAdvancedRAGValue !== null)
+                area.value = uncommittedAdvancedRAGValue;
+              else {
+                if (activeAdvancedRAGSetting === "fileText") {
+                  const data = await dbGet(`mf_filedata_${id}`);
+                  area.value = data ? data.text : "";
+                } else {
+                  const meta = files.find((f) => f.id === id);
+                  area.value =
+                    meta &&
+                    meta[activeAdvancedRAGSetting] !== undefined &&
+                    meta[activeAdvancedRAGSetting] !== ""
+                      ? meta[activeAdvancedRAGSetting]
+                      : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
+                }
+              }
+            }
+          }
+        }
+        renderCurrentChat();
+        applyInputAreaState();
+      }
+
       async function selectAdvancedRAGSetting(key) {
         activeAdvancedRAGSetting = key;
         uncommittedAdvancedRAGValue = null;
@@ -1071,12 +1165,11 @@
           area.value = data ? data.text : "";
         } else {
           const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
-          if (meta) {
+          if (meta)
             area.value =
               meta[key] !== undefined && meta[key] !== ""
                 ? meta[key]
                 : FILE_SETTING_DEFAULTS[key].default;
-          }
         }
         renderApp(true);
         area.focus();
@@ -1113,17 +1206,15 @@
           ) {
             meta[key] = val;
           } else {
-            if (val.trim() === "") {
-              meta[key] = "";
-            } else {
+            if (val.trim() === "") meta[key] = "";
+            else {
               const parsed = parseFloat(val);
               meta[key] = isNaN(parsed) ? "" : parsed;
             }
           }
 
-          if (requiresReembed && oldVal !== meta[key]) {
+          if (requiresReembed && oldVal !== meta[key])
             await refreshFileChunks(meta.id);
-          }
         }
 
         saveState();
@@ -1143,12 +1234,9 @@
 
         const requiresReembed = ["customChunks", "customChunker"].includes(key);
         const oldVal = meta[key];
-
         meta[key] = FILE_SETTING_DEFAULTS[key].default;
 
-        if (requiresReembed && oldVal !== meta[key]) {
-          await refreshFileChunks(meta.id);
-        }
+        if (requiresReembed && oldVal !== meta[key]) await refreshFileChunks(meta.id);
 
         saveState();
         activeAdvancedRAGSetting = null;
@@ -1165,134 +1253,46 @@
 
       async function resetAllAdvancedRAGSettings() {
         if (!activeAdvancedRAGFileId) return;
-        if (confirm("Reset ALL Advanced RAG parameters to default for this file?")) {
-          const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
-          if (!meta) return;
+        if (!confirm("Reset ALL Advanced RAG parameters to default for this file?"))
+          return;
 
-          let requiresReembed = false;
-          for (let key in FILE_SETTING_DEFAULTS) {
-            if (key === "fileText") continue;
-            if (
-              ["customChunks", "customChunker"].includes(key) &&
-              meta[key] !== undefined &&
-              meta[key] !== "" &&
-              meta[key] !== FILE_SETTING_DEFAULTS[key].default
-            ) {
-              requiresReembed = true;
-            }
-            meta[key] = FILE_SETTING_DEFAULTS[key].default;
-          }
+        const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+        if (!meta) return;
 
-          if (requiresReembed) {
-            await refreshFileChunks(meta.id);
+        let requiresReembed = false;
+        for (let key in FILE_SETTING_DEFAULTS) {
+          if (key === "fileText") continue;
+          if (
+            ["customChunks", "customChunker"].includes(key) &&
+            meta[key] !== undefined &&
+            meta[key] !== "" &&
+            meta[key] !== FILE_SETTING_DEFAULTS[key].default
+          ) {
+            requiresReembed = true;
           }
-
-          saveState();
-          if (activeAdvancedRAGSetting) {
-            uncommittedAdvancedRAGValue = null;
-            if (activeAdvancedRAGSetting === "fileText") {
-              const data = await dbGet(`mf_filedata_${meta.id}`);
-              $("#chat-input").value = data ? data.text : "";
-            } else {
-              $("#chat-input").value =
-                meta[activeAdvancedRAGSetting] !== undefined
-                  ? meta[activeAdvancedRAGSetting]
-                  : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
-            }
-          }
-          renderApp(true);
-          updateTokenCount();
+          meta[key] = FILE_SETTING_DEFAULTS[key].default;
         }
-      }
 
-      // --- IMPORT & EXPORT JSON ---
-      function exportChats() {
-        const dataStr = JSON.stringify(chats, null, 2);
-        const blob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `html-chat-export-${Date.now()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
+        if (requiresReembed) await refreshFileChunks(meta.id);
 
-      function exportSingleChat(id) {
-        const chat = chats.find((c) => c.id === id);
-        if (!chat) return;
-
-        const dataStr = JSON.stringify([chat], null, 2);
-        const blob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `chat-timestamp-${chat.id}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-
-      function importChats() {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = ".json";
-        input.onchange = (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          const reader = new FileReader();
-          reader.onload = async (event) => {
-            try {
-              const importedChats = JSON.parse(event.target.result);
-              if (!Array.isArray(importedChats))
-                throw new Error("Invalid format: expected an array of chats.");
-
-              let addedCount = 0;
-              const existingIds = new Set(chats.map((c) => c.id));
-
-              for (const chat of importedChats) {
-                if (!chat.id || !chat.messages) continue;
-                if (!existingIds.has(chat.id)) {
-                  chats.push(chat);
-                  existingIds.add(chat.id);
-                  await dbSet(`mf_chat_${chat.id}`, chat);
-                  addedCount++;
-                }
-              }
-
-              chats.sort((a, b) => Number(b.id) - Number(a.id));
-              if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
-
-              saveState();
-              renderApp();
-              alert(`Successfully imported ${addedCount} new chat(s).`);
-            } catch (err) {
-              alert("Failed to import chats: " + err.message);
-            }
-          };
-          reader.readAsText(file);
-        };
-        input.click();
-      }
-
-      // --- CHAT & FILE ACTIONS (CRUD) ---
-      function suspendSuperSecretSettings() {
-        if (isSuperSecretSettingsOpen) {
-          if (activeSuperSecretSetting) {
-            uncommittedSuperSecretValue = $("#chat-input").value;
+        saveState();
+        if (activeAdvancedRAGSetting) {
+          uncommittedAdvancedRAGValue = null;
+          if (activeAdvancedRAGSetting === "fileText") {
+            const data = await dbGet(`mf_filedata_${meta.id}`);
+            $("#chat-input").value = data ? data.text : "";
+          } else {
+            $("#chat-input").value =
+              meta[activeAdvancedRAGSetting] !== undefined
+                ? meta[activeAdvancedRAGSetting]
+                : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
           }
-          isSuperSecretSettingsOpen = false;
         }
-        if (isAdvancedRAGSettingsOpen) {
-          if (activeAdvancedRAGSetting) {
-            uncommittedAdvancedRAGValue = $("#chat-input").value;
-          }
-          isAdvancedRAGSettingsOpen = false;
-        }
+        renderApp(true);
+        updateTokenCount();
       }
 
+      // --- CHAT ACTIONS (CRUD) ---
       function handleNewChatClick(e) {
         if (e.altKey) {
           e.preventDefault();
@@ -1367,38 +1367,7 @@
         renderApp();
       }
 
-      function retryMessage(msgIndex) {
-        resetEditState();
-        const chat = chats.find((c) => c.id === currentChatId);
-        const msg = chat.messages[msgIndex];
-
-        if (msg.role === "file") {
-          chat.messages = chat.messages.slice(0, msgIndex + 1);
-          invalidateTokenCache();
-          saveState();
-          renderCurrentChat();
-          sendMessage();
-        } else {
-          $("#chat-input").value = msg.content;
-          chat.messages = chat.messages.slice(0, msgIndex);
-          invalidateTokenCache();
-          saveState();
-          renderCurrentChat();
-          sendMessage();
-        }
-      }
-
-      function deleteMessage(msgIndex) {
-        if (editingMessageIndex === msgIndex) cancelGlobalEdit();
-        else if (editingMessageIndex !== null && editingMessageIndex > msgIndex) {
-          editingMessageIndex--;
-        }
-        chats.find((c) => c.id === currentChatId).messages.splice(msgIndex, 1);
-        invalidateTokenCache();
-        saveState();
-        renderCurrentChat();
-      }
-
+      // --- FILE ACTIONS (CRUD) ---
       async function handleUploadClick() {
         const picked = await pickFiles(true);
         if (!picked || !picked.length) return;
@@ -1424,9 +1393,8 @@
         if (!meta) {
           let baseName = name;
           let counter = 1;
-          while (files.some((f) => f.name === name)) {
+          while (files.some((f) => f.name === name))
             name = `${baseName} (${counter++})`;
-          }
           meta = {
             id,
             name,
@@ -1452,93 +1420,106 @@
       }
 
       async function deleteFile(id) {
-        if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
+        if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
           toggleAdvancedRAGSettings(null);
-        }
         files = files.filter((f) => f.id !== id);
-
-        // Clean up normalized records
         await dbDelete(`mf_filedata_${id}`);
         await dbDeleteByPrefix(`mf_chunk_${id}_`);
-
         saveState();
         renderFileList();
       }
 
-      async function toggleEmbedding(id) {
-        const meta = files.find((f) => f.id === id);
+      async function appendFileMessage(fileId, mode = "full") {
+        const meta = files.find((f) => f.id === fileId);
         if (!meta) return;
-        if (!config.embeddingsModel || config.embeddingsModel.trim() === "") {
-          alert("Please configure an embeddings model in Settings first.");
-          return;
-        }
+        suspendSuperSecretSettings();
+        resetEditState();
 
-        meta.isEmbedding = !meta.isEmbedding;
+        if (!currentChatId) newChat();
+        const chat = chats.find((c) => c.id === currentChatId);
 
-        if (!meta.isEmbedding) {
-          // Abort active fetch requests cleanly when pausing
-          if (embeddingAbortControllers[id]) {
-            embeddingAbortControllers[id].abort();
-            delete embeddingAbortControllers[id];
+        let approxTokens = Math.ceil((meta.textLength || 0) / 4);
+        let content = "";
+
+        if (mode === "full") {
+          const data = await dbGet(`mf_filedata_${meta.id}`);
+          const fileText = data ? data.text : "";
+
+          let wrapperFnCode =
+            meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
+              ? meta.fileWrapperFunc
+              : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
+                ? config.fileWrapperFunc
+                : SETTING_DEFAULTS.fileWrapperFunc.default;
+
+          let wrapperFn;
+          try {
+            wrapperFn = new AsyncFunction("fileContent", "fileName", wrapperFnCode);
+          } catch (e) {
+            wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
           }
-          meta.embeddingSpeed = null;
-          meta.embeddingEta = null;
+
+          content = await wrapperFn(fileText, meta.name);
+          approxTokens = Math.ceil(content.length / 4);
         }
 
+        chat.messages.push({
+          role: "file",
+          fileId: meta.id,
+          fileName: meta.name,
+          prompt: "",
+          mode: mode,
+          approxTokens: approxTokens,
+          content: content,
+          maxTokens: parseInt(config.maxRagTokens, 10) || 5000,
+          ragThreshold: parseFloat(config.ragThreshold) || 0.0,
+        });
+
+        if (window.innerWidth <= 768) {
+          isSidebarHidden = true;
+          applySidebarState();
+        }
+
+        invalidateTokenCache();
         saveState();
-        renderFileList();
-        renderApp(true);
-
-        if (meta.isEmbedding) {
-          // Wait for any previous loop to finish cleaning up if spam-clicked
-          while (meta._embeddingLoopActive) {
-            await new Promise((r) => setTimeout(r, 50));
-          }
-          // Verify it wasn't paused again while waiting
-          if (meta.isEmbedding) {
-            startEmbeddingLoop(id);
-          }
-        }
+        appendMessageToDOM(
+          chat.messages[chat.messages.length - 1],
+          chat.messages.length - 1,
+        );
+        updateTokenCount();
       }
 
-      async function attemptChunking() {
-        if (!activeAdvancedRAGFileId) return;
-        const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
-        const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
-        if (!meta || !data) return;
+      // --- MESSAGE EDITING & ACTIONS ---
+      function retryMessage(msgIndex) {
+        resetEditState();
+        const chat = chats.find((c) => c.id === currentChatId);
+        const msg = chat.messages[msgIndex];
 
-        const text = data.text || "";
-        let chunks = [];
-
-        const chunkerCode =
-          meta.customChunker && meta.customChunker.trim() !== ""
-            ? meta.customChunker
-            : FILE_SETTING_DEFAULTS.customChunker.default;
-
-        try {
-          const fn = new AsyncFunction("fileContents", "config", chunkerCode);
-          const res = await fn(text, config);
-          if (Array.isArray(res))
-            chunks = res.filter((c) => c !== null && c !== undefined);
-        } catch (e) {
-          alert("Error executing customChunker: " + e.message);
-          return;
-        }
-
-        meta.customChunks = JSON.stringify(chunks, null, 2);
-        saveState();
-        await refreshFileChunks(meta.id);
-
-        if (activeAdvancedRAGSetting === "customChunks") {
-          await selectAdvancedRAGSetting("customChunks");
+        if (msg.role === "file") {
+          chat.messages = chat.messages.slice(0, msgIndex + 1);
+          invalidateTokenCache();
+          saveState();
+          renderCurrentChat();
+          sendMessage();
         } else {
-          renderApp(true);
+          $("#chat-input").value = msg.content;
+          chat.messages = chat.messages.slice(0, msgIndex);
+          invalidateTokenCache();
+          saveState();
+          renderCurrentChat();
+          sendMessage();
         }
       }
 
-      function toggleAdvancedEmbedding() {
-        if (!activeAdvancedRAGFileId) return;
-        toggleEmbedding(activeAdvancedRAGFileId);
+      function deleteMessage(msgIndex) {
+        if (editingMessageIndex === msgIndex) cancelGlobalEdit();
+        else if (editingMessageIndex !== null && editingMessageIndex > msgIndex)
+          editingMessageIndex--;
+
+        chats.find((c) => c.id === currentChatId).messages.splice(msgIndex, 1);
+        invalidateTokenCache();
+        saveState();
+        renderCurrentChat();
       }
 
       function resetEditState() {
@@ -1620,106 +1601,12 @@
         area.style.overflowX = area.style.whiteSpace === "pre" ? "auto" : "hidden";
       }
 
-      function toggleSuperSecretSettings() {
-        if (isAdvancedRAGSettingsOpen) {
-          if (activeAdvancedRAGSetting) {
-            uncommittedAdvancedRAGValue = $("#chat-input").value;
-          }
-          isAdvancedRAGSettingsOpen = false;
-          activeAdvancedRAGSetting = null;
-          activeAdvancedRAGFileId = null;
-        }
-
-        isSuperSecretSettingsOpen = !isSuperSecretSettingsOpen;
-        if (!isSuperSecretSettingsOpen) {
-          activeSuperSecretSetting = null;
-          uncommittedSuperSecretValue = null;
-          $("#chat-input").value = "";
-        } else {
-          if (activeSuperSecretSetting) {
-            const area = $("#chat-input");
-            if (uncommittedSuperSecretValue !== null) {
-              area.value = uncommittedSuperSecretValue;
-            } else {
-              area.value =
-                config[activeSuperSecretSetting] !== "" &&
-                config[activeSuperSecretSetting] !== undefined
-                  ? config[activeSuperSecretSetting]
-                  : SETTING_DEFAULTS[activeSuperSecretSetting].default;
-            }
-          }
-        }
-        renderCurrentChat();
-        applyInputAreaState();
-      }
-
-      async function toggleAdvancedRAGSettings(id = null) {
-        if (isSuperSecretSettingsOpen) toggleSuperSecretSettings();
-
-        if (id === null && isAdvancedRAGSettingsOpen) {
-          if (activeAdvancedRAGSetting) {
-            uncommittedAdvancedRAGValue = $("#chat-input").value;
-          }
-          isAdvancedRAGSettingsOpen = false;
-          $("#chat-input").value = "";
-          renderCurrentChat();
-          applyInputAreaState();
-          return;
-        }
-
-        if (id !== null) {
-          if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
-            if (activeAdvancedRAGSetting) {
-              uncommittedAdvancedRAGValue = $("#chat-input").value;
-            }
-            isAdvancedRAGSettingsOpen = false;
-            $("#chat-input").value = "";
-          } else {
-            if (isAdvancedRAGSettingsOpen && activeAdvancedRAGSetting) {
-              uncommittedAdvancedRAGValue = $("#chat-input").value;
-            }
-            const isReopeningSame = activeAdvancedRAGFileId === id;
-            isAdvancedRAGSettingsOpen = true;
-            activeAdvancedRAGFileId = id;
-
-            if (!isReopeningSame) {
-              activeAdvancedRAGSetting = null;
-              uncommittedAdvancedRAGValue = null;
-              $("#chat-input").value = "";
-            } else {
-              if (activeAdvancedRAGSetting) {
-                const area = $("#chat-input");
-                if (uncommittedAdvancedRAGValue !== null) {
-                  area.value = uncommittedAdvancedRAGValue;
-                } else {
-                  if (activeAdvancedRAGSetting === "fileText") {
-                    const data = await dbGet(`mf_filedata_${id}`);
-                    area.value = data ? data.text : "";
-                  } else {
-                    const meta = files.find((f) => f.id === id);
-                    area.value =
-                      meta &&
-                      meta[activeAdvancedRAGSetting] !== undefined &&
-                      meta[activeAdvancedRAGSetting] !== ""
-                        ? meta[activeAdvancedRAGSetting]
-                        : FILE_SETTING_DEFAULTS[activeAdvancedRAGSetting].default;
-                  }
-                }
-              }
-            }
-          }
-        }
-        renderCurrentChat();
-        applyInputAreaState();
-      }
-
-      // --- EMBEDDINGS & RAG ---
+      // --- EMBEDDINGS API FETCH ---
       async function fetchEmbeddings(texts, signal = null) {
         let base =
           config.embeddingsUrl && config.embeddingsUrl.trim() !== ""
             ? config.embeddingsUrl.trim().replace(/\/+$/, "")
             : config.url.replace(/\/+$/, "");
-
         if (base.endsWith("/chat/completions"))
           base = base.replace("/chat/completions", "");
         const endpoint = base + "/embeddings";
@@ -1750,11 +1637,31 @@
           } catch (e) {}
           throw new Error(`API Error: ${res.status} ${res.statusText}\n${errMsg}`);
         }
+
         const data = await res.json();
         return data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
       }
 
-      // Helper function to fetch all individual chunk records for a file
+      async function resetAllFileEmbeddings() {
+        for (const meta of files) {
+          meta.progress = 0;
+          meta.exactProgress = 0;
+          meta.embeddedCount = 0;
+          meta.chunkCount = 0;
+          meta.isEmbedding = false;
+          meta.embeddingSpeed = null;
+          meta.embeddingEta = null;
+          if (embeddingAbortControllers[meta.id]) {
+            embeddingAbortControllers[meta.id].abort();
+            delete embeddingAbortControllers[meta.id];
+          }
+          await dbDeleteByPrefix(`mf_chunk_${meta.id}_`);
+        }
+        saveState();
+        renderApp();
+      }
+
+      // --- EMBEDDINGS CHUNKING ---
       async function getFileChunks(id) {
         const chunks = await dbGetByPrefix(`mf_chunk_${id}_`);
         return chunks.sort((a, b) => a.index - b.index);
@@ -1791,10 +1698,7 @@
           }
         }
 
-        if (!Array.isArray(chunks) || chunks.length === 0) {
-          chunks = [text];
-        }
-
+        if (!Array.isArray(chunks) || chunks.length === 0) chunks = [text];
         chunks = chunks.filter((c) => c !== null && c !== undefined);
 
         const oldChunks = await getFileChunks(id);
@@ -1802,12 +1706,10 @@
         let newChunks = [];
         let chunkIndex = 0;
 
-        // Use a map to convert an O(N^2) operation to O(N) when evaluating chunks
         const oldChunksMap = new Map();
         for (const old of oldChunks) {
-          if (old.vector && !oldChunksMap.has(old.text)) {
+          if (old.vector && !oldChunksMap.has(old.text))
             oldChunksMap.set(old.text, old);
-          }
         }
 
         for (let i = 0; i < chunks.length; i++) {
@@ -1823,8 +1725,6 @@
             raw: c,
             vector: existing ? existing.vector : null,
           });
-
-          // Yield to the UI event loop to prevent blocking on massive files
           if (i % 500 === 0) await new Promise((r) => setTimeout(r, 0));
         }
 
@@ -1833,10 +1733,7 @@
           changed = true;
 
         if (changed) {
-          // Purge the old chunks from IndexedDB
           await dbDeleteByPrefix(`mf_chunk_${id}_`);
-
-          // Use multiple sets to quickly write out the separated chunk records
           const entries = newChunks.map((c) => [
             `mf_chunk_${id}_${String(c.index).padStart(6, "0")}`,
             c,
@@ -1846,7 +1743,6 @@
           meta.chunkCount = newChunks.length;
           meta.embeddedCount = newChunks.filter((c) => c.vector).length;
 
-          // Calculate ignored count so the progress bar is accurate even before the loop starts
           const CHUNK_LIMIT =
             meta.chunkMaxTokens !== undefined && meta.chunkMaxTokens !== ""
               ? parseInt(meta.chunkMaxTokens, 10)
@@ -1860,9 +1756,8 @@
               const chunkStr =
                 typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
               const chunkTokens = Math.ceil(chunkStr.length / 4);
-              if (chunkTokens > CHUNK_LIMIT || chunkTokens > MAX_TOKENS) {
+              if (chunkTokens > CHUNK_LIMIT || chunkTokens > MAX_TOKENS)
                 ignoredCount++;
-              }
             }
             if (i % 1000 === 0) await new Promise((r) => setTimeout(r, 0));
           }
@@ -1871,15 +1766,47 @@
           meta.exactProgress =
             meta.chunkCount > 0 ? (processedCount / meta.chunkCount) * 100 : 0;
           meta.progress = Math.round(meta.exactProgress);
-
           if (meta.progress >= 100) meta.isEmbedding = false;
 
-          // Save metadata without chunks attached
           await dbSet(`mf_filedata_${id}`, data);
           saveState();
         }
       }
 
+      async function attemptChunking() {
+        if (!activeAdvancedRAGFileId) return;
+        const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
+        const data = await dbGet(`mf_filedata_${activeAdvancedRAGFileId}`);
+        if (!meta || !data) return;
+
+        const text = data.text || "";
+        let chunks = [];
+
+        const chunkerCode =
+          meta.customChunker && meta.customChunker.trim() !== ""
+            ? meta.customChunker
+            : FILE_SETTING_DEFAULTS.customChunker.default;
+
+        try {
+          const fn = new AsyncFunction("fileContents", "config", chunkerCode);
+          const res = await fn(text, config);
+          if (Array.isArray(res))
+            chunks = res.filter((c) => c !== null && c !== undefined);
+        } catch (e) {
+          alert("Error executing customChunker: " + e.message);
+          return;
+        }
+
+        meta.customChunks = JSON.stringify(chunks, null, 2);
+        saveState();
+        await refreshFileChunks(meta.id);
+
+        if (activeAdvancedRAGSetting === "customChunks")
+          await selectAdvancedRAGSetting("customChunks");
+        else renderApp(true);
+      }
+
+      // --- EMBEDDINGS INDEXING LOOP ---
       async function getNextChunkBatch(id, maxBatch, maxTokens, chunkLimit) {
         const db = await getDB();
         return new Promise((resolve, reject) => {
@@ -1890,33 +1817,30 @@
           const request = store.openCursor(range);
 
           const batch = [];
-          let currentTokens = 0;
-          let ignoredCount = 0;
-          let embeddedCount = 0;
-          let chunkCount = 0;
+          let currentTokens = 0,
+            ignoredCount = 0,
+            embeddedCount = 0,
+            chunkCount = 0;
 
           request.onsuccess = (e) => {
             const cursor = e.target.result;
             if (cursor) {
               chunkCount++;
               const c = cursor.value;
-              if (c.vector) {
-                embeddedCount++;
-              } else {
+              if (c.vector) embeddedCount++;
+              else {
                 const chunkStr =
                   typeof c.text === "string" ? c.text : JSON.stringify(c.text) || "";
                 const chunkTokens = Math.ceil(chunkStr.length / 4);
 
-                if (chunkTokens > chunkLimit || chunkTokens > maxTokens) {
+                if (chunkTokens > chunkLimit || chunkTokens > maxTokens)
                   ignoredCount++;
-                } else {
-                  if (
-                    batch.length < maxBatch &&
-                    currentTokens + chunkTokens <= maxTokens
-                  ) {
-                    batch.push(c);
-                    currentTokens += chunkTokens;
-                  }
+                else if (
+                  batch.length < maxBatch &&
+                  currentTokens + chunkTokens <= maxTokens
+                ) {
+                  batch.push(c);
+                  currentTokens += chunkTokens;
                 }
               }
               cursor.continue();
@@ -1934,12 +1858,10 @@
         const currentMeta = files.find((f) => f.id === id);
         if (!currentMeta || !currentMeta.isEmbedding) return;
 
-        if (currentMeta._embeddingLoopActive) return; // Concurrency block
+        if (currentMeta._embeddingLoopActive) return;
         currentMeta._embeddingLoopActive = true;
 
-        if (embeddingAbortControllers[id]) {
-          embeddingAbortControllers[id].abort();
-        }
+        if (embeddingAbortControllers[id]) embeddingAbortControllers[id].abort();
         embeddingAbortControllers[id] = new AbortController();
 
         const MAX_BATCH = parseInt(config.chunkBatchSize) || 100;
@@ -1961,8 +1883,6 @@
             const data = await dbGet(`mf_filedata_${id}`);
             if (!data) break;
 
-            // Always load chunks FRESH in the while loop to prevent race conditions
-            // Using cursor-based stream to bypass IPC limits and reduce massive RAM spikes
             let batchData = await getNextChunkBatch(
               id,
               MAX_BATCH,
@@ -1985,7 +1905,6 @@
             const { batch, ignoredCount } = batchData;
 
             if (batch.length === 0) {
-              // If batch is 0, we either finished or the remaining chunks are permanently ignored
               meta.exactProgress = 100.0;
               meta.progress = 100;
               meta.isEmbedding = false;
@@ -2002,7 +1921,6 @@
 
               const updateEntries = [];
               batch.forEach((c, i) => {
-                // Convert array to Float32Array to compress Vector by 50-70% in memory
                 c.vector = new Float32Array(embs[i]);
                 updateEntries.push([
                   `mf_chunk_${id}_${String(c.index).padStart(6, "0")}`,
@@ -2010,13 +1928,11 @@
                 ]);
               });
 
-              // Save ONLY the freshly processed chunk batches back to the DB to prevent massive rewrites
               await dbSetMultiple(updateEntries);
 
               meta.embeddedCount = batchData.embeddedCount + batch.length;
               meta.chunkCount = batchData.chunkCount;
 
-              // Progress is computed as (Successfully Embedded + Ignored) / Total Chunks
               const processedCount = meta.embeddedCount + ignoredCount;
               meta.exactProgress =
                 meta.chunkCount > 0
@@ -2024,9 +1940,8 @@
                   : 100.0;
               meta.progress = Math.round(meta.exactProgress);
 
-              if (loopStartEmbeddedCount === null) {
+              if (loopStartEmbeddedCount === null)
                 loopStartEmbeddedCount = meta.embeddedCount - batch.length;
-              }
 
               const elapsedSec = (Date.now() - loopStartTime) / 1000;
               const chunksDone = meta.embeddedCount - loopStartEmbeddedCount;
@@ -2037,14 +1952,14 @@
               }
 
               await dbSet(`mf_filedata_${id}`, data);
-              await dbSet("mf_files", files); // Avoid global saveState() chunk dump spam
-              updateFileProgressDOM(id); // Visually update progress without tearing down the DOM
+              await dbSet("mf_files", files);
+              updateFileProgressDOM(id);
 
-              await new Promise((r) => setTimeout(r, 100)); // Yield to UI
+              await new Promise((r) => setTimeout(r, 100));
             } catch (err) {
-              if (err.name === "AbortError") {
+              if (err.name === "AbortError")
                 console.log(`Embedding paused for ${meta.name}`);
-              } else {
+              else {
                 console.error("Embedding error:", err);
                 meta.isEmbedding = false;
                 alert(`Embedding failed for ${meta.name}: ${err.message}`);
@@ -2063,10 +1978,7 @@
             finalMeta.embeddingSpeed = null;
             finalMeta.embeddingEta = null;
           }
-
-          if (embeddingAbortControllers[id]) {
-            delete embeddingAbortControllers[id];
-          }
+          if (embeddingAbortControllers[id]) delete embeddingAbortControllers[id];
           saveState();
           renderFileList();
           if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id)
@@ -2074,6 +1986,40 @@
         }
       }
 
+      async function toggleEmbedding(id) {
+        const meta = files.find((f) => f.id === id);
+        if (!meta) return;
+        if (!config.embeddingsModel || config.embeddingsModel.trim() === "") {
+          return alert("Please configure an embeddings model in Settings first.");
+        }
+
+        meta.isEmbedding = !meta.isEmbedding;
+
+        if (!meta.isEmbedding) {
+          if (embeddingAbortControllers[id]) {
+            embeddingAbortControllers[id].abort();
+            delete embeddingAbortControllers[id];
+          }
+          meta.embeddingSpeed = null;
+          meta.embeddingEta = null;
+        }
+
+        saveState();
+        renderFileList();
+        renderApp(true);
+
+        if (meta.isEmbedding) {
+          while (meta._embeddingLoopActive)
+            await new Promise((r) => setTimeout(r, 50));
+          if (meta.isEmbedding) startEmbeddingLoop(id);
+        }
+      }
+
+      function toggleAdvancedEmbedding() {
+        if (activeAdvancedRAGFileId) toggleEmbedding(activeAdvancedRAGFileId);
+      }
+
+      // --- EMBEDDINGS RAG & RESOLUTION ---
       async function resolveAllMessages(messages, btnEl) {
         let resolved = [];
 
@@ -2095,7 +2041,6 @@
                       : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
                         ? config.fileWrapperFunc
                         : SETTING_DEFAULTS.fileWrapperFunc.default;
-
                   let wrapperFn;
                   try {
                     wrapperFn = new AsyncFunction(
@@ -2104,10 +2049,8 @@
                       wrapperFnCode,
                     );
                   } catch (e) {
-                    console.error("Wrapper Fn Syntax Error:", e);
                     wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
                   }
-
                   fileContent = await wrapperFn(data.text, meta.name);
                 }
               }
@@ -2116,8 +2059,6 @@
                 content: fileContent || "*File not found.*",
               });
             }
-            // If mode === "embed", we simply do not add it to the resolved array.
-            // This keeps embed messages local and skips sending them to the API entirely.
           } else {
             resolved.push(msg);
           }
@@ -2150,9 +2091,8 @@
               for (let j = msgIndex + 1; j < chat.messages.length; j++) {
                 const nextMsg = chat.messages[j];
                 if (nextMsg.role === "assistant") break;
-                if (nextMsg.role === "user" && nextMsg.content) {
+                if (nextMsg.role === "user" && nextMsg.content)
                   lookaheadText.push(nextMsg.content);
-                }
               }
               actualPrompt = lookaheadText.join("\n").trim();
             }
@@ -2162,14 +2102,12 @@
 
             if (validChunks.length > 0) {
               let queryEmb = null;
-
               if (actualPrompt) {
                 try {
                   queryEmb = (await fetchEmbeddings([actualPrompt]))[0];
                 } catch (err) {
                   if (btnEl) btnEl.textContent = origText;
-                  alert("Error fetching embeddings: " + err.message);
-                  return;
+                  return alert("Error fetching embeddings: " + err.message);
                 }
               }
 
@@ -2218,8 +2156,12 @@
                   ? meta.mergeChunksFunc
                   : FILE_SETTING_DEFAULTS.mergeChunksFunc.default;
 
-              let retrievalFn, dedupFn, mergeFn;
-
+              let retrievalFn = async (c, t) => c,
+                dedupFn = async (a, b) => a === b,
+                mergeFn = async (c) =>
+                  c
+                    .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
+                    .join("...");
               try {
                 retrievalFn = new AsyncFunction(
                   "chunk",
@@ -2228,7 +2170,6 @@
                 );
               } catch (e) {
                 console.error("Retrieval Fn Syntax Error:", e);
-                retrievalFn = async (c, t) => c;
               }
               try {
                 dedupFn = new AsyncFunction(
@@ -2238,16 +2179,11 @@
                 );
               } catch (e) {
                 console.error("Dedup Fn Syntax Error:", e);
-                dedupFn = async (a, b) => a === b;
               }
               try {
                 mergeFn = new AsyncFunction("finalChunks", mergeFnCode);
               } catch (e) {
                 console.error("Merge Fn Syntax Error:", e);
-                mergeFn = async (c) =>
-                  c
-                    .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
-                    .join("...");
               }
 
               for (let j = 0; j < topChunks.length; j++) {
@@ -2257,11 +2193,9 @@
                 try {
                   const chunkArg = curr.raw !== undefined ? curr.raw : curr.text;
                   const retrievedData = await retrievalFn(chunkArg, data.text);
-                  if (retrievedData !== null && retrievedData !== undefined) {
+                  if (retrievedData !== null && retrievedData !== undefined)
                     finalData = retrievedData;
-                  }
                 } catch (e) {
-                  console.error("Post-processing error:", e);
                   finalData = curr.raw !== undefined ? curr.raw : curr.text;
                 }
 
@@ -2288,36 +2222,25 @@
                     if (
                       finalChunksInternal.length > 0 &&
                       currentTokens + chunkTokens > maxTokens
-                    ) {
+                    )
                       break;
-                    }
-
                     currentTokens += chunkTokens;
-                    finalChunksInternal.push({
-                      index: curr.index,
-                      data: finalData,
-                    });
+                    finalChunksInternal.push({ index: curr.index, data: finalData });
                   }
                 }
-
-                // Yield if processing high counts of custom logic to prevent locking UI
                 if (j % 50 === 0) await new Promise((r) => setTimeout(r, 0));
               }
 
               finalChunksInternal.sort((a, b) => a.index - b.index);
               const finalChunks = finalChunksInternal.map((x) => x.data);
 
-              let mergedContent = "";
               try {
-                mergedContent = await mergeFn(finalChunks);
+                fileContent = await mergeFn(finalChunks);
               } catch (e) {
-                console.error("Merge function error:", e);
-                mergedContent = finalChunks
+                fileContent = finalChunks
                   .map((c) => (typeof c === "string" ? c : JSON.stringify(c)))
                   .join("...");
               }
-
-              fileContent = mergedContent;
             } else {
               fileContent = "*File unindexed or no valid chunks.*";
             }
@@ -2330,24 +2253,17 @@
             : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
               ? config.fileWrapperFunc
               : SETTING_DEFAULTS.fileWrapperFunc.default;
-
-        let wrapperFn;
+        let wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
         try {
           wrapperFn = new AsyncFunction("fileContent", "fileName", wrapperFnCode);
         } catch (e) {
           console.error("Wrapper Fn Syntax Error:", e);
-          wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
         }
 
         const formatted = await wrapperFn(fileContent, msg.fileName);
-
         if (btnEl) btnEl.textContent = origText;
 
-        chat.messages.push({
-          role: "user",
-          content: formatted,
-        });
-
+        chat.messages.push({ role: "user", content: formatted });
         invalidateTokenCache();
         saveState();
         appendMessageToDOM(
@@ -2357,6 +2273,7 @@
         updateTokenCount();
       }
 
+      // --- EMBEDDINGS EXPORT/IMPORT ---
       async function exportChunksAndVectors() {
         if (!activeAdvancedRAGFileId) return;
         const chunks = await getFileChunks(activeAdvancedRAGFileId);
@@ -2414,7 +2331,6 @@
               const meta = files.find((f) => f.id === activeAdvancedRAGFileId);
               meta.customChunks = JSON.stringify(raws, null, 2);
 
-              // Wipe old chunks
               await dbDeleteByPrefix(`mf_chunk_${activeAdvancedRAGFileId}_`);
 
               let chunkIndex = 0;
@@ -2451,11 +2367,10 @@
 
               await dbSet(`mf_filedata_${activeAdvancedRAGFileId}`, data);
               saveState();
-              if (activeAdvancedRAGSetting === "customChunks") {
+              if (activeAdvancedRAGSetting === "customChunks")
                 await selectAdvancedRAGSetting("customChunks");
-              } else {
-                renderApp(true);
-              }
+              else renderApp(true);
+
               alert("Imported chunks and vectors successfully.");
             } catch (err) {
               alert("Failed to import: " + err.message);
@@ -2464,86 +2379,6 @@
           reader.readAsText(file);
         };
         input.click();
-      }
-
-      async function appendFileMessage(fileId, mode = "full") {
-        const meta = files.find((f) => f.id === fileId);
-        if (!meta) return;
-        suspendSuperSecretSettings();
-        resetEditState();
-
-        if (!currentChatId) newChat();
-        const chat = chats.find((c) => c.id === currentChatId);
-
-        let approxTokens = Math.ceil((meta.textLength || 0) / 4);
-        let content = "";
-
-        if (mode === "full") {
-          const data = await dbGet(`mf_filedata_${meta.id}`);
-          const fileText = data ? data.text : "";
-
-          let wrapperFnCode =
-            meta.fileWrapperFunc && meta.fileWrapperFunc.trim() !== ""
-              ? meta.fileWrapperFunc
-              : config.fileWrapperFunc && config.fileWrapperFunc.trim() !== ""
-                ? config.fileWrapperFunc
-                : SETTING_DEFAULTS.fileWrapperFunc.default;
-
-          let wrapperFn;
-          try {
-            wrapperFn = new AsyncFunction("fileContent", "fileName", wrapperFnCode);
-          } catch (e) {
-            console.error("Wrapper Fn Syntax Error:", e);
-            wrapperFn = async (c, n) => `\`${n}\`:\n\n\`\`\`\n${c}\n\`\`\``;
-          }
-
-          content = await wrapperFn(fileText, meta.name);
-          approxTokens = Math.ceil(content.length / 4);
-        }
-
-        chat.messages.push({
-          role: "file",
-          fileId: meta.id,
-          fileName: meta.name,
-          prompt: "",
-          mode: mode,
-          approxTokens: approxTokens,
-          content: content,
-          maxTokens: parseInt(config.maxRagTokens, 10) || 5000,
-          ragThreshold: parseFloat(config.ragThreshold) || 0.0,
-        });
-
-        if (window.innerWidth <= 768) {
-          isSidebarHidden = true;
-          applySidebarState();
-        }
-
-        invalidateTokenCache();
-        saveState();
-        appendMessageToDOM(
-          chat.messages[chat.messages.length - 1],
-          chat.messages.length - 1,
-        );
-        updateTokenCount();
-      }
-
-      async function resetAllFileEmbeddings() {
-        for (const meta of files) {
-          meta.progress = 0;
-          meta.exactProgress = 0;
-          meta.embeddedCount = 0;
-          meta.chunkCount = 0;
-          meta.isEmbedding = false;
-          meta.embeddingSpeed = null;
-          meta.embeddingEta = null;
-          if (embeddingAbortControllers[meta.id]) {
-            embeddingAbortControllers[meta.id].abort();
-            delete embeddingAbortControllers[meta.id];
-          }
-          await dbDeleteByPrefix(`mf_chunk_${meta.id}_`);
-        }
-        saveState();
-        renderApp();
       }
 
       // --- LLM API & GOD MODE ---
@@ -2821,6 +2656,78 @@
         updateTokenCount();
       }
 
+      // --- IMPORT & EXPORT JSON ---
+      function exportChats() {
+        const dataStr = JSON.stringify(chats, null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `html-chat-export-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      function exportSingleChat(id) {
+        const chat = chats.find((c) => c.id === id);
+        if (!chat) return;
+
+        const dataStr = JSON.stringify([chat], null, 2);
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `chat-timestamp-${chat.id}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      function importChats() {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".json";
+        input.onchange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            try {
+              const importedChats = JSON.parse(event.target.result);
+              if (!Array.isArray(importedChats))
+                throw new Error("Invalid format: expected an array of chats.");
+
+              let addedCount = 0;
+              const existingIds = new Set(chats.map((c) => c.id));
+
+              for (const chat of importedChats) {
+                if (!chat.id || !chat.messages) continue;
+                if (!existingIds.has(chat.id)) {
+                  chats.push(chat);
+                  existingIds.add(chat.id);
+                  await dbSet(`mf_chat_${chat.id}`, chat);
+                  addedCount++;
+                }
+              }
+
+              chats.sort((a, b) => Number(b.id) - Number(a.id));
+              if (!currentChatId && chats.length > 0) currentChatId = chats[0].id;
+
+              saveState();
+              renderApp();
+              alert(`Successfully imported ${addedCount} new chat(s).`);
+            } catch (err) {
+              alert("Failed to import chats: " + err.message);
+            }
+          };
+          reader.readAsText(file);
+        };
+        input.click();
+      }
+
       // --- UI TOGGLES & UPDATES ---
       function updateModelDropdown() {
         const select = $("#model-select");
@@ -2921,7 +2828,7 @@
         }
       }
 
-      // --- RENDERING LOGIC ---
+      // --- CORE RENDERING ---
       marked.use({
         extensions: [
           {
@@ -2955,13 +2862,13 @@
       function applyInputAreaState() {
         const area = $("#chat-input");
         if (!area) return;
-        const modelSel = $("#model-select");
-        const sendBtn = $("#send-btn");
-        const saveBtn = $("#save-edit-btn");
-        const cancelBtn = $("#cancel-edit-btn");
-        const secSaveBtn = $("#secret-save-btn");
-        const secResetBtn = $("#secret-reset-btn");
-        const secCancelBtn = $("#secret-cancel-btn");
+        const modelSel = $("#model-select"),
+          sendBtn = $("#send-btn"),
+          saveBtn = $("#save-edit-btn");
+        const cancelBtn = $("#cancel-edit-btn"),
+          secSaveBtn = $("#secret-save-btn");
+        const secResetBtn = $("#secret-reset-btn"),
+          secCancelBtn = $("#secret-cancel-btn");
 
         modelSel.classList.add("hidden");
         sendBtn.classList.add("hidden");
@@ -3019,7 +2926,7 @@
         }
       }
 
-      // Visually updates the File List progress elements without tearing down the DOM
+      // --- SIDEBAR RENDERING ---
       function updateFileProgressDOM(id) {
         const f = files.find((meta) => meta.id === id);
         if (!f) return;
@@ -3037,18 +2944,11 @@
               : "...";
             let eta = "...";
             if (f.embeddingEta !== undefined && f.embeddingEta !== null) {
-              if (f.embeddingEta > 3600) {
-                const h = Math.floor(f.embeddingEta / 3600);
-                const m = Math.floor((f.embeddingEta % 3600) / 60);
-                const s = Math.round(f.embeddingEta % 60);
-                eta = `${h}h ${m}m ${s}s`;
-              } else if (f.embeddingEta > 60) {
-                const m = Math.floor(f.embeddingEta / 60);
-                const s = Math.round(f.embeddingEta % 60);
-                eta = `${m}m ${s}s`;
-              } else {
-                eta = `${Math.round(f.embeddingEta)}s`;
-              }
+              if (f.embeddingEta > 3600)
+                eta = `${Math.floor(f.embeddingEta / 3600)}h ${Math.floor((f.embeddingEta % 3600) / 60)}m ${Math.round(f.embeddingEta % 60)}s`;
+              else if (f.embeddingEta > 60)
+                eta = `${Math.floor(f.embeddingEta / 60)}m ${Math.round(f.embeddingEta % 60)}s`;
+              else eta = `${Math.round(f.embeddingEta)}s`;
             }
             const pct =
               f.exactProgress !== undefined
@@ -3063,15 +2963,10 @@
               itemEl.insertBefore(statsEl, barEl || null);
             }
             statsEl.innerHTML = `<div>Progress: ${pct}% (${speed})</div><div>ETA: ${eta}</div>`;
-          } else {
-            if (statsEl) statsEl.remove();
-          }
+          } else if (statsEl) statsEl.remove();
 
-          if (barEl) {
-            const widthPct =
-              f.exactProgress !== undefined ? f.exactProgress : f.progress;
-            barEl.style.width = `${widthPct}%`;
-          }
+          if (barEl)
+            barEl.style.width = `${f.exactProgress !== undefined ? f.exactProgress : f.progress}%`;
 
           const actionsEl = itemEl.querySelector(".chat-item-actions");
           if (actionsEl) {
@@ -3082,28 +2977,23 @@
               embedBtn.title = "Insert Embedding";
               embedBtn.textContent = "e";
               actionsEl.insertBefore(embedBtn, actionsEl.firstChild);
-            } else if (f.progress < 100 && embedBtn) {
-              embedBtn.remove();
-            }
+            } else if (f.progress < 100 && embedBtn) embedBtn.remove();
           }
         }
 
-        // Soft-update the Advanced RAG Settings page button toggle if it is currently being viewed
         if (isAdvancedRAGSettingsOpen && activeAdvancedRAGFileId === id) {
           const toggleBtn = document.querySelector(
             'button[onclick="toggleAdvancedEmbedding()"]',
           );
-          if (toggleBtn) {
+          if (toggleBtn)
             toggleBtn.textContent = f.isEmbedding
               ? "⏸ Pause Embedding"
               : "▶ Start Embedding";
-          }
         }
       }
 
       function renderFileList() {
         const list = $("#file-list");
-
         const maxVisible = parseInt(config.maxVisibleFiles, 10);
         if (!isNaN(maxVisible) && maxVisible > 0) {
           list.style.maxHeight = `calc(${maxVisible} * (1.6em + 17px))`;
@@ -3116,17 +3006,15 @@
         if (!files.length)
           return (list.innerHTML =
             '<p style="font-size:0.8em; color:#666;">No files uploaded.</p>');
-
         const embeddingsEnabled = !!(
           config.embeddingsModel && config.embeddingsModel.trim() !== ""
         );
 
         list.innerHTML = files
           .map((f) => {
-            let embedBtn = "";
-            let progressBar = "";
-            let progressStats = "";
-
+            let embedBtn = "",
+              progressBar = "",
+              progressStats = "";
             if (embeddingsEnabled) {
               if (f.isEmbedding && f.progress < 100) {
                 const speed = f.embeddingSpeed
@@ -3134,58 +3022,28 @@
                   : "...";
                 let eta = "...";
                 if (f.embeddingEta !== undefined && f.embeddingEta !== null) {
-                  if (f.embeddingEta > 3600) {
-                    const h = Math.floor(f.embeddingEta / 3600);
-                    const m = Math.floor((f.embeddingEta % 3600) / 60);
-                    const s = Math.round(f.embeddingEta % 60);
-                    eta = `${h}h ${m}m ${s}s`;
-                  } else if (f.embeddingEta > 60) {
-                    const m = Math.floor(f.embeddingEta / 60);
-                    const s = Math.round(f.embeddingEta % 60);
-                    eta = `${m}m ${s}s`;
-                  } else {
-                    eta = `${Math.round(f.embeddingEta)}s`;
-                  }
+                  if (f.embeddingEta > 60)
+                    eta = `${Math.floor(f.embeddingEta / 60)}m ${Math.round(f.embeddingEta % 60)}s`;
+                  else eta = `${Math.round(f.embeddingEta)}s`;
                 }
-                const pct =
-                  f.exactProgress !== undefined
-                    ? f.exactProgress.toFixed(1)
-                    : (f.progress || 0).toFixed(1);
-                progressStats = `
-                  <div class="file-progress-stats" style="font-size: 0.75em; color: #666; text-align: left; margin-top: 2px;">
-                    <div>Progress: ${pct}% (${speed})</div>
-                    <div>ETA: ${eta}</div>
-                  </div>`;
+                progressStats = `<div class="file-progress-stats" style="font-size: 0.75em; color: #666; text-align: left; margin-top: 2px;"><div>Progress: ${(f.exactProgress || f.progress || 0).toFixed(1)}% (${speed})</div><div>ETA: ${eta}</div></div>`;
               }
-
-              const widthPct =
-                f.exactProgress !== undefined ? f.exactProgress : f.progress;
-              progressBar = `<div class="file-progress-bar" style="width: ${widthPct}%"></div>`;
-              if (f.progress >= 100) {
+              progressBar = `<div class="file-progress-bar" style="width: ${f.exactProgress !== undefined ? f.exactProgress : f.progress}%"></div>`;
+              if (f.progress >= 100)
                 embedBtn = `<button data-action="embed" title="Insert Embedding">e</button>`;
-              }
             }
 
-            return `
-          <div class="chat-item" style="display:block;" data-id="${f.id}" data-type="file" title="Ctrl+Click for Advanced RAG Settings">
+            return `<div class="chat-item" style="display:block;" data-id="${f.id}" data-type="file" title="Ctrl+Click for Advanced RAG Settings">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div class="chat-item-title" data-action="load" title="Click to insert full contents into chat\nAlt+Click to overwrite contents">${escapeHTML(f.name)}</div>
-              <div class="chat-item-actions">
-                ${embedBtn}
-                <button data-action="delete" title="Delete File">d</button>
-              </div>
-            </div>
-            ${progressStats}
-            ${progressBar}
-          </div>
-        `;
+              <div class="chat-item-actions">${embedBtn}<button data-action="delete" title="Delete File">d</button></div>
+            </div>${progressStats}${progressBar}</div>`;
           })
           .join("");
       }
 
       function renderChatList() {
         const list = $("#chat-list");
-
         const maxVisible = parseInt(config.maxVisibleChats, 10);
         if (!isNaN(maxVisible) && maxVisible > 0) {
           list.style.maxHeight = `calc(${maxVisible} * (1.6em + 17px))`;
@@ -3204,16 +3062,13 @@
             (chat) => `
           <div class="chat-item ${chat.id === currentChatId ? "active" : ""}" data-id="${chat.id}" data-type="chat">
             <div class="chat-item-title" data-action="load" title="Export: Alt+Click">${escapeHTML(chat.title)}</div>
-            <div class="chat-item-actions">
-              <button data-action="rename" title="Rename">r</button>
-              <button data-action="delete" title="Delete">d</button>
-            </div>
-          </div>
-        `,
+            <div class="chat-item-actions"><button data-action="rename" title="Rename">r</button><button data-action="delete" title="Delete">d</button></div>
+          </div>`,
           )
           .join("");
       }
 
+      // --- MESSAGE RENDERING ---
       function generateMessageHTML(msg, i, isEditing = false) {
         let displayContent = msg.content || "";
         let configHtml = "";
@@ -3228,43 +3083,26 @@
           if (msg.mode === "embed") {
             displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*<br>*(<= ${msg.maxTokens || 5000} tokens with embeddings enabled)*`;
             if (msg.prompt) displayContent += `\n\n**Search Prompt:** ${msg.prompt}`;
-
             if (isEditing) {
               configHtml = `
-      <div style="display:flex; gap:15px; flex-wrap:wrap; margin-top:10px; align-items:center; background: #eee; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
-      <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Max Tokens <input type="number" class="embed-cfg-tokens" value="${msg.maxTokens || 5000}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
-      <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Match Threshold <input type="number" step="0.1" class="embed-cfg-threshold" value="${msg.ragThreshold || 0.0}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
-      </div>`;
+                <div style="display:flex; gap:15px; flex-wrap:wrap; margin-top:10px; align-items:center; background: #eee; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Max Tokens <input type="number" class="embed-cfg-tokens" value="${msg.maxTokens || 5000}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
+                <label style="display:flex; flex-direction:column; font-size:0.85em; font-weight:bold;">Match Threshold <input type="number" step="0.1" class="embed-cfg-threshold" value="${msg.ragThreshold || 0.0}" style="width:100px; margin:4px 0 0 0; padding:4px; font-weight:normal;"></label>
+                </div>`;
             }
-          } else {
+          } else
             displayContent = `*Estimated file size: ~${msg.approxTokens || 0} tokens*`;
-          }
         }
 
         let actionsHtml = "";
         if (isEditing) {
-          actionsHtml = `
-            <button data-action="save-edit">Save</button>
-            <button data-action="cancel-edit">Cancel</button>
-            <button data-action="toggle-wrap">Toggle Wrap</button>
-          `;
+          actionsHtml = `<button data-action="save-edit">Save</button><button data-action="cancel-edit">Cancel</button><button data-action="toggle-wrap">Toggle Wrap</button>`;
         } else {
-          let editBtn = `<button data-action="edit">Edit</button>`;
+          let editBtn = `<button data-action="edit">${msg.role === "file" && msg.mode === "embed" ? "Config" : "Edit"}</button>`;
           if (msg.role === "file" && msg.mode === "embed") {
-            editBtn = `<button data-action="edit">Config</button>`;
-            actionsHtml = `
-              ${editBtn}
-              <button data-action="run-embed">Embed</button>
-              <button data-action="fork">Fork</button>
-              <button data-action="delete">Delete</button>
-            `;
+            actionsHtml = `${editBtn}<button data-action="run-embed">Embed</button><button data-action="fork">Fork</button><button data-action="delete">Delete</button>`;
           } else {
-            actionsHtml = `
-              ${editBtn}
-              <button data-action="fork">Fork</button>
-              ${msg.role === "user" || (msg.role === "file" && msg.mode === "full") ? `<button data-action="retry">Retry</button>` : ""}
-              <button data-action="delete">Delete</button>
-            `;
+            actionsHtml = `${editBtn}<button data-action="fork">Fork</button>${msg.role === "user" || (msg.role === "file" && msg.mode === "full") ? `<button data-action="retry">Retry</button>` : ""}<button data-action="delete">Delete</button>`;
           }
         }
 
@@ -3284,19 +3122,16 @@
               <div class="msg-actions">${actionsHtml}</div>
             </div>
             <div class="msg-content">${marked.parse(displayContent)}${configHtml}</div>
-          </div>
-        `;
+          </div>`;
       }
 
       function appendMessageToDOM(msg, index) {
         const container = $("#chat-container");
-
         const emptyMsg = container.querySelector(".empty-chat-msg");
         if (emptyMsg) emptyMsg.remove();
 
         const wrapper = document.createElement("div");
         wrapper.innerHTML = generateMessageHTML(msg, index, false);
-
         const msgEl = wrapper.firstElementChild;
         container.appendChild(msgEl);
 
@@ -3316,7 +3151,6 @@
         const chat = chats.find((c) => c.id === currentChatId);
         const msg = chat.messages[index];
         const existingEl = document.querySelector(`.msg[data-index="${index}"]`);
-
         if (!existingEl) return renderCurrentChat();
 
         const wrapper = document.createElement("div");
@@ -3348,14 +3182,13 @@
         const el = document.querySelector(`.msg[data-index="${index}"] .msg-content`);
         if (!el) return;
 
-        let displayContent = content;
-        displayContent = displayContent.replace(
+        let displayContent = content.replace(
           /<run>([\s\S]*?)<\/run>/g,
           (match, code) =>
             `**Executing Code:**\n\`\`\`javascript\n${code.trim()}\n\`\`\``,
         );
-
         el.innerHTML = marked.parse(displayContent);
+
         if (isFinal) {
           renderMathInElement(el, {
             delimiters: [
@@ -3366,19 +3199,16 @@
             throwOnError: false,
           });
           Prism.highlightAllUnder(el);
-
           const container = $("#chat-container");
           if (alignMode === "top") {
             const msgEl = el.closest(".msg");
-            if (msgEl) {
-              container.scrollTop = msgEl.offsetTop - 15;
-            }
-          } else if (alignMode === "bottom") {
+            if (msgEl) container.scrollTop = msgEl.offsetTop - 15;
+          } else if (alignMode === "bottom")
             container.scrollTop = container.scrollHeight;
-          }
         }
       }
 
+      // --- MAIN CHAT RENDER (AND SETTINGS UIs) ---
       function renderCurrentChat(preserveScroll = false) {
         const container = $("#chat-container");
         const prevScroll = container.scrollTop;
@@ -3392,21 +3222,18 @@
             ? activeAdvancedRAGSetting
             : activeSuperSecretSetting;
           let targetConfig = config;
-          if (isAdvanced) {
+          if (isAdvanced)
             targetConfig = files.find((f) => f.id === activeAdvancedRAGFileId) || {};
-          }
 
           const getSettingDisplay = (k) => {
             const val = targetConfig[k];
             const isDefault =
               val === undefined || val === "" || val === settingsDefaults[k].default;
 
-            if (isAdvanced) {
-              if (k === "fileText") return "Custom";
+            if (isAdvanced)
+              return k === "fileText" ? "Custom" : isDefault ? "Default" : "Custom";
+            if (k === "godModePrompt" || k === "fileWrapperFunc")
               return isDefault ? "Default" : "Custom";
-            }
-
-            if (k === "godModePrompt") return isDefault ? "Default" : "Custom";
             if (k === "embeddingsKey") return val ? "Custom" : "API Default";
             if (k === "embeddingsModel")
               return val === "" || val === undefined ? "Disabled" : escapeHTML(val);
@@ -3414,7 +3241,6 @@
               return val === "" || val === undefined
                 ? "Unlimited"
                 : escapeHTML(String(val));
-            if (k === "fileWrapperFunc") return isDefault ? "Default" : "Custom";
 
             let displayVal = val === "" || val === undefined ? "API Default" : val;
             return escapeHTML(String(displayVal));
@@ -3439,7 +3265,6 @@
             maxVisibleChats: "Max Visible Chats",
             maxVisibleFiles: "Max Visible Files",
             fileWrapperFunc: "File Wrapper Function (JS)",
-
             fileText: "File Content Text",
             customChunks: "Custom Chunks (JSON)",
             customChunker: "Custom Chunking Function (JS)",
@@ -3457,68 +3282,27 @@
 
           let sectionsHTML = "";
           for (const [catName, keys] of Object.entries(categories)) {
-            sectionsHTML += `
-              <div style="margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">
-                <h3 style="margin: 0; font-size: 0.9em; text-transform: uppercase; color: #666;">${catName}</h3>
-              </div>
-              <div style="padding: 10px 0;">`;
-
+            sectionsHTML += `<div style="margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px;"><h3 style="margin: 0; font-size: 0.9em; text-transform: uppercase; color: #666;">${catName}</h3></div><div style="padding: 10px 0;">`;
             sectionsHTML += keys
-              .map((k) => {
-                const isActive = activeSetting === k;
-                const tooltip = settingsDefaults[k].tooltip;
-                const onclickFn = isAdvanced
-                  ? `selectAdvancedRAGSetting('${k}')`
-                  : `selectSuperSecretSetting('${k}')`;
-                return `<button 
-                class="${isActive ? "active-setting" : ""}" 
-                onclick="${onclickFn}" 
-                title="${escapeHTML(tooltip)}"
-                style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace; display: flex; justify-content: space-between;">
-                  <span>${settingNames[k] || k}</span>
-                  <span style="opacity: 0.7;">${getSettingDisplay(k)}</span>
-              </button>`;
-              })
+              .map(
+                (k) =>
+                  `<button class="${activeSetting === k ? "active-setting" : ""}" onclick="${isAdvanced ? `selectAdvancedRAGSetting('${k}')` : `selectSuperSecretSetting('${k}')`}" title="${escapeHTML(settingsDefaults[k].tooltip)}" style="width:100%; margin-bottom:5px; text-align:left; font-family: monospace; display: flex; justify-content: space-between;"><span>${settingNames[k] || k}</span><span style="opacity: 0.7;">${getSettingDisplay(k)}</span></button>`,
+              )
               .join("");
-
             sectionsHTML += `</div>`;
           }
 
           let buttonsHTML = "";
           if (isAdvanced) {
-            buttonsHTML = `
-              <div style="display:flex; gap:10px; margin-top: 15px; flex-wrap: wrap;">
-                <button onclick="attemptChunking()" title="Generate chunks and overwrite Custom Chunks array">Attempt Chunking</button>
-                <button onclick="toggleAdvancedEmbedding()" title="Start or pause embeddings for this file">${targetConfig.isEmbedding ? "⏸ Pause Embedding" : "▶ Start Embedding"}</button>
-                <button onclick="exportChunksAndVectors()" title="Export JSON of Chunk & Vector pairs">Export Vectors</button>
-                <button onclick="importChunksAndVectors()" title="Import JSON of Chunk & Vector pairs">Import Vectors</button>
-              </div>
-            `;
+            buttonsHTML = `<div style="display:flex; gap:10px; margin-top: 15px; flex-wrap: wrap;">
+              <button onclick="attemptChunking()" title="Generate chunks and overwrite Custom Chunks array">Attempt Chunking</button>
+              <button onclick="toggleAdvancedEmbedding()" title="Start or pause embeddings for this file">${targetConfig.isEmbedding ? "⏸ Pause Embedding" : "▶ Start Embedding"}</button>
+              <button onclick="exportChunksAndVectors()" title="Export JSON of Chunk & Vector pairs">Export Vectors</button>
+              <button onclick="importChunksAndVectors()" title="Import JSON of Chunk & Vector pairs">Import Vectors</button>
+            </div>`;
           }
 
-          const resetFn = isAdvanced
-            ? `resetAllAdvancedRAGSettings()`
-            : `resetAllSuperSecretSettings()`;
-          const title = isAdvanced
-            ? `Advanced RAG Settings`
-            : `Super Secret Settings`;
-          const subtitle = isAdvanced
-            ? `Configure specific embedding and retrieval logic for this file. (${escapeHTML(targetConfig.name || "File")})`
-            : `Advanced engine parameters. Hover over a setting to see its description.`;
-
-          container.innerHTML = `
-            <div>
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 style="margin: 0;">${title}</h2>
-                <button onclick="${resetFn}">Reset All</button>
-              </div>
-              <p style="margin-top: 5px; font-size: 0.85em; color: #555;">
-                ${subtitle}
-              </p>
-              ${buttonsHTML}
-              ${sectionsHTML}
-            </div>
-          `;
+          container.innerHTML = `<div><div style="display: flex; justify-content: space-between; align-items: center;"><h2 style="margin: 0;">${isAdvanced ? `Advanced RAG Settings` : `Super Secret Settings`}</h2><button onclick="${isAdvanced ? `resetAllAdvancedRAGSettings()` : `resetAllSuperSecretSettings()`}">Reset All</button></div><p style="margin-top: 5px; font-size: 0.85em; color: #555;">${isAdvanced ? `Configure specific embedding and retrieval logic for this file. (${escapeHTML(targetConfig.name || "File")})` : `Advanced engine parameters. Hover over a setting to see its description.`}</p>${buttonsHTML}${sectionsHTML}</div>`;
           return;
         }
 
@@ -3528,27 +3312,15 @@
         const chat = chats.find((c) => c.id === currentChatId);
 
         let html = "";
-
-        if (config.godMode) {
-          html += `
-            <div class="msg system">
-              <div class="msg-meta">
-                <span>System</span>
-                <div class="msg-actions"><span style="font-size: 0.8em; color: #888;">[Read-Only]</span></div>
-              </div>
-              <div class="msg-content">${marked.parse("**JS Execution Enabled**. Proceed with caution.")}</div>
-            </div>
-          `;
-        }
-
-        if (!chat.messages.length && !config.godMode) {
+        if (config.godMode)
+          html += `<div class="msg system"><div class="msg-meta"><span>System</span><div class="msg-actions"><span style="font-size: 0.8em; color: #888;">[Read-Only]</span></div></div><div class="msg-content">${marked.parse("**JS Execution Enabled**. Proceed with caution.")}</div></div>`;
+        if (!chat.messages.length && !config.godMode)
           html +=
             '<p class="empty-chat-msg" style="margin:0; padding-top: 15px;">It is empty in here. Send a prompt.</p>';
-        } else {
+        else
           html += chat.messages
             .map((msg, i) => generateMessageHTML(msg, i, editingMessageIndex === i))
             .join("");
-        }
 
         container.innerHTML = html;
 
@@ -3572,7 +3344,6 @@
                 : lastMsg.offsetTop - 15;
           }
         }
-
         updateTokenCount();
       }
 
