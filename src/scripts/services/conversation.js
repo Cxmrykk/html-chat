@@ -226,11 +226,12 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
     }
 
     payload = await resolveMessages(payload);
-
-    const index = await appendMessage({ role: 'assistant', content: '' }, { chatId });
     setGeneration({ phase: 'generating' });
 
     let reply = '';
+    let assistantIndex = -1;
+    let aborted = false;
+
     try {
       reply = await requestCompletion({
         config: state.data.config,
@@ -238,29 +239,54 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
         messages: payload,
         signal: controller.signal,
         onDelta: (partial) => {
-          chat.messages[index].content = partial;
-          emit(EVENTS.MESSAGE, { index, streaming: true });
+          if (assistantIndex === -1) {
+            chat.messages.push({ role: 'assistant', content: partial });
+            assistantIndex = chat.messages.length - 1;
+            invalidateContext();
+            if (chatId === state.data.currentChatId) {
+              emit(EVENTS.MESSAGE_APPENDED, { index: assistantIndex });
+            }
+            persistChat(chatId);
+          } else {
+            chat.messages[assistantIndex].content = partial;
+            emit(EVENTS.MESSAGE, { index: assistantIndex, streaming: true });
+          }
         },
       });
     } catch (error) {
       if (error.name !== 'AbortError') throw error;
-      reply = `${chat.messages[index].content}\n\n*[Stopped by user]*`;
+      aborted = true;
     }
 
-    chat.messages[index].content = reply;
-    invalidateContext();
-    await persistChat(chatId);
-    emit(EVENTS.MESSAGE, { index, streaming: false });
+    if (assistantIndex === -1 && !aborted) {
+      assistantIndex = await appendMessage({ role: 'assistant', content: reply }, { chatId });
+    } else if (assistantIndex !== -1) {
+      if (reply) chat.messages[assistantIndex].content = reply;
+      invalidateContext();
+      await persistChat(chatId);
+      emit(EVENTS.MESSAGE, { index: assistantIndex, streaming: false });
+    }
+
+    if (aborted) {
+      await appendMessage({ role: 'error', content: '*[Stopped by user]*' }, { chatId });
+      return;
+    }
 
     if (state.data.config.godMode && reply) {
       const blocks = extractRunBlocks(reply);
       if (blocks.length > 0) {
         for (const code of blocks) {
+          if (!state.runtime.generation.active) break;
           const result = await executeRunBlock(code);
           await appendMessage({ role: 'user', content: result }, { chatId });
         }
-        state.runtime.completionAbort = null;
-        return sendMessage({ loopDepth: loopDepth + 1 });
+        if (state.runtime.generation.active) {
+          state.runtime.completionAbort = null;
+          return sendMessage({ loopDepth: loopDepth + 1 });
+        } else {
+          await appendMessage({ role: 'error', content: '*[Stopped by user]*' }, { chatId });
+          return;
+        }
       }
     }
   } catch (error) {
