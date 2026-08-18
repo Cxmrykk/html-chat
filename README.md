@@ -13,10 +13,7 @@ A lightweight, zero-runtime-dependency web chat client for OpenAI-compatible API
   - Cosine-similarity retrieval with customizable token limits and similarity thresholds.
   - Custom JavaScript hooks for chunking, context retrieval, deduplication, and chunk merging.
   - Import/export of chunk and vector datasets.
-- **God Mode (JS Execution)**: Agentic feedback loop allowing models to output `**Executing Code:**
-```javascript
-/* js */
-```` blocks that execute directly in the browser and feed results back to the model.
+- **God Mode (JS Execution)**: Agentic feedback loop allowing models to output `<run>` blocks that execute directly in the browser and feed results back to the model.
 - **Rich Rendering**: Markdown, KaTeX math typesetting (`$inline$`, `$$display$$`), and Prism.js syntax highlighting.
 - **IndexedDB Storage**: Conversations, messages, files, vector embeddings, and preferences persist locally in your browser.
 
