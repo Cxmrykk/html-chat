@@ -7,8 +7,8 @@ export default defineConfig({
   base: './',
   plugins: [viteSingleFile()],
   build: {
-    outDir: fileURLToPath(new URL('./dist', import.meta.url)),
-    emptyOutDir: true,
+    outDir: fileURLToPath(new URL('./', import.meta.url)),
+    emptyOutDir: false,
     cssCodeSplit: false,
     // Everything (JS, CSS, KaTeX fonts) must inline for the single-file build.
     assetsInlineLimit: 100000000,

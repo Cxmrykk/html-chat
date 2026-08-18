@@ -66,4 +66,4 @@ Never re-derive these inline. Never read state out of the DOM.
 
 * Do not output truncated code blocks.
 * When moving a file, update every import path project-wide.
-* Build output goes to `dist/`. Never commit generated files to the source root.
+* Build output is single-file bundled directly to `index.html` in the repository root.
