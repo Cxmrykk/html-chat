@@ -53,22 +53,23 @@ function actionsHTML(message, editing) {
   const editLabel = isEmbed ? 'Config' : 'Edit';
   const editIcon = isEmbed ? ICON_CONFIG : ICON_EDIT;
 
-  const buttons = [
-    btn('message.copy', 'Copy', ICON_COPY),
-    btn('message.edit', editLabel, editIcon),
-  ];
-
-  if (isEmbed) {
-    buttons.push(btn('message.runEmbed', 'Embed', ICON_EMBED));
-  }
-
-  buttons.push(btn('message.fork', 'Fork', ICON_FORK));
+  const buttons = [];
 
   const retryable = message.role === 'user' || (message.role === 'file' && message.mode === 'full');
   if (retryable) {
     buttons.push(btn('message.retry', 'Retry', ICON_RETRY));
   }
 
+  buttons.push(
+    btn('message.copy', 'Copy', ICON_COPY),
+    btn('message.edit', editLabel, editIcon)
+  );
+
+  if (isEmbed) {
+    buttons.push(btn('message.runEmbed', 'Embed', ICON_EMBED));
+  }
+
+  buttons.push(btn('message.fork', 'Fork', ICON_FORK));
   buttons.push(btn('message.delete', 'Delete', ICON_DELETE));
 
   return buttons.join('');
