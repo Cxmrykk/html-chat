@@ -22,6 +22,7 @@ import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { renderMainView } from '../ui/bindings.js';
 import { estimateTokens } from '../core/tokens.js';
 import { pickNumber } from '../core/values.js';
+import { ICON_CHECK } from '../ui/icons.js';
 
 /**
  * Every user action, in one registry. Markup references these by name via
@@ -195,6 +196,34 @@ export const commands = {
   },
 
   /* ---- messages ---- */
+
+  'message.copy': ({ index, element }) => {
+    const chat = currentChat();
+    const message = chat?.messages[index];
+    if (!message) return;
+
+    let textToCopy = message.content || '';
+    if (message.role === 'file' && message.mode === 'embed') {
+      textToCopy = message.prompt || '';
+    }
+
+    if (!textToCopy) return;
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      if (!element) return;
+      const originalHTML = element.innerHTML;
+      
+      if (element.classList.contains('icon-btn')) {
+        element.innerHTML = ICON_CHECK;
+      } else {
+        element.textContent = 'Copied';
+      }
+      
+      setTimeout(() => {
+        element.innerHTML = originalHTML;
+      }, 1500);
+    });
+  },
 
   'message.edit': ({ index }) => {
     const chat = currentChat();

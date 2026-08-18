@@ -1,5 +1,18 @@
+import { state } from '../../store/state.js';
 import { escapeHTML } from '../../core/format.js';
 import { renderMarkdown, enhance } from '../markdown.js';
+import {
+  ICON_COPY,
+  ICON_EDIT,
+  ICON_CONFIG,
+  ICON_FORK,
+  ICON_RETRY,
+  ICON_SAVE,
+  ICON_CANCEL,
+  ICON_WRAP,
+  ICON_EMBED,
+  ICON_DELETE,
+} from '../icons.js';
 
 /** A single message row: markup, in-place update, and the transient busy label. */
 
@@ -24,30 +37,39 @@ function embedConfigHTML(message) {
 }
 
 function actionsHTML(message, editing) {
+  const useIcons = state.data.config.messageActionIcons === 'true';
+  const btn = (cmd, label, icon) =>
+    `<button data-command="${cmd}" title="${label}"${useIcons ? ' class="icon-btn"' : ''}>${useIcons ? icon : label}</button>`;
+
   if (editing) {
     return [
-      '<button data-command="message.saveEdit">Save</button>',
-      '<button data-command="message.cancelEdit">Cancel</button>',
-      '<button data-command="message.toggleWrap">Toggle Wrap</button>',
+      btn('message.saveEdit', 'Save', ICON_SAVE),
+      btn('message.cancelEdit', 'Cancel', ICON_CANCEL),
+      btn('message.toggleWrap', 'Toggle Wrap', ICON_WRAP),
     ].join('');
   }
 
   const isEmbed = message.role === 'file' && message.mode === 'embed';
   const editLabel = isEmbed ? 'Config' : 'Edit';
-  const buttons = [`<button data-command="message.edit">${editLabel}</button>`];
+  const editIcon = isEmbed ? ICON_CONFIG : ICON_EDIT;
+
+  const buttons = [
+    btn('message.copy', 'Copy', ICON_COPY),
+    btn('message.edit', editLabel, editIcon),
+  ];
 
   if (isEmbed) {
-    buttons.push('<button data-command="message.runEmbed">Embed</button>');
+    buttons.push(btn('message.runEmbed', 'Embed', ICON_EMBED));
   }
 
-  buttons.push('<button data-command="message.fork">Fork</button>');
+  buttons.push(btn('message.fork', 'Fork', ICON_FORK));
 
   const retryable = message.role === 'user' || (message.role === 'file' && message.mode === 'full');
   if (retryable) {
-    buttons.push('<button data-command="message.retry">Retry</button>');
+    buttons.push(btn('message.retry', 'Retry', ICON_RETRY));
   }
 
-  buttons.push('<button data-command="message.delete">Delete</button>');
+  buttons.push(btn('message.delete', 'Delete', ICON_DELETE));
 
   return buttons.join('');
 }
@@ -114,10 +136,10 @@ export function replaceMessage(message, index, options) {
 
   const template = document.createElement('template');
   template.innerHTML = messageHTML(message, index, options).trim();
-  const element = template.content.firstElementChild;
-  existing.replaceWith(element);
-  enhance(element);
-  return element;
+  const element = existing.replaceWith(template.content.firstElementChild);
+  const newElement = document.querySelector(`.msg[data-index="${index}"]`);
+  enhance(newElement);
+  return newElement;
 }
 
 /** Temporary label on an action button while a command runs. */
@@ -126,11 +148,11 @@ export function setMessageBusy(index, command, label) {
     `.msg[data-index="${index}"] button[data-command="${command}"]`,
   );
   if (!button) return () => {};
-  const original = button.textContent;
+  const original = button.innerHTML;
   button.textContent = label;
   button.disabled = true;
   return () => {
-    button.textContent = original;
+    button.innerHTML = original;
     button.disabled = false;
   };
 }

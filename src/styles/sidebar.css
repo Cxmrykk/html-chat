@@ -71,13 +71,13 @@
 
 .chat-item-actions button {
   font-size: 0.8em;
-  padding: 4px;
+  padding: 3px;
   margin-left: 4px;
 }
 
 .chat-item-actions button .icon {
-  width: 1.2em;
-  height: 1.2em;
+  width: 1em;
+  height: 1em;
 }
 
 .file-progress-stats {

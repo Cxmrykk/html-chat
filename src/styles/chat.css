@@ -82,6 +82,15 @@
   padding: 2px 6px;
 }
 
+.msg-actions button.icon-btn {
+  padding: 3px;
+}
+
+.msg-actions button.icon-btn .icon {
+  width: 1.2em;
+  height: 1.2em;
+}
+
 .readonly-tag {
   font-size: 0.8em;
   color: #888;
