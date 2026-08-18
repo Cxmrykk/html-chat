@@ -1,14 +1,17 @@
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
-import { resolve } from 'path';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   root: 'src',
+  base: './',
   plugins: [viteSingleFile()],
   build: {
-    outDir: resolve(__dirname, '.'),
-    emptyOutDir: false,
+    outDir: fileURLToPath(new URL('./dist', import.meta.url)),
+    emptyOutDir: true,
     cssCodeSplit: false,
+    // Everything (JS, CSS, KaTeX fonts) must inline for the single-file build.
     assetsInlineLimit: 100000000,
+    chunkSizeWarningLimit: 100000,
   },
 });

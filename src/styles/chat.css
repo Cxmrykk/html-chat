@@ -1,0 +1,231 @@
+#chat-container {
+  position: relative;
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 2px solid #000;
+  background: #ebebeb;
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.chat-placeholder {
+  margin: 0;
+}
+
+.empty-chat-msg {
+  margin: 0;
+  padding-top: 15px;
+}
+
+.msg {
+  border-left: 4px solid #000;
+  margin-bottom: 20px;
+  background: #fff;
+  padding: 10px 10px 10px 15px;
+  border-radius: 0 5px 5px 0;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.msg.editing {
+  border-left-style: dashed;
+  background: #f5f5f5;
+}
+
+.msg:last-child {
+  margin-bottom: 0;
+}
+
+.msg.user {
+  border-color: #0055ff;
+}
+
+.msg.assistant {
+  border-color: #ff0055;
+}
+
+.msg.system {
+  border-color: #ffaa00;
+  background: #fff8e6;
+}
+
+.msg.error {
+  border-color: #c00000;
+  background: #ffeeee;
+}
+
+.msg.file {
+  border-color: #00cc66;
+  background: #eaffea;
+}
+
+.msg-meta {
+  font-size: 0.85em;
+  text-transform: uppercase;
+  font-weight: bold;
+  margin-bottom: 10px;
+  color: #555;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.msg-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.msg-actions button {
+  font-size: 0.8em;
+  padding: 2px 6px;
+}
+
+.readonly-tag {
+  font-size: 0.8em;
+  color: #888;
+}
+
+.msg-content {
+  overflow-wrap: anywhere;
+}
+
+.msg-content p:first-child {
+  margin-top: 0;
+}
+
+.msg-content p:last-child {
+  margin-bottom: 0;
+}
+
+.msg-content pre {
+  padding: 10px;
+  border: 1px solid #000;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-height: none !important;
+  border-radius: 0;
+}
+
+.msg-content code {
+  background: #eee;
+  padding: 2px 4px;
+  color: #000;
+}
+
+.msg-content pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.msg-content pre[class*='language-'] {
+  background: #eee;
+  margin: 0.5em 0;
+  text-shadow: none;
+}
+
+.msg-content code[class*='language-'],
+.msg-content pre[class*='language-'] {
+  font-family: inherit;
+  font-size: 0.9em;
+  line-height: 1.6;
+  direction: ltr;
+}
+
+.msg-content table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+}
+
+.msg-content th,
+.msg-content td {
+  border: 1px solid #ccc;
+  padding: 6px 12px;
+}
+
+.msg-content th {
+  background: #eee;
+}
+
+/* Embed-message configuration, previously an inline-styled block. */
+.embed-config {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  align-items: center;
+  background: #eee;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.embed-config label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85em;
+  font-weight: bold;
+}
+
+.embed-config input {
+  width: 100px;
+  margin: 4px 0 0 0;
+  padding: 4px;
+  font-weight: normal;
+}
+
+.role-select {
+  appearance: none;
+  width: auto;
+  margin-bottom: 0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  padding: 0 4px;
+  margin-left: -4px;
+  outline: none;
+}
+
+.role-select:hover {
+  background: #eee;
+  border-color: #ccc;
+}
+
+.katex {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
+
+body.ctrl-down pre,
+body.ctrl-down code,
+body.ctrl-down .katex,
+body.ctrl-down #settings-heading {
+  cursor: pointer !important;
+}
+
+body.ctrl-down pre:hover,
+body.ctrl-down code:hover,
+body.ctrl-down .katex:hover,
+body.ctrl-down #settings-heading:hover {
+  background: #e0e0e0;
+}
+
+body.ctrl-down .msg-content pre[class*='language-']:hover {
+  background: #e0e0e0;
+}
+
+body.ctrl-down pre:hover code {
+  background: transparent;
+}

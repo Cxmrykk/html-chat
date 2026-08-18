@@ -1,0 +1,75 @@
+body {
+  max-width: 1000px;
+  margin: 0 auto;
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  font-family: monospace, sans-serif;
+  line-height: 1.6;
+  padding: 2rem 1rem 1rem 1rem;
+  color: #111;
+  background: #fafafa;
+  overflow: hidden;
+}
+
+h1,
+h2,
+h3 {
+  margin-top: 0;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  background: #eee;
+  border: 1px solid #000;
+  padding: 5px 10px;
+  color: #000;
+}
+
+button:hover {
+  background: #ccc;
+}
+
+button:disabled {
+  background: #e0e0e0;
+  color: #888;
+  border-color: #ccc;
+  cursor: not-allowed;
+}
+
+input[type='text'],
+input[type='password'],
+input[type='number'],
+textarea,
+select {
+  font-family: inherit;
+  padding: 8px;
+  border: 1px solid #000;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 10px;
+  background: #fff;
+}
+
+textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+textarea:disabled {
+  background: #e0e0e0;
+  color: #555;
+  border-color: #999;
+  cursor: not-allowed;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Brief highlight after a copy action. */
+.flash {
+  background: #ccc !important;
+}

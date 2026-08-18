@@ -1,0 +1,82 @@
+header {
+  flex-shrink: 0;
+}
+
+.top-actions {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  gap: 15px;
+  z-index: 100;
+}
+
+.top-btn {
+  color: #0055ff;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.top-btn:hover {
+  color: #ff0055;
+}
+
+.grid {
+  display: flex;
+  gap: 2rem;
+  flex-grow: 1;
+  min-height: 0;
+  margin-top: 1rem;
+}
+
+.sidebar {
+  flex: 1;
+  min-width: 250px;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.main {
+  flex: 3;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#input-area {
+  flex-shrink: 0;
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.button-row button {
+  flex-grow: 1;
+  font-weight: bold;
+}
+
+.button-row select {
+  width: auto;
+  margin: 0;
+  flex-grow: 0;
+}
+
+@media (max-width: 768px) {
+  .sidebar:not(.hidden) + .main {
+    display: none;
+  }
+
+  .sidebar,
+  .main {
+    min-width: 0;
+  }
+
+  .sidebar {
+    padding-right: 0;
+  }
+}

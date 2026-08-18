@@ -1,0 +1,101 @@
+.sidebar-section {
+  margin-bottom: 20px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.config-box {
+  background: #eee;
+  padding: 15px;
+  border: 1px solid #000;
+  margin-bottom: 20px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.list-empty {
+  font-size: 0.8em;
+  color: #666;
+}
+
+.chat-item {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px;
+  border: 1px solid transparent;
+  margin-bottom: 5px;
+}
+
+.chat-item.active {
+  border-color: #000;
+  background: #eee;
+  font-weight: bold;
+}
+
+.file-item {
+  display: block;
+}
+
+.file-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-item-title {
+  cursor: pointer;
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  margin-right: 10px;
+}
+
+.chat-item-actions {
+  flex-shrink: 0;
+  display: flex;
+}
+
+.chat-item-actions button {
+  font-size: 0.7em;
+  padding: 2px 5px;
+  margin-left: 2px;
+}
+
+.file-progress-stats {
+  font-size: 0.75em;
+  color: #666;
+  text-align: left;
+  margin-top: 2px;
+}
+
+.file-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: #0055ff;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+body.ctrl-down .chat-item:hover {
+  background: #e0e0e0;
+}
+
+body.ctrl-down .chat-item-title {
+  cursor: copy !important;
+}
