@@ -2,6 +2,7 @@ import { $ } from '../dom.js';
 import { state, embeddingsEnabled, findFile } from '../../store/state.js';
 import { escapeHTML, formatDuration, formatSpeed } from '../../core/format.js';
 import { pickInteger } from '../../core/values.js';
+import { ICON_DELETE, ICON_EMBED } from '../icons.js';
 
 const ROW_HEIGHT = '1.6em + 17px';
 
@@ -51,7 +52,7 @@ export function renderFileList() {
         ? `<div class="file-progress-bar" style="width: ${file.exactProgress ?? file.progress ?? 0}%"></div>`
         : '';
       const embedButton = enabled && (file.progress ?? 0) >= 100
-        ? '<button data-command="file.insertEmbed" title="Insert Embedding">e</button>'
+        ? `<button data-command="file.insertEmbed" title="Insert Embedding">${ICON_EMBED}</button>`
         : '';
 
       return `
@@ -63,7 +64,7 @@ export function renderFileList() {
                  title="Click to insert full contents into chat&#10;Alt+Click to replace contents">${escapeHTML(file.name)}</div>
             <div class="chat-item-actions">
               ${embedButton}
-              <button data-command="file.delete" title="Delete File">d</button>
+              <button data-command="file.delete" title="Delete File">${ICON_DELETE}</button>
             </div>
           </div>
           ${stats}
@@ -103,7 +104,7 @@ export function updateFileProgress(id) {
     const button = document.createElement('button');
     button.dataset.command = 'file.insertEmbed';
     button.title = 'Insert Embedding';
-    button.textContent = 'e';
+    button.innerHTML = ICON_EMBED;
     actions.insertBefore(button, actions.firstChild);
   } else if (!complete && embedButton) {
     embedButton.remove();

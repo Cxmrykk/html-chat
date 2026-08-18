@@ -26,6 +26,10 @@ button {
   border: 1px solid #000;
   padding: 5px 10px;
   color: #000;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
 }
 
 button:hover {
@@ -72,4 +76,11 @@ textarea:disabled {
 /* Brief highlight after a copy action. */
 .flash {
   background: #ccc !important;
+}
+
+/* SVGs inside buttons/elements */
+.icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: middle;
 }

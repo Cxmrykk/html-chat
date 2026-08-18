@@ -2,6 +2,7 @@ import { $ } from '../dom.js';
 import { state } from '../../store/state.js';
 import { escapeHTML } from '../../core/format.js';
 import { pickInteger } from '../../core/values.js';
+import { ICON_RENAME, ICON_DELETE } from '../icons.js';
 
 const ROW_HEIGHT = '1.6em + 17px';
 
@@ -35,8 +36,8 @@ export function renderChatList() {
         <div class="chat-item-title" data-command="chat.open"
              title="Export: Alt+Click · Copy transcript: Ctrl+Click">${escapeHTML(chat.title)}</div>
         <div class="chat-item-actions">
-          <button data-command="chat.rename" title="Rename">r</button>
-          <button data-command="chat.delete" title="Delete">d</button>
+          <button data-command="chat.rename" title="Rename">${ICON_RENAME}</button>
+          <button data-command="chat.delete" title="Delete">${ICON_DELETE}</button>
         </div>
       </div>`,
     )

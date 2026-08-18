@@ -70,9 +70,14 @@
 }
 
 .chat-item-actions button {
-  font-size: 0.7em;
-  padding: 2px 5px;
-  margin-left: 2px;
+  font-size: 0.8em;
+  padding: 4px;
+  margin-left: 4px;
+}
+
+.chat-item-actions button .icon {
+  width: 1.2em;
+  height: 1.2em;
 }
 
 .file-progress-stats {
