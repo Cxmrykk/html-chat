@@ -94,8 +94,4 @@ src/scripts/
 └── app/        # Command registry, event delegation, shortcuts, and bootstrap
 ```
 
----
 
-## License
-
-MIT
