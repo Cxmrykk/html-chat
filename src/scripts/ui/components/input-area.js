@@ -135,27 +135,17 @@ export function setSettingsEditorValue(value) {
   if (editor) editor.value = value ?? '';
 }
 
+/**
+ * Chrome state is expressed as three classes on <html>. Stylesheets do the
+ * rest: showing or hiding the header and sidebar, striking through the matching
+ * toggle word, and swapping the theme tokens. The same classes are set by the
+ * pre-paint script in index.html, so this only ever confirms or corrects them.
+ */
 export function applyChromeState() {
-  const sidebar = $('#sidebar');
-  const sidebarButton = $('#toggle-sidebar-btn');
-  if (sidebar) sidebar.classList.toggle('hidden', state.session.sidebarHidden);
-  if (sidebarButton) {
-    sidebarButton.textContent = state.session.sidebarHidden ? '[show sidebar]' : '[hide sidebar]';
-  }
-
-  const header = $('#header');
-  const titleButton = $('#toggle-title-btn');
-  if (header) header.classList.toggle('hidden', state.session.titleHidden);
-  if (titleButton) {
-    titleButton.textContent = state.session.titleHidden ? '[show title]' : '[hide title]';
-  }
-
-  const themeButton = $('#toggle-theme-btn');
-  const isDark = state.session.theme === 'dark';
-  document.body.classList.toggle('dark-theme', isDark);
-  if (themeButton) {
-    themeButton.textContent = isDark ? '[light]' : '[dark]';
-  }
+  const root = document.documentElement;
+  root.classList.toggle('sidebar-hidden', state.session.sidebarHidden);
+  root.classList.toggle('title-hidden', state.session.titleHidden);
+  root.classList.toggle('dark-theme', state.session.theme === 'dark');
 }
 
 /** Reflect embedding state on the per-file settings toolbar. */

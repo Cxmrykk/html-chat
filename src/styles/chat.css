@@ -3,8 +3,8 @@
   flex-grow: 1;
   min-height: 0;
   overflow-y: auto;
-  border: 2px solid #000;
-  background: #ebebeb;
+  border: 2px solid var(--border);
+  background: var(--bg-panel);
   padding: 15px;
   margin-bottom: 15px;
 }
@@ -19,17 +19,17 @@
 }
 
 .msg {
-  border-left: 4px solid #000;
+  border-left: 4px solid var(--border);
   margin-bottom: 20px;
-  background: #fff;
+  background: var(--bg-raised);
   padding: 10px 10px 10px 15px;
   border-radius: 0 5px 5px 0;
-  box-shadow: 2px 2px 0 #000;
+  box-shadow: var(--shadow);
 }
 
 .msg.editing {
   border-left-style: dashed;
-  background: #f5f5f5;
+  background: var(--bg-inset);
 }
 
 .msg:last-child {
@@ -37,26 +37,26 @@
 }
 
 .msg.user {
-  border-color: #0055ff;
+  border-color: var(--role-user);
 }
 
 .msg.assistant {
-  border-color: #ff0055;
+  border-color: var(--role-assistant);
 }
 
 .msg.system {
-  border-color: #ffaa00;
-  background: #fff8e6;
+  border-color: var(--role-system);
+  background: var(--role-system-bg);
 }
 
 .msg.error {
-  border-color: #c00000;
-  background: #ffeeee;
+  border-color: var(--role-error);
+  background: var(--role-error-bg);
 }
 
 .msg.file {
-  border-color: #00cc66;
-  background: #eaffea;
+  border-color: var(--role-file);
+  background: var(--role-file-bg);
 }
 
 .msg-meta {
@@ -64,7 +64,7 @@
   text-transform: uppercase;
   font-weight: bold;
   margin-bottom: 10px;
-  color: #555;
+  color: var(--text-muted);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -93,7 +93,7 @@
 
 .readonly-tag {
   font-size: 0.8em;
-  color: #888;
+  color: var(--text-faint);
 }
 
 .msg-content {
@@ -108,39 +108,146 @@
   margin-bottom: 0;
 }
 
-.msg-content pre {
+.msg-content a {
+  color: var(--accent);
+}
+
+.msg-content a:hover {
+  color: var(--accent-hot);
+}
+
+.msg-content blockquote {
+  margin: 0.75em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-soft);
+  color: var(--text-muted);
+}
+
+.msg-content hr {
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  margin: 1em 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Code blocks
+ *
+ * Prism's stylesheet is a light theme bundled into the same file as this one,
+ * so its rules cannot be beaten on order — only on specificity. Every rule
+ * below is scoped to `.msg-content` for that reason. Highlighted and plain
+ * blocks are given identical geometry so they cannot drift apart.
+ * ------------------------------------------------------------------ */
+
+.msg-content pre,
+.msg-content pre[class*='language-'] {
+  margin: 0.5em 0;
   padding: 10px;
-  border: 1px solid #000;
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  max-height: none !important;
-  border-radius: 0;
+  max-height: none;
 }
 
 .msg-content code {
-  background: #eee;
+  background: var(--bg-code);
+  color: var(--text);
   padding: 2px 4px;
-  color: #000;
 }
 
-.msg-content pre code {
+.msg-content pre code,
+.msg-content pre code[class*='language-'] {
   padding: 0;
   background: transparent;
-  color: inherit;
 }
 
-.msg-content pre[class*='language-'] {
-  background: #eee;
-  margin: 0.5em 0;
-  text-shadow: none;
+.msg-content :not(pre) > code[class*='language-'] {
+  padding: 2px 4px;
+  border-radius: 0;
+  background: var(--bg-code);
 }
 
 .msg-content code[class*='language-'],
 .msg-content pre[class*='language-'] {
+  color: var(--code-fg);
+  /* Prism paints a white text-shadow that smears badly on any dark surface. */
+  text-shadow: none;
   font-family: inherit;
   font-size: 0.9em;
   line-height: 1.6;
   direction: ltr;
+  tab-size: 2;
+}
+
+.msg-content .token.comment,
+.msg-content .token.prolog,
+.msg-content .token.doctype,
+.msg-content .token.cdata {
+  color: var(--code-comment);
+}
+
+.msg-content .token.punctuation {
+  color: var(--code-punctuation);
+}
+
+.msg-content .token.namespace {
+  opacity: 0.7;
+}
+
+.msg-content .token.property,
+.msg-content .token.tag,
+.msg-content .token.boolean,
+.msg-content .token.number,
+.msg-content .token.constant,
+.msg-content .token.symbol,
+.msg-content .token.deleted {
+  color: var(--code-literal);
+}
+
+.msg-content .token.selector,
+.msg-content .token.attr-name,
+.msg-content .token.string,
+.msg-content .token.char,
+.msg-content .token.builtin,
+.msg-content .token.inserted {
+  color: var(--code-string);
+}
+
+.msg-content .token.operator,
+.msg-content .token.entity,
+.msg-content .token.url,
+.msg-content .language-css .token.string,
+.msg-content .style .token.string {
+  color: var(--code-operator);
+  /* Prism washes these tokens with a half-opaque white. */
+  background: none;
+}
+
+.msg-content .token.atrule,
+.msg-content .token.attr-value,
+.msg-content .token.keyword {
+  color: var(--code-keyword);
+}
+
+.msg-content .token.function,
+.msg-content .token.class-name {
+  color: var(--code-function);
+}
+
+.msg-content .token.regex,
+.msg-content .token.important,
+.msg-content .token.variable {
+  color: var(--code-variable);
+}
+
+.msg-content .token.important,
+.msg-content .token.bold {
+  font-weight: bold;
+}
+
+.msg-content .token.italic {
+  font-style: italic;
 }
 
 .msg-content table {
@@ -154,12 +261,12 @@
 
 .msg-content th,
 .msg-content td {
-  border: 1px solid #ccc;
+  border: 1px solid var(--border-soft);
   padding: 6px 12px;
 }
 
 .msg-content th {
-  background: #eee;
+  background: var(--bg-inset);
 }
 
 /* Embed-message configuration, previously an inline-styled block. */
@@ -169,9 +276,9 @@
   flex-wrap: wrap;
   margin-top: 10px;
   align-items: center;
-  background: #eee;
+  background: var(--bg-inset);
   padding: 10px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border-soft);
   border-radius: 4px;
 }
 
@@ -207,14 +314,21 @@
 }
 
 .role-select:hover {
-  background: #eee;
-  border-color: #ccc;
+  background: var(--bg-inset);
+  border-color: var(--border-soft);
 }
 
 .katex {
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
+}
+
+/* Long display equations scroll instead of stretching the message. */
+.msg-content .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
 }
 
 body.ctrl-down pre,
@@ -228,11 +342,11 @@ body.ctrl-down pre:hover,
 body.ctrl-down code:hover,
 body.ctrl-down .katex:hover,
 body.ctrl-down #settings-heading:hover {
-  background: #e0e0e0;
+  background: var(--bg-soft-hover);
 }
 
 body.ctrl-down .msg-content pre[class*='language-']:hover {
-  background: #e0e0e0;
+  background: var(--bg-soft-hover);
 }
 
 body.ctrl-down pre:hover code {

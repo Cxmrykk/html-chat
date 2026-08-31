@@ -1,111 +1,56 @@
-body.dark-theme {
-  background: #1a1a1a;
-  color: #eee;
+/*
+ * Dark mode is a token override and nothing else. The class lives on <html>
+ * rather than <body> so the pre-paint script in index.html can set it before
+ * the first frame; `color-scheme` hands native widgets (scrollbars, checkbox,
+ * select popup, caret) to the browser's dark styling.
+ */
+:root.dark-theme {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bg: #15171c;
+  --bg-panel: #1b1e24;
+  --bg-raised: #22262e;
+  --bg-inset: #2a2f38;
+  --bg-hover: #3a414c;
+  --bg-soft-hover: #2b313a;
+  --bg-code: #16181d;
+  --bg-disabled: #23262c;
+
+  /* Text */
+  --text: #e8eaed;
+  --text-muted: #a9b1bd;
+  --text-faint: #8b93a1;
+  --text-disabled: #6b7280;
+
+  /* Lines and depth */
+  --border: #434b57;
+  --border-soft: #2f353e;
+  --border-disabled: #383e47;
+  --shadow: 2px 2px 0 rgba(0, 0, 0, 0.55);
+
+  /* Accents */
+  --accent: #6ea8ff;
+  --accent-hot: #ff6b9d;
+
+  /* Message roles: same hues, lifted to read against a dark surface. */
+  --role-user: #5b9dff;
+  --role-assistant: #ff5c93;
+  --role-system: #e3aa4f;
+  --role-system-bg: #2a2317;
+  --role-error: #ff6b6b;
+  --role-error-bg: #2c1b1d;
+  --role-file: #35c98a;
+  --role-file-bg: #16281f;
+
+  /* Syntax highlighting: Prism's palette is unreadable here, so replace it. */
+  --code-fg: #d7dae0;
+  --code-comment: #7f8896;
+  --code-punctuation: #9aa2b1;
+  --code-literal: #d19a66;
+  --code-string: #98c379;
+  --code-operator: #56b6c2;
+  --code-keyword: #c678dd;
+  --code-function: #61afef;
+  --code-variable: #e5c07b;
 }
-
-body.dark-theme button {
-  background: #333;
-  border-color: #666;
-  color: #eee;
-}
-
-body.dark-theme button:hover {
-  background: #555;
-}
-
-body.dark-theme button:disabled {
-  background: #2a2a2a;
-  color: #777;
-  border-color: #444;
-}
-
-body.dark-theme input[type='text'],
-body.dark-theme input[type='password'],
-body.dark-theme input[type='number'],
-body.dark-theme textarea,
-body.dark-theme select {
-  background: #222;
-  border-color: #666;
-  color: #eee;
-}
-
-body.dark-theme textarea:disabled {
-  background: #2a2a2a;
-  color: #888;
-  border-color: #555;
-}
-
-body.dark-theme .flash {
-  background: #555 !important;
-}
-
-body.dark-theme #chat-container {
-  background: #222;
-  border-color: #666;
-}
-
-body.dark-theme .msg {
-  background: #2a2a2a;
-  box-shadow: 2px 2px 0 #000;
-}
-
-body.dark-theme .msg.editing { background: #333; }
-body.dark-theme .msg.user { border-color: #4d94ff; }
-body.dark-theme .msg.assistant { border-color: #ff4d88; }
-body.dark-theme .msg.system { border-color: #ffcc66; background: #332b1a; }
-body.dark-theme .msg.error { border-color: #ff6666; background: #331a1a; }
-body.dark-theme .msg.file { border-color: #33cc80; background: #1a3324; }
-
-body.dark-theme .msg-meta { color: #aaa; }
-body.dark-theme .readonly-tag { color: #888; }
-
-body.dark-theme .msg-content pre { border-color: #666; }
-
-body.dark-theme .msg-content code {
-  background: #111;
-  color: #eee;
-}
-
-body.dark-theme .msg-content pre code {
-  background: transparent;
-  color: inherit;
-}
-
-body.dark-theme .msg-content pre[class*='language-'] {
-  background: #111;
-}
-
-body.dark-theme .msg-content th,
-body.dark-theme .msg-content td {
-  border-color: #444;
-}
-
-body.dark-theme .msg-content th {
-  background: #333;
-}
-
-body.dark-theme .embed-config {
-  background: #333;
-  border-color: #444;
-}
-
-body.dark-theme .role-select:hover { background: #333; border-color: #666; }
-body.dark-theme .settings-category { border-color: #444; }
-body.dark-theme .settings-category h3 { color: #aaa; }
-body.dark-theme .active-setting { background: #444 !important; border-color: #888 !important; }
-body.dark-theme .config-box { background: #2a2a2a; border-color: #666; }
-body.dark-theme .list-empty { color: #aaa; }
-body.dark-theme .chat-item.active { border-color: #888; background: #333; }
-body.dark-theme .file-progress-stats { color: #aaa; }
-
-body.dark-theme.ctrl-down pre:hover,
-body.dark-theme.ctrl-down code:hover,
-body.dark-theme.ctrl-down .katex:hover,
-body.dark-theme.ctrl-down #settings-heading:hover,
-body.dark-theme.ctrl-down .chat-item:hover {
-  background: #444;
-}
-
-body.dark-theme.ctrl-down .msg-content pre[class*='language-']:hover { background: #333; }
-body.dark-theme .top-btn { color: #4d94ff; }
-body.dark-theme .top-btn:hover { color: #ff4d88; }

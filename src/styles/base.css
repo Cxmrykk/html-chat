@@ -1,3 +1,66 @@
+/*
+ * Design tokens. Every other stylesheet reads these, and `theme.css` overrides
+ * them for dark mode, so no rule needs a theme-specific twin.
+ */
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg: #fafafa;
+  --bg-panel: #ebebeb;
+  --bg-raised: #fff;
+  --bg-inset: #eee;
+  --bg-hover: #ccc;
+  --bg-soft-hover: #e0e0e0;
+  --bg-code: #eee;
+  --bg-disabled: #e0e0e0;
+
+  /* Text */
+  --text: #111;
+  --text-muted: #555;
+  --text-faint: #777;
+  --text-disabled: #888;
+
+  /* Lines and depth */
+  --border: #000;
+  --border-soft: #ccc;
+  --border-disabled: #ccc;
+  --shadow: 2px 2px 0 #000;
+
+  /* Accents */
+  --accent: #0055ff;
+  --accent-hot: #ff0055;
+
+  /* Message roles */
+  --role-user: #0055ff;
+  --role-assistant: #ff0055;
+  --role-system: #ffaa00;
+  --role-system-bg: #fff8e6;
+  --role-error: #c00000;
+  --role-error-bg: #ffeeee;
+  --role-file: #00cc66;
+  --role-file-bg: #eaffea;
+
+  /* Syntax highlighting, by Prism token group. */
+  --code-fg: #111;
+  --code-comment: #708090;
+  --code-punctuation: #999;
+  --code-literal: #990055;
+  --code-string: #669900;
+  --code-operator: #9a6e3a;
+  --code-keyword: #0077aa;
+  --code-function: #dd4a68;
+  --code-variable: #ee9900;
+}
+
+/*
+ * The root paints before the body has any style of its own. Without this a
+ * dark-themed reload shows a white frame first.
+ */
+html {
+  background: var(--bg);
+}
+
 body {
   max-width: 1000px;
   margin: 0 auto;
@@ -8,8 +71,8 @@ body {
   font-family: monospace, sans-serif;
   line-height: 1.6;
   padding: 2rem 1rem 1rem 1rem;
-  color: #111;
-  background: #fafafa;
+  color: var(--text);
+  background: var(--bg);
   overflow: hidden;
 }
 
@@ -22,10 +85,10 @@ h3 {
 button {
   cursor: pointer;
   font-family: inherit;
-  background: #eee;
-  border: 1px solid #000;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
   padding: 5px 10px;
-  color: #000;
+  color: var(--text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -33,13 +96,13 @@ button {
 }
 
 button:hover {
-  background: #ccc;
+  background: var(--bg-hover);
 }
 
 button:disabled {
-  background: #e0e0e0;
-  color: #888;
-  border-color: #ccc;
+  background: var(--bg-disabled);
+  color: var(--text-disabled);
+  border-color: var(--border-disabled);
   cursor: not-allowed;
 }
 
@@ -50,11 +113,12 @@ textarea,
 select {
   font-family: inherit;
   padding: 8px;
-  border: 1px solid #000;
+  border: 1px solid var(--border);
   box-sizing: border-box;
   width: 100%;
   margin-bottom: 10px;
-  background: #fff;
+  background: var(--bg-raised);
+  color: var(--text);
 }
 
 textarea {
@@ -63,10 +127,19 @@ textarea {
 }
 
 textarea:disabled {
-  background: #e0e0e0;
-  color: #555;
-  border-color: #999;
+  background: var(--bg-disabled);
+  color: var(--text-muted);
+  border-color: var(--border-soft);
   cursor: not-allowed;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .hidden {
@@ -75,7 +148,7 @@ textarea:disabled {
 
 /* Brief highlight after a copy action. */
 .flash {
-  background: #ccc !important;
+  background: var(--bg-hover) !important;
 }
 
 /* SVGs inside buttons/elements */

@@ -9,9 +9,9 @@
 }
 
 .config-box {
-  background: #eee;
+  background: var(--bg-inset);
   padding: 15px;
-  border: 1px solid #000;
+  border: 1px solid var(--border);
   margin-bottom: 20px;
 }
 
@@ -25,7 +25,7 @@
 
 .list-empty {
   font-size: 0.8em;
-  color: #666;
+  color: var(--text-muted);
 }
 
 .chat-item {
@@ -39,8 +39,8 @@
 }
 
 .chat-item.active {
-  border-color: #000;
-  background: #eee;
+  border-color: var(--border);
+  background: var(--bg-inset);
   font-weight: bold;
 }
 
@@ -82,7 +82,7 @@
 
 .file-progress-stats {
   font-size: 0.75em;
-  color: #666;
+  color: var(--text-muted);
   text-align: left;
   margin-top: 2px;
 }
@@ -92,13 +92,13 @@
   bottom: 0;
   left: 0;
   height: 2px;
-  background: #0055ff;
+  background: var(--accent);
   width: 0%;
   transition: width 0.3s ease;
 }
 
 body.ctrl-down .chat-item:hover {
-  background: #e0e0e0;
+  background: var(--bg-soft-hover);
 }
 
 body.ctrl-down .chat-item-title {

@@ -11,7 +11,7 @@
 .settings-subtitle {
   margin-top: 5px;
   font-size: 0.85em;
-  color: #555;
+  color: var(--text-muted);
 }
 
 .settings-toolbar {
@@ -23,7 +23,7 @@
 
 .settings-category {
   margin-top: 20px;
-  border-bottom: 1px solid #ccc;
+  border-bottom: 1px solid var(--border-soft);
   padding-bottom: 5px;
 }
 
@@ -31,7 +31,7 @@
   margin: 0;
   font-size: 0.9em;
   text-transform: uppercase;
-  color: #666;
+  color: var(--text-muted);
 }
 
 .settings-group {
@@ -52,7 +52,7 @@
 }
 
 .active-setting {
-  background: #ccc !important;
-  border-color: #000 !important;
+  background: var(--bg-hover) !important;
+  border-color: var(--border) !important;
   font-weight: bold;
 }

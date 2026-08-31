@@ -2,6 +2,19 @@ header {
   flex-shrink: 0;
 }
 
+/*
+ * Chrome visibility is keyed off <html> classes rather than a class on the
+ * element itself, so the pre-paint script in index.html can restore it before
+ * anything renders. `applyChromeState` keeps these in sync afterwards.
+ */
+:root.title-hidden #header {
+  display: none;
+}
+
+:root.sidebar-hidden #sidebar {
+  display: none;
+}
+
 .top-actions {
   position: fixed;
   top: 1rem;
@@ -12,14 +25,30 @@ header {
 }
 
 .top-btn {
-  color: #0055ff;
-  text-decoration: underline;
+  color: var(--accent);
   cursor: pointer;
   font-size: 0.9em;
+  user-select: none;
 }
 
 .top-btn:hover {
-  color: #ff0055;
+  color: var(--accent-hot);
+}
+
+/*
+ * A struck-through word means "off": [dark] when dark mode is on, [d̶a̶r̶k̶]
+ * when it is not. Purely declarative, so there is no label to re-render and
+ * nothing to flash on load.
+ */
+.top-btn .toggle-word {
+  text-decoration: none;
+}
+
+:root:not(.dark-theme) #toggle-theme-btn .toggle-word,
+:root.title-hidden #toggle-title-btn .toggle-word,
+:root.sidebar-hidden #toggle-sidebar-btn .toggle-word {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
 }
 
 .grid {
@@ -67,7 +96,8 @@ header {
 }
 
 @media (max-width: 768px) {
-  .sidebar:not(.hidden) + .main {
+  /* One pane at a time: the sidebar wins whenever it is showing. */
+  :root:not(.sidebar-hidden) .main {
     display: none;
   }
 

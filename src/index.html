@@ -11,16 +11,52 @@
 
     <title>HTML Chat</title>
 
+    <script>
+      /*
+       * Pre-paint chrome restore.
+       *
+       * IndexedDB is async: by the time prefs load the page has already
+       * painted, so a dark-mode reload flashes white and the sidebar/header
+       * jump. `data/prefs-repo.js` mirrors exactly these three values into
+       * localStorage, which is readable synchronously, for this script alone.
+       * Key names must stay in step with `data/keys.js`.
+       */
+      (function () {
+        var root = document.documentElement;
+
+        var read = function (key) {
+          try {
+            return window.localStorage.getItem(key);
+          } catch (error) {
+            // Storage blocked (private mode): fall back to defaults.
+            return null;
+          }
+        };
+
+        var theme = read('mf_theme');
+        var prefersDark =
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        if (theme === 'dark' || (!theme && prefersDark)) root.classList.add('dark-theme');
+        if (read('mf_sidebar_hidden') === 'true') root.classList.add('sidebar-hidden');
+        if (read('mf_title_hidden') === 'true') root.classList.add('title-hidden');
+      })();
+    </script>
+
     <link rel="stylesheet" href="./styles/index.css" />
   </head>
   <body>
     <div class="top-actions">
-      <a id="toggle-theme-btn" class="top-btn" title="Alt+D" data-command="ui.toggleTheme">[dark]</a>
-      <a id="toggle-title-btn" class="top-btn" title="Alt+O" data-command="ui.toggleTitle">[show title]</a>
-      <a id="toggle-sidebar-btn" class="top-btn" title="Alt+P" data-command="ui.toggleSidebar">[hide sidebar]</a>
+      <a id="toggle-theme-btn" class="top-btn" title="Toggle dark mode (Alt+D)"
+         data-command="ui.toggleTheme">[<span class="toggle-word">dark</span>]</a>
+      <a id="toggle-title-btn" class="top-btn" title="Toggle title (Alt+O)"
+         data-command="ui.toggleTitle">[<span class="toggle-word">title</span>]</a>
+      <a id="toggle-sidebar-btn" class="top-btn" title="Toggle sidebar (Alt+P)"
+         data-command="ui.toggleSidebar">[<span class="toggle-word">sidebar</span>]</a>
     </div>
 
-    <header id="header" class="hidden">
+    <header id="header">
       <h1>HTML Chat</h1>
       <p>Browser-based chat for OpenAI-compatible APIs.</p>
     </header>
