@@ -125,7 +125,7 @@ export async function truncateMessages(length) {
   chat.messages.length = Math.max(0, length);
   invalidateContext();
   await persistChat();
-  emit(EVENTS.MESSAGES);
+  emit(EVENTS.MESSAGES_TRUNCATED, { length: chat.messages.length });
 }
 
 /* ------------------------------------------------------------------ *

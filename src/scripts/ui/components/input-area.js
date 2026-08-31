@@ -149,6 +149,13 @@ export function applyChromeState() {
   if (titleButton) {
     titleButton.textContent = state.session.titleHidden ? '[show title]' : '[hide title]';
   }
+
+  const themeButton = $('#toggle-theme-btn');
+  const isDark = state.session.theme === 'dark';
+  document.body.classList.toggle('dark-theme', isDark);
+  if (themeButton) {
+    themeButton.textContent = isDark ? '[light]' : '[dark]';
+  }
 }
 
 /** Reflect embedding state on the per-file settings toolbar. */

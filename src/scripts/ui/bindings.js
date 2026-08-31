@@ -44,6 +44,18 @@ export function installBindings() {
     renderInputArea();
   });
 
+  on(EVENTS.MESSAGES_TRUNCATED, ({ length }) => {
+    if (state.session.view !== 'chat') return;
+    const container = $('#chat-container');
+    if (container) {
+      const messages = container.querySelectorAll('.msg');
+      for (let i = length; i < messages.length; i++) {
+        messages[i].remove();
+      }
+    }
+    renderInputArea();
+  });
+
   on(EVENTS.MESSAGE, ({ index, streaming }) => {
     if (state.session.view !== 'chat') return;
     const chat = currentChat();

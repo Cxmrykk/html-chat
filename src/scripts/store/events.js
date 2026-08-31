@@ -6,6 +6,8 @@ export const EVENTS = {
   MESSAGES: 'messages',
   /** One message changed in place. Payload: { index }. */
   MESSAGE: 'message',
+  /** Messages were removed from the end of the chat. Payload: { length }. */
+  MESSAGES_TRUNCATED: 'messages:truncated',
   /** One message was appended. Payload: { index }. */
   MESSAGE_APPENDED: 'message:appended',
   /** File list membership changed. */

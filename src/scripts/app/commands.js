@@ -99,6 +99,11 @@ export const commands = {
     persistPrefs();
   },
 
+  'ui.toggleTheme': () => {
+    setSession({ theme: state.session.theme === 'dark' ? 'light' : 'dark' });
+    persistPrefs();
+  },
+
   /* ---- chats ---- */
 
   'chat.new': async ({ event } = {}) => {

@@ -224,14 +224,6 @@ export const GLOBAL_SETTINGS = {
     tooltip: 'Maximum number of files displayed at once in the sidebar.',
     display: (value) => (isBlank(value) ? 'Unlimited' : String(value)),
   },
-  messageActionIcons: {
-    label: 'Icon Message Actions',
-    category: 'UI & Display',
-    type: 'text',
-    default: 'true',
-    tooltip: 'Show SVG icons instead of text labels for message action buttons (true/false).',
-    display: (value) => (value === 'true' ? 'Enabled' : 'Disabled'),
-  },
 };
 
 export const FILE_SETTINGS = {

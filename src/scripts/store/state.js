@@ -30,6 +30,7 @@ export const state = {
     sidebarHidden: false,
     titleHidden: false,
     promptHeight: '',
+    theme: 'light',
     editingMessageIndex: null,
     /** Which setting the settings editor has open. */
     activeSettingKey: null,
@@ -129,6 +130,7 @@ export function persistPrefs() {
     titleHidden: state.session.titleHidden,
     promptHeight: state.session.promptHeight,
     currentChatId: state.data.currentChatId,
+    theme: state.session.theme,
   });
 }
 

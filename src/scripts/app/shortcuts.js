@@ -72,6 +72,7 @@ export function installShortcuts() {
         r: () => state.data.currentChatId && runCommand('chat.rename', { id: state.data.currentChatId }),
         p: () => runCommand('ui.toggleSidebar'),
         o: () => runCommand('ui.toggleTitle'),
+        d: () => runCommand('ui.toggleTheme'),
         i: () => runCommand('settings.toggle', {}),
       };
       if (actions[key]) {

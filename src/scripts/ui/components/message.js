@@ -37,9 +37,8 @@ function embedConfigHTML(message) {
 }
 
 function actionsHTML(message, editing) {
-  const useIcons = state.data.config.messageActionIcons === 'true';
   const btn = (cmd, label, icon) =>
-    `<button data-command="${cmd}" title="${label}"${useIcons ? ' class="icon-btn"' : ''}>${useIcons ? icon : label}</button>`;
+    `<button data-command="${cmd}" title="${label}" class="icon-btn">${icon}</button>`;
 
   if (editing) {
     return [

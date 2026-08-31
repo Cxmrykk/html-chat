@@ -15,6 +15,7 @@ export const KEYS = {
   sidebarHidden: 'mf_sidebar_hidden',
   titleHidden: 'mf_title_hidden',
   promptHeight: 'mf_prompt_height',
+  theme: 'mf_theme',
   /** Legacy single-record chat key for backward compatibility migrations. */
   legacyChats: 'mf_chats',
 };

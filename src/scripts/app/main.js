@@ -49,6 +49,7 @@ async function init() {
       sidebarHidden: prefs.sidebarHidden,
       titleHidden: prefs.titleHidden,
       promptHeight: prefs.promptHeight,
+      theme: prefs.theme,
     },
     { silent: true },
   );
