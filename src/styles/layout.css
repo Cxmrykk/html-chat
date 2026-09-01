@@ -36,17 +36,18 @@ header {
 }
 
 /*
- * A struck-through word means "off": [dark] when dark mode is on, [d̶a̶r̶k̶]
- * when it is not. Purely declarative, so there is no label to re-render and
- * nothing to flash on load.
+ * A struck-through word means "off": [title] when the header is showing,
+ * [t̶i̶t̶l̶e̶] when it is not. The theme toggle names the mode you would switch
+ * *to*, so [light] is struck through exactly when dark mode is on. Purely
+ * declarative, so there is no label to re-render and nothing to flash on load.
  */
 .top-btn .toggle-word {
   text-decoration: none;
 }
 
-:root:not(.dark-theme) #toggle-theme-btn .toggle-word,
 :root.title-hidden #toggle-title-btn .toggle-word,
-:root.sidebar-hidden #toggle-sidebar-btn .toggle-word {
+:root.sidebar-hidden #toggle-sidebar-btn .toggle-word,
+:root.dark-theme #toggle-theme-btn .toggle-word {
   text-decoration: line-through;
   text-decoration-thickness: 2px;
 }
