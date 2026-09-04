@@ -1,3 +1,4 @@
+import { $ } from './dom.js';
 import { on } from '../store/state.js';
 import { EVENTS } from '../store/events.js';
 import { state, currentChat } from '../store/state.js';
@@ -12,7 +13,13 @@ import {
   applyChromeState,
   updateModelDropdown,
 } from './components/input-area.js';
-import { renderChatView, appendMessageToView, scrollToMessage } from './views/chat-view.js';
+import {
+  renderChatView,
+  appendMessageToView,
+  scrollToMessage,
+  isPinnedToBottom,
+  scrollToBottom,
+} from './views/chat-view.js';
 import { renderSettingsView } from './views/settings-view.js';
 
 /** Declarative event bindings mapping store events to UI renders. */
@@ -62,13 +69,25 @@ export function installBindings() {
     const message = chat?.messages[index];
     if (!message) return;
 
+    // Sampled first: growing the message moves the bottom out from under us.
+    const pinned = isPinnedToBottom();
+
     if (streaming) {
-      updateMessageContent(index, message.content, { final: false });
-      return;
+      // A missing node means the transcript and the store have drifted apart
+      // (the message was mounted while another view was up, say). Re-render
+      // rather than silently dropping every delta from here on — that is what
+      // a half-finished, "frozen" reply looks like.
+      if (!updateMessageContent(index, message.content, { final: false })) {
+        renderChatView({ preserveScroll: true });
+      }
+    } else {
+      replaceMessage(message, index, {
+        editing: state.session.editingMessageIndex === index,
+      });
     }
-    replaceMessage(message, index, {
-      editing: state.session.editingMessageIndex === index,
-    });
+
+    // Follow the reply down unless the user has deliberately scrolled away.
+    if (pinned) scrollToBottom();
   });
 
   on(EVENTS.MESSAGE_APPENDED, ({ index }) => {

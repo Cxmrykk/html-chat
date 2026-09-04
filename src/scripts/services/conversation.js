@@ -201,6 +201,14 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
   const chat = findChat(chatId);
   if (!chat) return;
 
+  /**
+   * Renders read the message back out of the store by index, so a chat the
+   * user has since navigated away from must stay silent: otherwise every
+   * delta repaints whichever message happens to share that index in the
+   * chat now on screen. Returning to the chat re-renders it in full anyway.
+   */
+  const isVisible = () => chatId === state.data.currentChatId;
+
   const controller = new AbortController();
   state.runtime.completionAbort = controller;
   setGeneration({
@@ -243,13 +251,15 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
             chat.messages.push({ role: 'assistant', content: partial });
             assistantIndex = chat.messages.length - 1;
             invalidateContext();
-            if (chatId === state.data.currentChatId) {
+            if (isVisible()) {
               emit(EVENTS.MESSAGE_APPENDED, { index: assistantIndex });
             }
             persistChat(chatId);
           } else {
             chat.messages[assistantIndex].content = partial;
-            emit(EVENTS.MESSAGE, { index: assistantIndex, streaming: true });
+            if (isVisible()) {
+              emit(EVENTS.MESSAGE, { index: assistantIndex, streaming: true });
+            }
           }
         },
       });
@@ -264,7 +274,9 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
       if (reply) chat.messages[assistantIndex].content = reply;
       invalidateContext();
       await persistChat(chatId);
-      emit(EVENTS.MESSAGE, { index: assistantIndex, streaming: false });
+      if (isVisible()) {
+        emit(EVENTS.MESSAGE, { index: assistantIndex, streaming: false });
+      }
     }
 
     if (aborted) {

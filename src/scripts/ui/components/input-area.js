@@ -4,6 +4,7 @@ import { estimateTokens } from '../../core/tokens.js';
 import { formatCompactCount } from '../../core/format.js';
 import { schemaFor } from '../../services/settings.js';
 import { DEFAULT_GOD_MODE_PROMPT } from '../../core/settings-schema.js';
+import { isRetryable } from './message.js';
 
 /** Input area components: composer and settings editor bars. */
 
@@ -95,6 +96,9 @@ export function renderInputArea() {
   setHidden($('#model-select'), Boolean(editing));
   setHidden($('#send-btn'), Boolean(editing));
   setHidden($('#save-edit-btn'), !editing);
+  // Retry regenerates from this message, so it only applies to the roles that
+  // can start a turn — the same test the non-editing retry button uses.
+  setHidden($('#retry-edit-btn'), !editing || !isRetryable(editing));
   setHidden($('#cancel-edit-btn'), !editing);
 
   const input = $('#chat-input');

@@ -17,7 +17,7 @@ import * as transfer from '../services/transfer.js';
 import * as embedding from '../services/embedding.js';
 import { retrieveChunks, wrapFileContent } from '../services/retrieval.js';
 import { pickFiles, readFileText, pickJSONText } from '../services/file-io.js';
-import { setMessageBusy } from '../ui/components/message.js';
+import { setMessageBusy, isRetryable } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { renderMainView } from '../ui/bindings.js';
 import { estimateTokens } from '../core/tokens.js';
@@ -217,13 +217,13 @@ export const commands = {
     navigator.clipboard.writeText(textToCopy).then(() => {
       if (!element) return;
       const originalHTML = element.innerHTML;
-      
+
       if (element.classList.contains('icon-btn')) {
         element.innerHTML = ICON_CHECK;
       } else {
         element.textContent = 'Copied';
       }
-      
+
       setTimeout(() => {
         element.innerHTML = originalHTML;
       }, 1500);
@@ -284,6 +284,23 @@ export const commands = {
 
     stopEditing();
     emit(EVENTS.SESSION);
+  },
+
+  /**
+   * Save the edit and immediately regenerate from it: everything after the
+   * message is dropped and the edited text is resent.
+   */
+  'message.retryEdit': async () => {
+    const index = state.session.editingMessageIndex;
+    if (index === null) return;
+
+    await commands['message.saveEdit']();
+
+    // Roles that cannot start a turn (assistant, system) just get the save.
+    const message = currentChat()?.messages[index];
+    if (!isRetryable(message)) return;
+
+    await commands['message.retry']({ index });
   },
 
   'message.cancelEdit': () => {

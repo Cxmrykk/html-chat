@@ -126,14 +126,6 @@ export const GLOBAL_SETTINGS = {
     payloadKey: 'presence_penalty',
     display: showApiDefault,
   },
-  streamResponse: {
-    label: 'Stream Response',
-    category: 'LLM Behavior',
-    type: 'text',
-    default: 'true',
-    tooltip: 'Stream responses chunk-by-chunk (true/false).',
-    display: showApiDefault,
-  },
   embeddingsUrl: {
     label: 'Embeddings Base URL',
     category: 'API & Connections',

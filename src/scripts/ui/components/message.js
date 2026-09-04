@@ -16,6 +16,16 @@ import {
 
 /** A single message row: markup, in-place update, and the transient busy label. */
 
+/**
+ * Retrying resends the message and regenerates everything after it, so it only
+ * means something for the two roles that can start a turn.
+ */
+export function isRetryable(message) {
+  if (!message) return false;
+  if (message.role === 'user') return true;
+  return message.role === 'file' && message.mode === 'full';
+}
+
 function embedSummary(message) {
   let summary =
     `*Estimated file size: ~${message.approxTokens || 0} tokens*<br>` +
@@ -41,11 +51,15 @@ function actionsHTML(message, editing) {
     `<button data-command="${cmd}" title="${label}" class="icon-btn">${icon}</button>`;
 
   if (editing) {
-    return [
-      btn('message.saveEdit', 'Save', ICON_SAVE),
+    const buttons = [btn('message.saveEdit', 'Save', ICON_SAVE)];
+    if (isRetryable(message)) {
+      buttons.push(btn('message.retryEdit', 'Retry (save and regenerate)', ICON_RETRY));
+    }
+    buttons.push(
       btn('message.cancelEdit', 'Cancel', ICON_CANCEL),
       btn('message.toggleWrap', 'Toggle Wrap', ICON_WRAP),
-    ].join('');
+    );
+    return buttons.join('');
   }
 
   const isEmbed = message.role === 'file' && message.mode === 'embed';
@@ -54,8 +68,7 @@ function actionsHTML(message, editing) {
 
   const buttons = [];
 
-  const retryable = message.role === 'user' || (message.role === 'file' && message.mode === 'full');
-  if (retryable) {
+  if (isRetryable(message)) {
     buttons.push(btn('message.retry', 'Retry', ICON_RETRY));
   }
 
@@ -136,7 +149,7 @@ export function replaceMessage(message, index, options) {
 
   const template = document.createElement('template');
   template.innerHTML = messageHTML(message, index, options).trim();
-  const element = existing.replaceWith(template.content.firstElementChild);
+  existing.replaceWith(template.content.firstElementChild);
   const newElement = document.querySelector(`.msg[data-index="${index}"]`);
   enhance(newElement);
   return newElement;

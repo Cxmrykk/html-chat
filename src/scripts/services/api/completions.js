@@ -2,9 +2,9 @@ import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
 import { isBlank } from '../../core/values.js';
 
 /**
- * Chat completions client. Handles both streaming and non-streaming responses
- * behind one interface: `onDelta` fires per chunk, the promise resolves with
- * the complete text.
+ * Chat completions client. Responses are always streamed: `onDelta` fires with
+ * the full text accumulated so far, and the promise resolves with the complete
+ * text.
  */
 
 /** Build the sampling parameters from whichever schema entries are set. */
@@ -19,15 +19,47 @@ function buildParameters(config) {
   return params;
 }
 
-export function isStreamingEnabled(config) {
-  return config.streamResponse !== 'false';
+/**
+ * Not every OpenAI-compatible server honours `stream: true`; a few answer with
+ * a single JSON completion regardless. SSE never carries a JSON content type,
+ * so this distinguishes the two without a user-facing setting.
+ */
+function isEventStream(response) {
+  if (!response.body) return false;
+  return !(response.headers.get('content-type') || '').includes('application/json');
 }
 
+/**
+ * Consume an SSE body, accumulating deltas.
+ *
+ * `onDelta` fires at most once per network read, and only when the text
+ * actually grew, so keepalive frames cannot trigger pointless re-renders.
+ */
 async function parseStream(response, onDelta) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
   let text = '';
+
+  const consume = (rawLine) => {
+    const line = rawLine.trim();
+    if (!line.startsWith('data:')) return;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    try {
+      const frame = JSON.parse(payload);
+      const delta = frame.choices?.[0]?.delta?.content;
+      if (delta) text += delta;
+    } catch {
+      /* partial or non-JSON keepalive frame */
+    }
+  };
+
+  const flush = (chunk) => {
+    const before = text;
+    for (const line of chunk) consume(line);
+    if (text !== before) onDelta?.(text);
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -35,29 +67,19 @@ async function parseStream(response, onDelta) {
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
-    buffer = lines.pop();
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line.startsWith('data: ')) continue;
-      if (line === 'data: [DONE]') continue;
-      try {
-        const payload = JSON.parse(line.slice(6));
-        const delta = payload.choices?.[0]?.delta?.content;
-        if (delta) text += delta;
-      } catch {
-        /* partial or non-JSON keepalive frame */
-      }
-    }
-    onDelta?.(text);
+    // The tail may be half a line; keep it until the next read completes it.
+    buffer = lines.pop() ?? '';
+    flush(lines);
   }
+
+  // Whatever the server sent without a trailing newline still counts.
+  buffer += decoder.decode();
+  flush(buffer.split('\n'));
 
   return text;
 }
 
 export async function requestCompletion({ config, model, messages, signal, onDelta }) {
-  const stream = isStreamingEnabled(config);
-
   const response = await fetch(`${config.url}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -67,7 +89,7 @@ export async function requestCompletion({ config, model, messages, signal, onDel
     body: JSON.stringify({
       model,
       messages,
-      stream,
+      stream: true,
       ...buildParameters(config),
     }),
     signal,
@@ -78,7 +100,7 @@ export async function requestCompletion({ config, model, messages, signal, onDel
     throw new Error(detail.error?.message || `HTTP ${response.status}`);
   }
 
-  if (!stream) {
+  if (!isEventStream(response)) {
     const payload = await response.json();
     const text = payload.choices?.[0]?.message?.content || '';
     onDelta?.(text);

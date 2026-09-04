@@ -14,6 +14,31 @@ const GOD_MODE_BANNER = `
     <div class="msg-content">${renderMarkdown('**JS Execution Enabled**. Proceed with caution.')}</div>
   </div>`;
 
+/**
+ * How close to the bottom still counts as "following along". A couple of lines
+ * of slack, so sub-pixel rounding or a stray wheel tick does not detach the
+ * view mid-stream.
+ */
+const STICK_THRESHOLD_PX = 48;
+
+/**
+ * True when the transcript is at (or very near) the bottom.
+ *
+ * Must be read *before* a message grows: a streaming reply pushes the bottom
+ * away, so measuring afterwards always reports the user as scrolled up.
+ */
+export function isPinnedToBottom() {
+  const container = $('#chat-container');
+  if (!container) return false;
+  const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+  return distance <= STICK_THRESHOLD_PX;
+}
+
+export function scrollToBottom() {
+  const container = $('#chat-container');
+  if (container) container.scrollTop = container.scrollHeight;
+}
+
 export function renderChatView({ preserveScroll = false } = {}) {
   const container = $('#chat-container');
   if (!container) return;
@@ -63,7 +88,7 @@ export function appendMessageToView(message, index) {
   mountMessage(container, message, index, {
     editing: state.session.editingMessageIndex === index,
   });
-  container.scrollTop = container.scrollHeight;
+  scrollToBottom();
 }
 
 export function scrollToMessage(index, align = 'top') {
