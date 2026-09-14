@@ -166,21 +166,35 @@ export function abortGeneration() {
 /**
  * Send the conversation to the API.
  *
- * `loopDepth` tracks God Mode re-entry after code execution; `skipApi` appends
- * the user's message without calling the API at all.
+ * `loopDepth` tracks God Mode re-entry after code execution; `resend` sends the
+ * transcript exactly as it stands (retry) without appending a user message and
+ * without consuming a God Mode loop; `skipApi` appends the user's message
+ * without calling the API at all; `chatId` pins the turn to the chat it started
+ * in, so switching chats mid-run cannot redirect it.
  */
-export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } = {}) {
+export async function sendMessage({
+  text = '',
+  loopDepth = 0,
+  skipApi = false,
+  resend = false,
+  chatId = null,
+} = {}) {
   const isLoop = loopDepth > 0;
+  // Both a loop turn and a retry resend the transcript as it already stands.
+  const continuing = isLoop || resend;
 
   if (isLoop && loopDepth >= MAX_GOD_MODE_LOOPS) {
-    await appendMessage({
-      role: 'error',
-      content: `**System Error:** Maximum execution loop depth (${MAX_GOD_MODE_LOOPS}) reached.`,
-    });
+    await appendMessage(
+      {
+        role: 'error',
+        content: `**System Error:** Maximum execution loop depth (${MAX_GOD_MODE_LOOPS}) reached.`,
+      },
+      { chatId: chatId || state.data.currentChatId },
+    );
     return;
   }
 
-  if (!isLoop) {
+  if (!continuing) {
     if (!text.trim()) return;
     if (!state.data.config.key && !skipApi) {
       throw new Error('Please enter your API key in the settings first.');
@@ -197,8 +211,8 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
     if (skipApi) return;
   }
 
-  const chatId = state.data.currentChatId;
-  const chat = findChat(chatId);
+  const targetChatId = chatId || state.data.currentChatId;
+  const chat = findChat(targetChatId);
   if (!chat) return;
 
   /**
@@ -207,7 +221,7 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
    * delta repaints whichever message happens to share that index in the
    * chat now on screen. Returning to the chat re-renders it in full anyway.
    */
-  const isVisible = () => chatId === state.data.currentChatId;
+  const isVisible = () => targetChatId === state.data.currentChatId;
 
   const controller = new AbortController();
   state.runtime.completionAbort = controller;
@@ -254,7 +268,7 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
             if (isVisible()) {
               emit(EVENTS.MESSAGE_APPENDED, { index: assistantIndex });
             }
-            persistChat(chatId);
+            persistChat(targetChatId);
           } else {
             chat.messages[assistantIndex].content = partial;
             if (isVisible()) {
@@ -269,18 +283,24 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
     }
 
     if (assistantIndex === -1 && !aborted) {
-      assistantIndex = await appendMessage({ role: 'assistant', content: reply }, { chatId });
+      assistantIndex = await appendMessage(
+        { role: 'assistant', content: reply },
+        { chatId: targetChatId },
+      );
     } else if (assistantIndex !== -1) {
       if (reply) chat.messages[assistantIndex].content = reply;
       invalidateContext();
-      await persistChat(chatId);
+      await persistChat(targetChatId);
       if (isVisible()) {
         emit(EVENTS.MESSAGE, { index: assistantIndex, streaming: false });
       }
     }
 
     if (aborted) {
-      await appendMessage({ role: 'error', content: '*[Stopped by user]*' }, { chatId });
+      await appendMessage(
+        { role: 'error', content: '*[Stopped by user]*' },
+        { chatId: targetChatId },
+      );
       return;
     }
 
@@ -290,13 +310,20 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
         for (const code of blocks) {
           if (!state.runtime.generation.active) break;
           const result = await executeRunBlock(code);
-          await appendMessage({ role: 'user', content: result }, { chatId });
+          await appendMessage({ role: 'user', content: result }, { chatId: targetChatId });
         }
         if (state.runtime.generation.active) {
           state.runtime.completionAbort = null;
-          return sendMessage({ loopDepth: loopDepth + 1 });
+          // Awaited, not returned: `return` would evaluate the call and then run
+          // this function's `finally` while the next turn is still in flight,
+          // clearing its abort controller and its generation state.
+          await sendMessage({ loopDepth: loopDepth + 1, chatId: targetChatId });
+          return;
         } else {
-          await appendMessage({ role: 'error', content: '*[Stopped by user]*' }, { chatId });
+          await appendMessage(
+            { role: 'error', content: '*[Stopped by user]*' },
+            { chatId: targetChatId },
+          );
           return;
         }
       }
@@ -305,7 +332,7 @@ export async function sendMessage({ text = '', loopDepth = 0, skipApi = false } 
     if (error.name !== 'AbortError') {
       await appendMessage(
         { role: 'error', content: `**Error:**\n\n${error.message}` },
-        { chatId },
+        { chatId: targetChatId },
       );
     }
   } finally {

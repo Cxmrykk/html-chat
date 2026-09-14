@@ -331,7 +331,9 @@ export const commands = {
 
     if (message.role === 'file') {
       await conversation.truncateMessages(index + 1);
-      await conversation.sendMessage({ loopDepth: 1 });
+      // `resend`, not a loop turn: this is an ordinary retry and must not
+      // report itself as a God Mode loop or consume one of its iterations.
+      await conversation.sendMessage({ resend: true });
       return;
     }
 

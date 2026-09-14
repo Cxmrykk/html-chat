@@ -55,7 +55,9 @@ export function installBindings() {
     if (state.session.view !== 'chat') return;
     const container = $('#chat-container');
     if (container) {
-      const messages = container.querySelectorAll('.msg');
+      // `[data-index]` only: the God Mode banner is also a `.msg`, and counting
+      // it would shift every index by one and remove the wrong elements.
+      const messages = container.querySelectorAll('.msg[data-index]');
       for (let i = length; i < messages.length; i++) {
         messages[i].remove();
       }
