@@ -14,7 +14,8 @@
   --bg-inset: #232527;
   --bg-hover: #3e4446;
   --bg-soft-hover: #2b2f31;
-  --bg-code: #28201a;
+  /* Replaced the algorithmically brownish #28201a with a clean, neutral slate */
+  --bg-code: #1d1f21;
   --bg-disabled: #2b2f31;
 
   /* Text */
