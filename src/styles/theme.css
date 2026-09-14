@@ -7,50 +7,50 @@
 :root.dark-theme {
   color-scheme: dark;
 
-  /* Surfaces */
-  --bg: #15171c;
-  --bg-panel: #1b1e24;
-  --bg-raised: #22262e;
-  --bg-inset: #2a2f38;
-  --bg-hover: #3a414c;
-  --bg-soft-hover: #2b313a;
-  --bg-code: #16181d;
-  --bg-disabled: #23262c;
+  /* Surfaces (Based on Dark Reader's dynamic dark generation) */
+  --bg: #181a1b;
+  --bg-panel: #1e2022;
+  --bg-raised: #1c1e1f;
+  --bg-inset: #232527;
+  --bg-hover: #3e4446;
+  --bg-soft-hover: #2b2f31;
+  --bg-code: #28201a;
+  --bg-disabled: #2b2f31;
 
   /* Text */
-  --text: #e8eaed;
-  --text-muted: #a9b1bd;
-  --text-faint: #8b93a1;
-  --text-disabled: #6b7280;
+  --text: #e8e6e3;
+  --text-muted: #a8a095;
+  --text-faint: #8f877c;
+  --text-disabled: #7b7266;
 
   /* Lines and depth */
-  --border: #434b57;
-  --border-soft: #2f353e;
-  --border-disabled: #383e47;
-  --shadow: 2px 2px 0 rgba(0, 0, 0, 0.55);
+  --border: #736b5e;
+  --border-soft: #3e4446;
+  --border-disabled: #3e4446;
+  --shadow: 2px 2px 0 rgba(0, 0, 0, 0.7);
 
   /* Accents */
-  --accent: #6ea8ff;
-  --accent-hot: #ff6b9d;
+  --accent: #337dff;
+  --accent-hot: #ff3377;
 
   /* Message roles: same hues, lifted to read against a dark surface. */
-  --role-user: #5b9dff;
-  --role-assistant: #ff5c93;
-  --role-system: #e3aa4f;
-  --role-system-bg: #2a2317;
-  --role-error: #ff6b6b;
-  --role-error-bg: #2c1b1d;
-  --role-file: #35c98a;
-  --role-file-bg: #16281f;
+  --role-user: #337dff;
+  --role-assistant: #ff3377;
+  --role-system: #d99200;
+  --role-system-bg: #211d13;
+  --role-error: #e60000;
+  --role-error-bg: #2c1b1c;
+  --role-file: #00b359;
+  --role-file-bg: #152219;
 
-  /* Syntax highlighting: Prism's palette is unreadable here, so replace it. */
-  --code-fg: #d7dae0;
-  --code-comment: #7f8896;
-  --code-punctuation: #9aa2b1;
-  --code-literal: #d19a66;
-  --code-string: #98c379;
-  --code-operator: #56b6c2;
-  --code-keyword: #c678dd;
-  --code-function: #61afef;
-  --code-variable: #e5c07b;
+  /* Syntax highlighting: Replicating Dark Reader's interpretation of Prism's default theme */
+  --code-fg: #e8e6e3;
+  --code-comment: #8a959f;
+  --code-punctuation: #8f877c;
+  --code-literal: #ff338f;
+  --code-string: #85c700;
+  --code-operator: #c59252;
+  --code-keyword: #0096d6;
+  --code-function: #e46581;
+  --code-variable: #f5a400;
 }
