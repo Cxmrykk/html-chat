@@ -16,7 +16,6 @@ import {
   renderSendButton,
   renderSettingsEditor,
   renderEmbeddingToggle,
-  renderAttachedFiles,
   applyChromeState,
   updateModelDropdown,
 } from './components/input-area.js';
@@ -51,7 +50,6 @@ export function renderAll() {
 /** Everything that shows which files the current chat may search. */
 function renderChatFiles() {
   renderFileList();
-  renderAttachedFiles();
 }
 
 export function installBindings() {
@@ -61,7 +59,10 @@ export function installBindings() {
     renderChatFiles();
   });
 
-  on(EVENTS.CHAT_FILES, renderChatFiles);
+  on(EVENTS.CHAT_FILES, () => {
+    renderChatFiles();
+    if (state.session.view === 'chat') renderChatView({ preserveScroll: true });
+  });
 
   on(EVENTS.MESSAGES, () => {
     if (state.session.view === 'chat') renderChatView();

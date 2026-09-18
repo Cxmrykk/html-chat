@@ -2,9 +2,7 @@ import { $, setHidden, setText, setDisabled } from '../dom.js';
 import {
   state,
   currentChat,
-  chatFiles,
   isEmbedding,
-  embeddingsEnabled,
 } from '../../store/state.js';
 import { estimateTokens } from '../../core/tokens.js';
 import { formatCompactCount, escapeHTML } from '../../core/format.js';
@@ -93,26 +91,6 @@ export function renderSendButton() {
   setText(button, label ? `Send (${label} tokens)` : 'Send');
 }
 
-/**
- * Names the files the current chat may search. The sidebar shows the same
- * thing, but the sidebar can be hidden, and what the model can read should
- * never be invisible.
- */
-export function renderAttachedFiles() {
-  const line = $('#attached-files');
-  if (!line) return;
-
-  const files = chatFiles();
-  setHidden(line, !files.length);
-  if (!files.length) return;
-
-  const names = files.map((file) => escapeHTML(file.name)).join(', ');
-  const warning = embeddingsEnabled()
-    ? ''
-    : ' <span class="attached-files-warning">(not searchable: no embeddings model configured)</span>';
-  line.innerHTML = `<strong>Searchable files:</strong> ${names}${warning}`;
-}
-
 function editingMessage() {
   const chat = currentChat();
   const index = state.session.editingMessageIndex;
@@ -144,7 +122,6 @@ export function renderInputArea() {
   const input = $('#chat-input');
   if (input) input.disabled = false;
 
-  renderAttachedFiles();
   renderSendButton();
 }
 

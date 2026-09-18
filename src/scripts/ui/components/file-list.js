@@ -52,10 +52,12 @@ export function renderFileList() {
   list.innerHTML = state.data.files
     .map((file) => {
       const selected = attached.has(file.id);
+      const showBar = enabled && (file.progress ?? 0) < 100;
+      
       const stats = enabled && shouldShowStats(file)
         ? `<div class="file-progress-stats">${progressStatsHTML(file)}</div>`
         : '';
-      const bar = enabled
+      const bar = showBar
         ? `<div class="file-progress-bar" style="width: ${file.exactProgress ?? file.progress ?? 0}%"></div>`
         : '';
 
@@ -66,7 +68,7 @@ export function renderFileList() {
           <div class="file-item-row">
             <div class="chat-item-title" data-command="file.toggle"
                  role="checkbox" aria-checked="${selected ? 'true' : 'false'}"
-                 title="Click to let this chat search the file&#10;Alt+Click to replace contents"><span class="file-marker" aria-hidden="true">${selected ? '[x]' : '[ ]'}</span> ${escapeHTML(file.name)}</div>
+                 title="Click to let this chat search the file&#10;Alt+Click to replace contents">${escapeHTML(file.name)}</div>
             <div class="chat-item-actions">
               <button data-command="file.delete" title="Delete File">${ICON_DELETE}</button>
             </div>
@@ -84,8 +86,19 @@ export function updateFileProgress(id) {
   const item = $(`.file-item[data-id="${CSS.escape(id)}"]`);
   if (!file || !item) return;
 
-  const bar = item.querySelector('.file-progress-bar');
-  if (bar) bar.style.width = `${file.exactProgress ?? file.progress ?? 0}%`;
+  let bar = item.querySelector('.file-progress-bar');
+  const showBar = embeddingsEnabled() && (file.progress ?? 0) < 100;
+  
+  if (showBar) {
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'file-progress-bar';
+      item.appendChild(bar);
+    }
+    bar.style.width = `${file.exactProgress ?? file.progress ?? 0}%`;
+  } else if (bar) {
+    bar.remove();
+  }
 
   let stats = item.querySelector('.file-progress-stats');
   if (shouldShowStats(file)) {

@@ -38,9 +38,13 @@
   margin-bottom: 5px;
 }
 
-.chat-item.active {
+.chat-item.active,
+.file-item.selected {
   border-color: var(--border);
   background: var(--bg-inset);
+}
+
+.chat-item.active {
   font-weight: bold;
 }
 
@@ -54,20 +58,8 @@
   align-items: center;
 }
 
-/*
- * A file attached to the current chat. Deliberately not the boxed look of the
- * active chat: a chat is *the* selection, files are a set of ticks.
- */
-.file-marker {
-  color: var(--text-faint);
-}
-
 .file-item.selected .chat-item-title {
   font-weight: bold;
-}
-
-.file-item.selected .file-marker {
-  color: var(--role-tool);
 }
 
 .chat-item-title {
@@ -101,6 +93,7 @@
   color: var(--text-muted);
   text-align: left;
   margin-top: 2px;
+  font-weight: normal;
 }
 
 .file-progress-bar {

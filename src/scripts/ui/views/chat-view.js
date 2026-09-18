@@ -1,5 +1,5 @@
 import { $ } from '../dom.js';
-import { state, currentChat } from '../../store/state.js';
+import { state, currentChat, chatFiles, embeddingsEnabled } from '../../store/state.js';
 import { messageHTML, mountMessage } from '../components/message.js';
 import { enhance, renderMarkdown } from '../markdown.js';
 
@@ -56,7 +56,23 @@ export function renderChatView({ preserveScroll = false } = {}) {
   const jsExecution = Boolean(state.data.config.jsExecution);
   let html = jsExecution ? JS_EXECUTION_BANNER : '';
 
-  if (!chat.messages.length && !jsExecution) {
+  const files = chatFiles(chat);
+  if (files.length > 0) {
+    const names = files.map((file) => escapeHTML(file.name)).join(', ');
+    const warning = embeddingsEnabled()
+      ? ''
+      : ' **(Not searchable: no embeddings model configured)**';
+    html += `
+      <div class="msg system">
+        <div class="msg-meta">
+          <span>System</span>
+          <div class="msg-actions"><span class="readonly-tag">[Read-Only]</span></div>
+        </div>
+        <div class="msg-content">${renderMarkdown(`**File search (RAG) enabled.** The model can search the following attached files: ${names}.${warning}`)}</div>
+      </div>`;
+  }
+
+  if (!chat.messages.length && !html) {
     html += '<p class="empty-chat-msg">It is empty in here. Send a prompt.</p>';
   } else {
     html += chat.messages
@@ -98,4 +114,14 @@ export function scrollToMessage(index, align = 'top') {
   const element = container?.querySelector(`.msg[data-index="${index}"]`);
   if (!container || !element) return;
   container.scrollTop = align === 'bottom' ? container.scrollHeight : element.offsetTop - 15;
+}
+
+// Ensure html characters in system prompts are strictly escaped before passing to marked
+function escapeHTML(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

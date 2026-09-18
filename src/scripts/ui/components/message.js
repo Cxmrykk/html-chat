@@ -77,13 +77,25 @@ function actionsHTML(message, editing) {
 }
 
 function roleSelectHTML(message) {
-  const options = roleOptionsFor(message)
+  // A collapsible box already has a label ("Thinking", "JavaScript Result"),
+  // so the role is obvious and doesn't need to be rendered in the actions area.
+  if (isCollapsible(message)) return '';
+
+  const options = roleOptionsFor(message);
+  
+  // If the role is locked (like an assistant message with tool calls), 
+  // just show plain text instead of a pointless single-option dropdown.
+  if (options.length === 1) {
+    return `<span>${escapeHTML(options[0])}</span>`;
+  }
+
+  const optionsHTML = options
     .map((value) => {
       const selected = value === message.role ? ' selected' : '';
       return `<option value="${escapeHTML(value)}"${selected}>${escapeHTML(value)}</option>`;
     })
     .join('');
-  return `<select class="role-select">${options}</select>`;
+  return `<select class="role-select">${optionsHTML}</select>`;
 }
 
 function bodyHTML(message) {
