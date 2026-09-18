@@ -1,10 +1,11 @@
 import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
 import { isBlank } from '../../core/values.js';
+import { reasoningOf, resolveReply } from '../../core/reasoning.js';
 
 /**
  * Chat completions client. Responses are always streamed: `onDelta` fires with
- * the full text accumulated so far, and the promise resolves with the complete
- * text.
+ * `{ thinking, content }` — the full reasoning and the full answer accumulated
+ * so far — and the promise resolves with the complete pair.
  */
 
 /** Build the sampling parameters from whichever schema entries are set. */
@@ -30,7 +31,7 @@ function isEventStream(response) {
 }
 
 /**
- * Consume an SSE body, accumulating deltas.
+ * Consume an SSE body, accumulating reasoning and content deltas separately.
  *
  * `onDelta` fires at most once per network read, and only when the text
  * actually grew, so keepalive frames cannot trigger pointless re-renders.
@@ -39,7 +40,8 @@ async function parseStream(response, onDelta) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
-  let text = '';
+  let reasoning = '';
+  let content = '';
 
   const consume = (rawLine) => {
     const line = rawLine.trim();
@@ -48,17 +50,22 @@ async function parseStream(response, onDelta) {
     if (!payload || payload === '[DONE]') return;
     try {
       const frame = JSON.parse(payload);
-      const delta = frame.choices?.[0]?.delta?.content;
-      if (delta) text += delta;
+      const delta = frame.choices?.[0]?.delta;
+      if (!delta) return;
+      reasoning += reasoningOf(delta);
+      // Servers send `content: null` alongside reasoning deltas.
+      if (typeof delta.content === 'string') content += delta.content;
     } catch {
       /* partial or non-JSON keepalive frame */
     }
   };
 
-  const flush = (chunk) => {
-    const before = text;
-    for (const line of chunk) consume(line);
-    if (text !== before) onDelta?.(text);
+  const flush = (lines) => {
+    const before = reasoning.length + content.length;
+    for (const line of lines) consume(line);
+    if (reasoning.length + content.length !== before) {
+      onDelta?.(resolveReply({ reasoning, content }));
+    }
   };
 
   while (true) {
@@ -76,7 +83,8 @@ async function parseStream(response, onDelta) {
   buffer += decoder.decode();
   flush(buffer.split('\n'));
 
-  return text;
+  // `final` releases anything held back as a possible opening `<think>` tag.
+  return resolveReply({ reasoning, content }, { final: true });
 }
 
 export async function requestCompletion({ config, model, messages, signal, onDelta }) {
@@ -102,9 +110,16 @@ export async function requestCompletion({ config, model, messages, signal, onDel
 
   if (!isEventStream(response)) {
     const payload = await response.json();
-    const text = payload.choices?.[0]?.message?.content || '';
-    onDelta?.(text);
-    return text;
+    const message = payload.choices?.[0]?.message;
+    const reply = resolveReply(
+      {
+        reasoning: reasoningOf(message),
+        content: typeof message?.content === 'string' ? message.content : '',
+      },
+      { final: true },
+    );
+    onDelta?.(reply);
+    return reply;
   }
 
   return parseStream(response, onDelta);

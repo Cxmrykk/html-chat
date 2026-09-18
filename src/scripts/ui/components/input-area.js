@@ -1,47 +1,60 @@
 import { $, setHidden, setText, setDisabled } from '../dom.js';
 import { state, currentChat, isEmbedding } from '../../store/state.js';
 import { estimateTokens } from '../../core/tokens.js';
-import { formatCompactCount } from '../../core/format.js';
+import { formatCompactCount, escapeHTML } from '../../core/format.js';
+import { isSendable } from '../../core/roles.js';
 import { schemaFor } from '../../services/settings.js';
+import { availableModels } from '../../services/models.js';
 import { DEFAULT_GOD_MODE_PROMPT } from '../../core/settings-schema.js';
 import { isRetryable } from './message.js';
 
 /** Input area components: composer and settings editor bars. */
 
+/**
+ * The model dropdown, driven by whatever `services/models.js` last
+ * discovered (plus any manually configured extras). This never mutates
+ * `lastModel` itself — `ensureActiveModel` in the models service owns that
+ * reconciliation, so a render can never silently change the user's selection.
+ */
 export function updateModelDropdown() {
   const select = $('#model-select');
   if (!select) return;
 
-  const models = (state.data.config.models || '')
-    .split(',')
-    .map((model) => model.trim())
-    .filter(Boolean);
+  const models = availableModels();
+  const { loading, error } = state.runtime.models;
 
-  select.innerHTML = models
-    .map((model) => `<option value="${model}">${model}</option>`)
-    .join('');
-
-  if (state.data.config.lastModel && models.includes(state.data.config.lastModel)) {
+  if (models.length) {
+    select.innerHTML = models
+      .map((model) => `<option value="${escapeHTML(model)}">${escapeHTML(model)}</option>`)
+      .join('');
     select.value = state.data.config.lastModel;
-  } else if (models.length) {
-    state.data.config.lastModel = models[0];
-    select.value = models[0];
+  } else {
+    const label = loading
+      ? 'Loading models...'
+      : error
+        ? 'No models (hover for details)'
+        : 'No models';
+    select.innerHTML = `<option value="">${escapeHTML(label)}</option>`;
   }
+
+  setDisabled(select, !models.length);
+  select.title = error ? `Model discovery failed: ${error}` : '';
 }
 
-/** Cached estimated character count for conversation context. */
+/**
+ * Cached estimated character count for conversation context. Only what is
+ * actually sent counts: errors, thinking and un-run embed placeholders do not.
+ */
 function contextChars() {
   if (state.runtime.contextChars !== -1) return state.runtime.contextChars;
 
   let total = 0;
   const chat = currentChat();
   if (chat) {
-    total = chat.messages.reduce((sum, message) => {
-      if (message.role === 'file') {
-        return message.mode === 'full' ? sum + (message.content || '').length : sum;
-      }
-      return sum + (message.content || '').length;
-    }, 0);
+    total = chat.messages.reduce(
+      (sum, message) => (isSendable(message) ? sum + (message.content || '').length : sum),
+      0,
+    );
   }
   if (state.data.config.godMode) {
     total += (state.data.config.godModePrompt || DEFAULT_GOD_MODE_PROMPT).length;

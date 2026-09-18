@@ -5,6 +5,7 @@ import * as chatsRepo from '../data/chats-repo.js';
 import * as filesRepo from '../data/files-repo.js';
 import * as prefsRepo from '../data/prefs-repo.js';
 import { startEmbedding } from '../services/embedding.js';
+import { ensureActiveModel, refreshModels } from '../services/models.js';
 import { installBindings, renderAll } from '../ui/bindings.js';
 import { installEventHandlers } from './events.js';
 import { installShortcuts } from './shortcuts.js';
@@ -15,7 +16,6 @@ function hydrateConnectionForm() {
   const config = state.data.config;
   if ($('#cfg-url')) $('#cfg-url').value = config.url;
   if ($('#cfg-key')) $('#cfg-key').value = config.key;
-  if ($('#cfg-models')) $('#cfg-models').value = config.models;
   if ($('#cfg-godmode')) $('#cfg-godmode').checked = Boolean(config.godMode);
 }
 
@@ -55,11 +55,15 @@ async function init() {
   );
 
   hydrateConnectionForm();
+  // The cached list (or legacy migration) may already point somewhere stale.
+  ensureActiveModel();
   installBindings();
   installEventHandlers();
   installShortcuts();
   renderAll();
   resumeEmbeddings();
+  // Not awaited: the cached model list renders immediately, this refines it.
+  refreshModels();
 }
 
 init();

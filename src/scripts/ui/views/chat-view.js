@@ -80,7 +80,8 @@ export function renderChatView({ preserveScroll = false } = {}) {
   }
 }
 
-export function appendMessageToView(message, index) {
+/** Mount a new message; `follow: false` leaves the scroll position alone. */
+export function appendMessageToView(message, index, { follow = true } = {}) {
   const container = $('#chat-container');
   if (!container) return;
 
@@ -88,7 +89,7 @@ export function appendMessageToView(message, index) {
   mountMessage(container, message, index, {
     editing: state.session.editingMessageIndex === index,
   });
-  scrollToBottom();
+  if (follow) scrollToBottom();
 }
 
 export function scrollToMessage(index, align = 'top') {

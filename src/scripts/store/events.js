@@ -4,7 +4,12 @@ export const EVENTS = {
   CHATS: 'chats',
   /** The current chat's message array changed wholesale. */
   MESSAGES: 'messages',
-  /** One message changed in place. Payload: { index }. */
+  /**
+   * One message changed in place. Payload: { index, streaming?, anchored? }.
+   * `streaming` marks a partial update that will be followed by more;
+   * `anchored` asks the view to stay where it is instead of following the
+   * transcript down (used when a thinking box is toggled).
+   */
   MESSAGE: 'message',
   /** Messages were removed from the end of the chat. Payload: { length }. */
   MESSAGES_TRUNCATED: 'messages:truncated',
@@ -22,4 +27,6 @@ export const EVENTS = {
   CONTEXT: 'context',
   /** A user-supplied hook failed. Payload: { key, error }. */
   HOOK_ERROR: 'hook:error',
+  /** The model list, or the status of fetching it, changed. */
+  MODELS: 'models',
 };

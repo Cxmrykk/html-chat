@@ -151,6 +151,14 @@ export const GLOBAL_SETTINGS = {
     resetsEmbeddings: true,
     display: (value) => (isBlank(value) ? 'Disabled' : String(value)),
   },
+  extraModels: {
+    label: 'Extra Models',
+    category: 'API & Connections',
+    type: 'text',
+    default: '',
+    tooltip: 'Comma-separated models to always offer, for servers that do not implement /models.',
+    display: (value) => (isBlank(value) ? 'None' : String(value)),
+  },
   fileWrapperFunc: {
     label: 'File Wrapper Function (JS)',
     category: 'RAG & Document Processing',

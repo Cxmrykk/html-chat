@@ -47,6 +47,9 @@ export const state = {
     embedding: new Map(),
     /** Cached context size; -1 means "recompute". */
     contextChars: -1,
+    /** Discovery status; the list itself is cached in `data.config.models`. */
+    models: { loading: false, error: null },
+    modelsAbort: null,
   },
 };
 
@@ -96,6 +99,11 @@ export function invalidateContext() {
 export function setGeneration(patch) {
   Object.assign(state.runtime.generation, patch);
   emit(EVENTS.GENERATION);
+}
+
+export function setModelStatus(patch) {
+  Object.assign(state.runtime.models, patch);
+  emit(EVENTS.MODELS);
 }
 
 export function reportHookError(key, error) {

@@ -1,11 +1,12 @@
 import * as idb from './idb.js';
 import { KEYS } from './keys.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
+import { normalizeModelList } from '../core/models.js';
 
 const BASE_CONFIG = {
   url: 'https://api.openai.com/v1',
   key: '',
-  models: 'gpt-4o, gpt-4-turbo, gpt-3.5-turbo',
+  models: [],
   godMode: false,
   lastModel: '',
 };
@@ -17,6 +18,8 @@ export async function loadConfig() {
   for (const [key, entry] of Object.entries(GLOBAL_SETTINGS)) {
     if (config[key] === undefined) config[key] = entry.default;
   }
+  // Legacy installs stored a comma-separated string; it becomes the initial cache.
+  config.models = normalizeModelList(config.models);
   return config;
 }
 

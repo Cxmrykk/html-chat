@@ -47,6 +47,8 @@ Before adding a helper, check whether it already exists:
 * Progress percentages → `core/progress.js`
 * Setting inheritance (file → global → default) → `core/values.js`
 * IndexedDB key formats → `data/keys.js`
+* Which roles are sent to the API / offered in the role dropdown → `core/roles.js`
+* Splitting a model's reasoning from its answer → `core/reasoning.js`
 
 Never re-derive these inline. Never read state out of the DOM.
 
@@ -61,6 +63,14 @@ Never re-derive these inline. Never read state out of the DOM.
   Mode. That is the product, not an oversight.
 * **Prism languages are a fixed set** (`vendor/prism.js`). The CDN autoloader
   cannot be bundled. Unknown languages fall back to unhighlighted text.
+* **Thinking messages are transcript-only.** The `thinking` role is never sent
+  to the API (`core/roles.js`), never counted in the context estimate, and
+  `<run>` blocks inside it are never executed. Its `collapsed` flag lives on
+  the message, not in the DOM.
+* **A closing `</think>` with no opening tag is ordinary text.** Inline
+  reasoning only counts when the reply *starts* with `<think>`. Treating an
+  orphan closing tag as reasoning would swallow the first half of any reply
+  that merely mentions the tag — this codebase included.
 
 ## 6. Execution
 

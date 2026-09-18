@@ -16,6 +16,7 @@ import { requestCompletion } from './api/completions.js';
 import { fullFileContent } from './retrieval.js';
 import { extractRunBlocks, executeRunBlock } from './god-mode.js';
 import { DEFAULT_GOD_MODE_PROMPT } from '../core/settings-schema.js';
+import { isSendable, isThinking, THINKING_ROLE } from '../core/roles.js';
 import { truncate } from '../core/format.js';
 
 /** Chat lifecycle and the send/execute loop. */
@@ -110,6 +111,20 @@ export async function updateMessage(index, patch) {
   emit(EVENTS.MESSAGE, { index });
 }
 
+/**
+ * Expand or collapse a thinking message. Purely presentational: thinking is
+ * never sent, so the context estimate is untouched, and the repaint is
+ * `anchored` so the view does not scroll away from the box just clicked.
+ */
+export async function setThinkingCollapsed(index, collapsed) {
+  const chat = currentChat();
+  const message = chat?.messages[index];
+  if (!isThinking(message)) return;
+  message.collapsed = collapsed;
+  emit(EVENTS.MESSAGE, { index, anchored: true });
+  await persistChat();
+}
+
 export async function deleteMessage(index) {
   const chat = currentChat();
   if (!chat) return;
@@ -133,22 +148,117 @@ export async function truncateMessages(length) {
  * ------------------------------------------------------------------ */
 
 /**
- * Expand file messages into plain user messages.
- * Embed-mode file messages contribute nothing until explicitly run — the
- * retrieved text is appended as its own message at that point.
+ * The messages that go to the API.
+ *
+ * Transcript-only rows (errors, thinking, un-run embed placeholders) are
+ * dropped, file messages become plain user messages, and everything else is
+ * reduced to `{ role, content }` so presentational fields never leave the app.
  */
-async function resolveMessages(messages) {
-  const resolved = [];
-  for (const message of messages) {
-    if (message.role !== 'file') {
-      resolved.push(message);
-      continue;
-    }
-    if (message.mode !== 'full') continue;
-    const content = message.content || (await fullFileContent(message.fileId));
-    resolved.push({ role: 'user', content: content || '*File not found.*' });
+async function buildPayload(chat) {
+  const payload = [];
+
+  if (state.data.config.godMode) {
+    payload.push({
+      role: 'system',
+      content: state.data.config.godModePrompt || DEFAULT_GOD_MODE_PROMPT,
+    });
   }
-  return resolved;
+
+  for (const message of chat.messages) {
+    if (!isSendable(message)) continue;
+    if (message.role === 'file') {
+      const content = message.content || (await fullFileContent(message.fileId));
+      payload.push({ role: 'user', content: content || '*File not found.*' });
+    } else {
+      payload.push({ role: message.role, content: message.content || '' });
+    }
+  }
+
+  return payload;
+}
+
+/**
+ * The transcript side of one model turn: an optional thinking message,
+ * followed by the assistant's reply. Both are created lazily, on the first
+ * text of their kind.
+ *
+ * Messages are held by reference and their index is looked up when emitting,
+ * so deleting or truncating mid-stream cannot redirect writes into whichever
+ * message inherits the old index; a removed message simply stops repainting.
+ *
+ * Renders read the message back out of the store by index, so a chat the user
+ * has since navigated away from must stay silent: otherwise every delta
+ * repaints whichever message happens to share that index in the chat now on
+ * screen. Returning to the chat re-renders it in full anyway.
+ */
+function createTurn(chat, chatId, { onReplyStart } = {}) {
+  const startedAt = Date.now();
+  const isVisible = () => chatId === state.data.currentChatId;
+
+  let thinking = null;
+  let assistant = null;
+  let thinkingFinished = false;
+
+  const repaint = (message, streaming) => {
+    const index = chat.messages.indexOf(message);
+    if (index !== -1 && isVisible()) emit(EVENTS.MESSAGE, { index, streaming });
+  };
+
+  const mount = (message) => {
+    chat.messages.push(message);
+    invalidateContext();
+    if (isVisible()) emit(EVENTS.MESSAGE_APPENDED, { index: chat.messages.length - 1 });
+    persistChat(chatId);
+  };
+
+  const write = (message, text) => {
+    if (message.content === text) return;
+    message.content = text;
+    repaint(message, true);
+  };
+
+  /** Stamp the duration and give the box its final render. Idempotent. */
+  const finishThinking = () => {
+    if (!thinking || thinkingFinished) return;
+    thinkingFinished = true;
+    thinking.seconds = (Date.now() - startedAt) / 1000;
+    repaint(thinking, false);
+  };
+
+  /** Apply the text accumulated so far. Safe to call repeatedly with the same text. */
+  const apply = ({ thinking: thought, content }) => {
+    if (thought) {
+      if (thinking) {
+        write(thinking, thought);
+      } else {
+        thinking = { role: THINKING_ROLE, content: thought, collapsed: true };
+        mount(thinking);
+      }
+    }
+
+    if (content) {
+      if (assistant) {
+        write(assistant, content);
+      } else {
+        // The first word of the answer is the end of the thinking.
+        finishThinking();
+        onReplyStart?.();
+        assistant = { role: 'assistant', content };
+        mount(assistant);
+      }
+    }
+  };
+
+  /** Final renders and a durable save, however the request ended. */
+  const settle = async () => {
+    finishThinking();
+    if (!thinking && !assistant) return;
+    if (assistant) repaint(assistant, false);
+    invalidateContext();
+    await persistChat(chatId);
+  };
+
+  return { apply, settle, hasReply: () => assistant !== null };
 }
 
 function buildTitle(text) {
@@ -199,6 +309,9 @@ export async function sendMessage({
     if (!state.data.config.key && !skipApi) {
       throw new Error('Please enter your API key in the settings first.');
     }
+    if (!state.data.config.lastModel && !skipApi) {
+      throw new Error('No model selected. Check the connection settings, or add one under Extra Models.');
+    }
     if (!state.data.currentChatId) await createChat();
 
     const chat = currentChat();
@@ -215,14 +328,6 @@ export async function sendMessage({
   const chat = findChat(targetChatId);
   if (!chat) return;
 
-  /**
-   * Renders read the message back out of the store by index, so a chat the
-   * user has since navigated away from must stay silent: otherwise every
-   * delta repaints whichever message happens to share that index in the
-   * chat now on screen. Returning to the chat re-renders it in full anyway.
-   */
-  const isVisible = () => targetChatId === state.data.currentChatId;
-
   const controller = new AbortController();
   state.runtime.completionAbort = controller;
   setGeneration({
@@ -233,26 +338,17 @@ export async function sendMessage({
   });
 
   try {
-    let payload = chat.messages
-      .filter((message) => message.role !== 'error')
-      .map((message) => (message.role === 'file' ? { ...message } : {
-        role: message.role,
-        content: message.content || '',
-      }));
+    const payload = await buildPayload(chat);
 
-    if (state.data.config.godMode) {
-      payload.unshift({
-        role: 'system',
-        content: state.data.config.godModePrompt || DEFAULT_GOD_MODE_PROMPT,
-      });
-    }
+    // The phase stays 'thinking' until the answer itself starts, so the send
+    // button and the thinking box agree about what the model is doing.
+    const turn = createTurn(chat, targetChatId, {
+      onReplyStart: () => setGeneration({ phase: 'generating' }),
+    });
 
-    payload = await resolveMessages(payload);
-    setGeneration({ phase: 'generating' });
-
-    let reply = '';
-    let assistantIndex = -1;
+    let reply = { thinking: '', content: '' };
     let aborted = false;
+    let failure = null;
 
     try {
       reply = await requestCompletion({
@@ -260,41 +356,20 @@ export async function sendMessage({
         model: state.data.config.lastModel,
         messages: payload,
         signal: controller.signal,
-        onDelta: (partial) => {
-          if (assistantIndex === -1) {
-            chat.messages.push({ role: 'assistant', content: partial });
-            assistantIndex = chat.messages.length - 1;
-            invalidateContext();
-            if (isVisible()) {
-              emit(EVENTS.MESSAGE_APPENDED, { index: assistantIndex });
-            }
-            persistChat(targetChatId);
-          } else {
-            chat.messages[assistantIndex].content = partial;
-            if (isVisible()) {
-              emit(EVENTS.MESSAGE, { index: assistantIndex, streaming: true });
-            }
-          }
-        },
+        onDelta: turn.apply,
       });
+      // The resolved reply can differ from the last delta: text held back as a
+      // possible opening `<think>` tag is only released at the end.
+      turn.apply(reply);
     } catch (error) {
-      if (error.name !== 'AbortError') throw error;
-      aborted = true;
+      if (error.name === 'AbortError') aborted = true;
+      else failure = error;
     }
 
-    if (assistantIndex === -1 && !aborted) {
-      assistantIndex = await appendMessage(
-        { role: 'assistant', content: reply },
-        { chatId: targetChatId },
-      );
-    } else if (assistantIndex !== -1) {
-      if (reply) chat.messages[assistantIndex].content = reply;
-      invalidateContext();
-      await persistChat(targetChatId);
-      if (isVisible()) {
-        emit(EVENTS.MESSAGE, { index: assistantIndex, streaming: false });
-      }
-    }
+    // Before anything else is appended, and before a failure is reported: a
+    // partial reply still gets its final render and a save.
+    await turn.settle();
+    if (failure) throw failure;
 
     if (aborted) {
       await appendMessage(
@@ -304,8 +379,19 @@ export async function sendMessage({
       return;
     }
 
-    if (state.data.config.godMode && reply) {
-      const blocks = extractRunBlocks(reply);
+    // Nothing but reasoning (or nothing at all) came back: say so with an
+    // empty reply rather than leaving the turn without an answer.
+    if (!turn.hasReply()) {
+      await appendMessage(
+        { role: 'assistant', content: reply.content },
+        { chatId: targetChatId },
+      );
+    }
+
+    // Only the answer is scanned. Models draft `<run>` blocks while reasoning;
+    // those must never execute.
+    if (state.data.config.godMode && reply.content) {
+      const blocks = extractRunBlocks(reply.content);
       if (blocks.length > 0) {
         for (const code of blocks) {
           if (!state.runtime.generation.active) break;

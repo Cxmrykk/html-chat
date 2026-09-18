@@ -2,9 +2,15 @@ import { $ } from './dom.js';
 import { on } from '../store/state.js';
 import { EVENTS } from '../store/events.js';
 import { state, currentChat } from '../store/state.js';
+import { isModelOutput } from '../core/roles.js';
 import { renderChatList } from './components/chat-list.js';
 import { renderFileList, updateFileProgress } from './components/file-list.js';
-import { replaceMessage, updateMessageContent } from './components/message.js';
+import {
+  replaceMessage,
+  updateMessageContent,
+  hasMessageElement,
+  isCollapsedThinking,
+} from './components/message.js';
 import {
   renderInputArea,
   renderSendButton,
@@ -65,11 +71,20 @@ export function installBindings() {
     renderInputArea();
   });
 
-  on(EVENTS.MESSAGE, ({ index, streaming }) => {
+  on(EVENTS.MESSAGE, ({ index, streaming, anchored }) => {
     if (state.session.view !== 'chat') return;
     const chat = currentChat();
     const message = chat?.messages[index];
     if (!message) return;
+
+    const editing = state.session.editingMessageIndex === index;
+
+    // A closed thinking box shows nothing that a delta could change. Skipping
+    // the render is also what keeps a long reasoning trace cheap to stream.
+    if (streaming && isCollapsedThinking(message, { editing })) {
+      if (!hasMessageElement(index)) renderChatView({ preserveScroll: true });
+      return;
+    }
 
     // Sampled first: growing the message moves the bottom out from under us.
     const pinned = isPinnedToBottom();
@@ -79,24 +94,29 @@ export function installBindings() {
       // (the message was mounted while another view was up, say). Re-render
       // rather than silently dropping every delta from here on — that is what
       // a half-finished, "frozen" reply looks like.
-      if (!updateMessageContent(index, message.content, { final: false })) {
+      if (!updateMessageContent(index, message, { final: false })) {
         renderChatView({ preserveScroll: true });
       }
     } else {
-      replaceMessage(message, index, {
-        editing: state.session.editingMessageIndex === index,
-      });
+      replaceMessage(message, index, { editing });
     }
 
-    // Follow the reply down unless the user has deliberately scrolled away.
-    if (pinned) scrollToBottom();
+    // Follow the reply down unless the user has deliberately scrolled away —
+    // or has just toggled a box, which must stay under the cursor.
+    if (pinned && !anchored) scrollToBottom();
   });
 
   on(EVENTS.MESSAGE_APPENDED, ({ index }) => {
     if (state.session.view !== 'chat') return;
     const chat = currentChat();
     const message = chat?.messages[index];
-    if (message) appendMessageToView(message, index);
+    if (message) {
+      // Model output arriving while the user reads further up (an opened
+      // thinking box, say) must not drag them down. Anything else — their own
+      // message, a file, an error — always scrolls into view.
+      const follow = !isModelOutput(message) || isPinnedToBottom();
+      appendMessageToView(message, index, { follow });
+    }
     renderSendButton();
   });
 
@@ -122,6 +142,10 @@ export function installBindings() {
 
   on(EVENTS.CONTEXT, () => {
     renderSendButton();
+  });
+
+  on(EVENTS.MODELS, () => {
+    updateModelDropdown();
   });
 
   on(EVENTS.HOOK_ERROR, ({ key, error }) => {

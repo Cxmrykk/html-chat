@@ -43,6 +43,8 @@
   --role-error-bg: #2c1b1c;
   --role-file: #00b359;
   --role-file-bg: #152219;
+  --role-thinking: #6b6f72;
+  --role-thinking-bg: #191b1c;
 
   /* Syntax highlighting: Replicating Dark Reader's interpretation of Prism's default theme */
   --code-fg: #e8e6e3;

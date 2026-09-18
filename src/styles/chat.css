@@ -59,6 +59,11 @@
   background: var(--role-file-bg);
 }
 
+.msg.thinking {
+  border-color: var(--role-thinking);
+  background: var(--role-thinking-bg);
+}
+
 .msg-meta {
   font-size: 0.85em;
   text-transform: uppercase;
@@ -94,6 +99,52 @@
 .readonly-tag {
   font-size: 0.8em;
   color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------------ *
+ * Thinking box
+ *
+ * Collapsed, the message is nothing but its header row: a label and a
+ * chevron. The whole row is the click target (it carries the toggle command);
+ * the button inside exists so the box is also reachable from the keyboard.
+ * ------------------------------------------------------------------ */
+
+.msg.thinking .msg-meta {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.msg.thinking.collapsed .msg-meta {
+  margin-bottom: 0;
+}
+
+.thinking-toggle {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: inherit;
+  gap: 6px;
+}
+
+.thinking-toggle:hover {
+  background: transparent;
+}
+
+.thinking-toggle .icon {
+  width: 1.2em;
+  height: 1.2em;
+}
+
+.msg.thinking .msg-meta:hover .thinking-toggle {
+  color: var(--text);
+}
+
+.msg.thinking .msg-content {
+  color: var(--text-muted);
 }
 
 .msg-content {

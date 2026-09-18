@@ -27,3 +27,9 @@ export const ICON_CANCEL = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
 export const ICON_WRAP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"></line><path d="M3 12h15a3 3 0 1 1 0 6h-4"></path><polyline points="16 16 14 18 16 20"></polyline><line x1="3" y1="18" x2="7" y2="18"></line></svg>`;
 
 export const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+/** `\/` — shown on a collapsed thinking box. */
+export const ICON_CHEVRON_DOWN = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+
+/** `/\` — shown on an expanded thinking box. */
+export const ICON_CHEVRON_UP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>`;

@@ -40,6 +40,8 @@
   --role-error-bg: #ffeeee;
   --role-file: #00cc66;
   --role-file-bg: #eaffea;
+  --role-thinking: #888;
+  --role-thinking-bg: #f4f4f4;
 
   /* Syntax highlighting, by Prism token group. */
   --code-fg: #111;

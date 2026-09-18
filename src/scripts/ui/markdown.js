@@ -40,16 +40,22 @@ marked.use({
   ],
 });
 
-/** Present `<run>` blocks as fenced JavaScript in the transcript. */
-export function displayContentOf(content) {
+/**
+ * Present `<run>` blocks as fenced JavaScript in the transcript.
+ *
+ * `executed: false` drops the "Executing Code" heading, for text whose blocks
+ * are never run (a model drafting code while it reasons).
+ */
+export function displayContentOf(content, { executed = true } = {}) {
+  const heading = executed ? '**Executing Code:**\n' : '\n';
   return (content || '').replace(
     RUN_BLOCK_PATTERN,
-    (_match, code) => `**Executing Code:**\n\`\`\`javascript\n${code.trim()}\n\`\`\``,
+    (_match, code) => `${heading}\`\`\`javascript\n${code.trim()}\n\`\`\``,
   );
 }
 
-export function renderMarkdown(content) {
-  return marked.parse(displayContentOf(content));
+export function renderMarkdown(content, options) {
+  return marked.parse(displayContentOf(content, options));
 }
 
 /** Typeset math and highlight code inside an already-rendered element. */
@@ -66,4 +72,3 @@ export function enhance(element) {
     console.warn('Failed to enhance markdown (math/highlighting):', error);
   }
 }
-

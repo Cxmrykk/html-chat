@@ -8,6 +8,7 @@ A lightweight, zero-runtime-dependency web chat client for OpenAI-compatible API
 
 - **Single-File Build**: Compiles entire app (JS, CSS, Prism highlighting, KaTeX math fonts) into one portable `index.html`.
 - **API Compatible**: Works with OpenAI, Ollama, OpenRouter, LocalAI, vLLM, LM Studio, and any OpenAI-compatible endpoint.
+- **Thinking Display**: Models that expose their reasoning — through a `reasoning_content` / `reasoning` field, or inline `<think>...</think>` tags — get a collapsible **Thinking** box above the reply. Click it to expand. It is transcript-only: never sent back to the API, never counted towards the context estimate, and `<run>` blocks inside it are never executed.
 - **Client-Side RAG**:
   - File upload with background vector embedding and batch processing.
   - Cosine-similarity retrieval with customizable token limits and similarity thresholds.
@@ -70,8 +71,9 @@ npm run preview
 
 ### Modifier Clicks
 
+- **Click on a Thinking box**: Expand or collapse the model's reasoning.
 - **Ctrl / Cmd + Click on Code / Math**: Copy raw content directly to clipboard.
-- **Ctrl / Cmd + Click on Chat Title**: Copy full chat transcript as Markdown.
+- **Ctrl / Cmd + Click on Chat Title**: Copy full chat transcript as Markdown (thinking excluded).
 - **Ctrl / Cmd + Click on File Item**: Open Advanced RAG Settings for that file.
 - **Ctrl / Cmd + Click on Settings Header**: Open Super Secret Settings.
 - **Alt + Click on File Item**: Replace file contents via file picker.
@@ -86,12 +88,10 @@ The codebase contains no external runtime frameworks and enforces unidirectional
 
 ```
 src/scripts/
-├── core/       # Pure functions: formatting, tokens, pipeline, progress, vector math
+├── core/       # Pure functions: formatting, tokens, roles, reasoning, pipeline, progress, vector math
 ├── data/       # IndexedDB repositories and storage keys
 ├── store/      # In-memory application state and event emitter
 ├── services/   # API clients, conversation loops, RAG, and execution engines
 ├── ui/         # DOM manipulation, components, views, and markdown rendering
 └── app/        # Command registry, event delegation, shortcuts, and bootstrap
 ```
-
-

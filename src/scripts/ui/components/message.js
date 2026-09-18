@@ -1,5 +1,6 @@
 import { state } from '../../store/state.js';
-import { escapeHTML } from '../../core/format.js';
+import { escapeHTML, formatDuration } from '../../core/format.js';
+import { isThinking, roleOptionsFor } from '../../core/roles.js';
 import { renderMarkdown, enhance } from '../markdown.js';
 import {
   ICON_COPY,
@@ -12,6 +13,8 @@ import {
   ICON_WRAP,
   ICON_EMBED,
   ICON_DELETE,
+  ICON_CHEVRON_DOWN,
+  ICON_CHEVRON_UP,
 } from '../icons.js';
 
 /** A single message row: markup, in-place update, and the transient busy label. */
@@ -24,6 +27,15 @@ export function isRetryable(message) {
   if (!message) return false;
   if (message.role === 'user') return true;
   return message.role === 'file' && message.mode === 'full';
+}
+
+/**
+ * A thinking message is collapsed unless the user has opened it. Anything
+ * without the flag (an import, say) counts as collapsed; a message being
+ * edited is always shown in full so the text under edit stays visible.
+ */
+export function isCollapsedThinking(message, { editing = false } = {}) {
+  return isThinking(message) && !editing && message.collapsed !== false;
 }
 
 function embedSummary(message) {
@@ -87,32 +99,79 @@ function actionsHTML(message, editing) {
   return buttons.join('');
 }
 
+function roleSelectHTML(message) {
+  const options = roleOptionsFor(message.role)
+    .map((value) => {
+      const selected = value === message.role ? ' selected' : '';
+      return `<option value="${escapeHTML(value)}"${selected}>${escapeHTML(value)}</option>`;
+    })
+    .join('');
+  return `<select class="role-select">${options}</select>`;
+}
+
 function metaHTML(message) {
   if (message.role === 'file') {
     return `<span>FILE: ${escapeHTML(message.fileName)}</span>`;
   }
-  const option = (value) =>
-    `<option value="${value}"${message.role === value ? ' selected' : ''}>${value}</option>`;
-  const errorOption = message.role === 'error'
-    ? '<option value="error" selected>error</option>'
-    : '';
-  return `<select class="role-select">
-      ${option('user')}${option('assistant')}${option('system')}${errorOption}
-    </select>`;
+  return roleSelectHTML(message);
+}
+
+/** The markdown source shown for a message, whatever its role. */
+function bodyOf(message) {
+  if (message.role !== 'file') return message.content || '';
+  if (message.mode === 'embed') return embedSummary(message);
+  return `*Estimated file size: ~${message.approxTokens || 0} tokens*`;
+}
+
+function bodyHTML(message) {
+  // Reasoning may draft `<run>` blocks; they never execute, so they must not
+  // be headed "Executing Code".
+  return renderMarkdown(bodyOf(message), { executed: !isThinking(message) });
+}
+
+/** "Thinking..." until the turn stamps a duration, then "Thought for 12s". */
+function thinkingLabel(message) {
+  if (!Number.isFinite(message.seconds)) return 'Thinking...';
+  return `Thought for ${formatDuration(Math.max(1, message.seconds))}`;
+}
+
+/**
+ * A thinking message. Collapsed, it is a single header row — label and
+ * chevron — and carries no content node at all, so a long reasoning trace
+ * costs nothing to render until someone opens it. The whole header toggles it;
+ * the role select and action buttons only exist once it is open.
+ */
+function thinkingHTML(message, index, editing) {
+  const collapsed = isCollapsedThinking(message, { editing });
+  const hint = collapsed ? 'Show thinking' : 'Hide thinking';
+
+  const toggle = `
+    <button class="thinking-toggle" data-command="message.toggleThinking"
+            aria-expanded="${collapsed ? 'false' : 'true'}" title="${hint}">
+      <span>${escapeHTML(thinkingLabel(message))}</span>${collapsed ? ICON_CHEVRON_DOWN : ICON_CHEVRON_UP}
+    </button>`;
+
+  const actions = collapsed
+    ? ''
+    : `<div class="msg-actions">${roleSelectHTML(message)}${actionsHTML(message, editing)}</div>`;
+
+  const content = collapsed ? '' : `<div class="msg-content">${bodyHTML(message)}</div>`;
+
+  return `
+    <div class="msg thinking${collapsed ? ' collapsed' : ''}${editing ? ' editing' : ''}" data-index="${index}">
+      <div class="msg-meta" data-command="message.toggleThinking" title="${hint}">
+        ${toggle}
+        ${actions}
+      </div>
+      ${content}
+    </div>`;
 }
 
 export function messageHTML(message, index, { editing = false } = {}) {
-  let body = message.content || '';
-  let config = '';
+  if (isThinking(message)) return thinkingHTML(message, index, editing);
 
-  if (message.role === 'file') {
-    if (message.mode === 'embed') {
-      body = embedSummary(message);
-      if (editing) config = embedConfigHTML(message);
-    } else {
-      body = `*Estimated file size: ~${message.approxTokens || 0} tokens*`;
-    }
-  }
+  const isEmbed = message.role === 'file' && message.mode === 'embed';
+  const config = editing && isEmbed ? embedConfigHTML(message) : '';
 
   return `
     <div class="msg ${message.role}${editing ? ' editing' : ''}" data-index="${index}">
@@ -120,7 +179,7 @@ export function messageHTML(message, index, { editing = false } = {}) {
         ${metaHTML(message)}
         <div class="msg-actions">${actionsHTML(message, editing)}</div>
       </div>
-      <div class="msg-content">${renderMarkdown(body)}${config}</div>
+      <div class="msg-content">${bodyHTML(message)}${config}</div>
     </div>`;
 }
 
@@ -133,11 +192,16 @@ export function mountMessage(container, message, index, options) {
   return element;
 }
 
+/** Whether a message currently has a row in the transcript. */
+export function hasMessageElement(index) {
+  return Boolean(document.querySelector(`.msg[data-index="${index}"]`));
+}
+
 /** Swap a message's content only, for streaming updates. */
-export function updateMessageContent(index, content, { final = true } = {}) {
+export function updateMessageContent(index, message, { final = true } = {}) {
   const element = document.querySelector(`.msg[data-index="${index}"] .msg-content`);
   if (!element) return null;
-  element.innerHTML = renderMarkdown(content);
+  element.innerHTML = bodyHTML(message);
   if (final) enhance(element);
   return element;
 }

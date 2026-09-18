@@ -15,13 +15,15 @@ import * as library from '../services/file-library.js';
 import * as settings from '../services/settings.js';
 import * as transfer from '../services/transfer.js';
 import * as embedding from '../services/embedding.js';
+import * as models from '../services/models.js';
 import { retrieveChunks, wrapFileContent } from '../services/retrieval.js';
 import { pickFiles, readFileText, pickJSONText } from '../services/file-io.js';
-import { setMessageBusy, isRetryable } from '../ui/components/message.js';
+import { setMessageBusy, isRetryable, isCollapsedThinking } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { renderMainView } from '../ui/bindings.js';
 import { estimateTokens } from '../core/tokens.js';
 import { pickNumber } from '../core/values.js';
+import { isSendable, isModelOutput } from '../core/roles.js';
 import { ICON_CHECK } from '../ui/icons.js';
 
 /**
@@ -137,9 +139,10 @@ export const commands = {
     const chat = state.data.chats.find((entry) => entry.id === id);
     if (!chat) return;
 
+    // The transcript is the conversation as the model sees it: no errors, no
+    // thinking, no un-run embed placeholders.
     const body = chat.messages
-      .filter((message) => message.role !== 'error')
-      .filter((message) => !(message.role === 'file' && message.mode === 'embed'))
+      .filter(isSendable)
       .map((message) => {
         const label = message.role === 'file' ? 'USER' : message.role.toUpperCase();
         return `## ${label}\n${message.content || ''}\n\n`;
@@ -316,6 +319,13 @@ export const commands = {
     input.style.overflowX = wrapped ? 'hidden' : 'auto';
   },
 
+  /** Expand or collapse a thinking box. */
+  'message.toggleThinking': async ({ index }) => {
+    const message = currentChat()?.messages[index];
+    if (!message) return;
+    await conversation.setThinkingCollapsed(index, !isCollapsedThinking(message));
+  },
+
   'message.fork': async ({ index }) => {
     stopEditing();
     leaveSettings();
@@ -376,7 +386,8 @@ export const commands = {
         const lookahead = [];
         for (let i = index + 1; i < chat.messages.length; i++) {
           const next = chat.messages[i];
-          if (next.role === 'assistant') break;
+          // The model's turn — its thinking or its reply — ends the question.
+          if (isModelOutput(next)) break;
           if (next.role === 'user' && next.content) lookahead.push(next.content);
         }
         prompt = lookahead.join('\n').trim();
@@ -525,11 +536,11 @@ export const commands = {
     await settings.saveConnectionConfig({
       url: $('#cfg-url').value.trim(),
       key: $('#cfg-key').value.trim(),
-      models: $('#cfg-models').value.trim(),
       godMode: $('#cfg-godmode').checked,
     });
     invalidateContext();
     alert('Settings saved.');
+    await models.refreshModels();
   },
 
   'settings.setModel': ({ element }) => settings.setActiveModel(element.value),
