@@ -1,61 +1,52 @@
-import { state } from '../../store/state.js';
 import { escapeHTML, formatDuration } from '../../core/format.js';
-import { isThinking, roleOptionsFor } from '../../core/roles.js';
+import {
+  isThinking,
+  isCollapsible,
+  hasToolCalls,
+  roleOptionsFor,
+} from '../../core/roles.js';
+import { toolCallMarkdown, toolResultLabel } from '../../core/tools.js';
 import { renderMarkdown, enhance } from '../markdown.js';
 import {
   ICON_COPY,
   ICON_EDIT,
-  ICON_CONFIG,
   ICON_FORK,
   ICON_RETRY,
   ICON_SAVE,
   ICON_CANCEL,
   ICON_WRAP,
-  ICON_EMBED,
   ICON_DELETE,
   ICON_CHEVRON_DOWN,
   ICON_CHEVRON_UP,
 } from '../icons.js';
 
-/** A single message row: markup, in-place update, and the transient busy label. */
+/** A single message row: its markup and its in-place updates. */
 
 /**
  * Retrying resends the message and regenerates everything after it, so it only
- * means something for the two roles that can start a turn.
+ * means something for the role that starts a turn.
  */
 export function isRetryable(message) {
-  if (!message) return false;
-  if (message.role === 'user') return true;
-  return message.role === 'file' && message.mode === 'full';
+  return message?.role === 'user';
 }
 
 /**
- * A thinking message is collapsed unless the user has opened it. Anything
- * without the flag (an import, say) counts as collapsed; a message being
- * edited is always shown in full so the text under edit stays visible.
+ * A thinking box or a tool result is collapsed unless the user has opened it.
+ * Anything without the flag (an import, say) counts as collapsed; a message
+ * being edited is always shown in full so the text under edit stays visible.
  */
-export function isCollapsedThinking(message, { editing = false } = {}) {
-  return isThinking(message) && !editing && message.collapsed !== false;
+export function isCollapsed(message, { editing = false } = {}) {
+  return isCollapsible(message) && !editing && message.collapsed !== false;
 }
 
-function embedSummary(message) {
-  let summary =
-    `*Estimated file size: ~${message.approxTokens || 0} tokens*<br>` +
-    `*(<= ${message.maxTokens || 5000} tokens with embeddings enabled)*`;
-  if (message.prompt) summary += `\n\n**Search Prompt:** ${message.prompt}`;
-  return summary;
-}
-
-function embedConfigHTML(message) {
-  return `
-    <div class="embed-config">
-      <label>Max Tokens
-        <input type="number" class="embed-cfg-tokens" value="${message.maxTokens || 5000}">
-      </label>
-      <label>Match Threshold
-        <input type="number" step="0.1" class="embed-cfg-threshold" value="${message.ragThreshold || 0.0}">
-      </label>
-    </div>`;
+/**
+ * The markdown shown for a message: its text, then any tool calls it made.
+ * Also what "copy" and the transcript export use, so they match the screen.
+ */
+export function messageMarkdown(message) {
+  const parts = [message?.content || ''];
+  if (hasToolCalls(message)) parts.push(...message.toolCalls.map(toolCallMarkdown));
+  return parts.filter(Boolean).join('\n\n');
 }
 
 function actionsHTML(message, editing) {
@@ -74,33 +65,19 @@ function actionsHTML(message, editing) {
     return buttons.join('');
   }
 
-  const isEmbed = message.role === 'file' && message.mode === 'embed';
-  const editLabel = isEmbed ? 'Config' : 'Edit';
-  const editIcon = isEmbed ? ICON_CONFIG : ICON_EDIT;
-
   const buttons = [];
-
-  if (isRetryable(message)) {
-    buttons.push(btn('message.retry', 'Retry', ICON_RETRY));
-  }
-
+  if (isRetryable(message)) buttons.push(btn('message.retry', 'Retry', ICON_RETRY));
   buttons.push(
     btn('message.copy', 'Copy', ICON_COPY),
-    btn('message.edit', editLabel, editIcon)
+    btn('message.edit', 'Edit', ICON_EDIT),
+    btn('message.fork', 'Fork', ICON_FORK),
+    btn('message.delete', 'Delete', ICON_DELETE),
   );
-
-  if (isEmbed) {
-    buttons.push(btn('message.runEmbed', 'Embed', ICON_EMBED));
-  }
-
-  buttons.push(btn('message.fork', 'Fork', ICON_FORK));
-  buttons.push(btn('message.delete', 'Delete', ICON_DELETE));
-
   return buttons.join('');
 }
 
 function roleSelectHTML(message) {
-  const options = roleOptionsFor(message.role)
+  const options = roleOptionsFor(message)
     .map((value) => {
       const selected = value === message.role ? ' selected' : '';
       return `<option value="${escapeHTML(value)}"${selected}>${escapeHTML(value)}</option>`;
@@ -109,24 +86,8 @@ function roleSelectHTML(message) {
   return `<select class="role-select">${options}</select>`;
 }
 
-function metaHTML(message) {
-  if (message.role === 'file') {
-    return `<span>FILE: ${escapeHTML(message.fileName)}</span>`;
-  }
-  return roleSelectHTML(message);
-}
-
-/** The markdown source shown for a message, whatever its role. */
-function bodyOf(message) {
-  if (message.role !== 'file') return message.content || '';
-  if (message.mode === 'embed') return embedSummary(message);
-  return `*Estimated file size: ~${message.approxTokens || 0} tokens*`;
-}
-
 function bodyHTML(message) {
-  // Reasoning may draft `<run>` blocks; they never execute, so they must not
-  // be headed "Executing Code".
-  return renderMarkdown(bodyOf(message), { executed: !isThinking(message) });
+  return renderMarkdown(messageMarkdown(message));
 }
 
 /** "Thinking..." until the turn stamps a duration, then "Thought for 12s". */
@@ -135,20 +96,26 @@ function thinkingLabel(message) {
   return `Thought for ${formatDuration(Math.max(1, message.seconds))}`;
 }
 
+function collapsibleLabel(message) {
+  return isThinking(message) ? thinkingLabel(message) : toolResultLabel(message.name);
+}
+
 /**
- * A thinking message. Collapsed, it is a single header row — label and
- * chevron — and carries no content node at all, so a long reasoning trace
- * costs nothing to render until someone opens it. The whole header toggles it;
- * the role select and action buttons only exist once it is open.
+ * A thinking box or a tool result. Collapsed, it is a single header row —
+ * label and chevron — and carries no content node at all, so a long reasoning
+ * trace or a page of search results costs nothing to render until someone
+ * opens it. The whole header toggles it; the role select and action buttons
+ * only exist once it is open.
  */
-function thinkingHTML(message, index, editing) {
-  const collapsed = isCollapsedThinking(message, { editing });
-  const hint = collapsed ? 'Show thinking' : 'Hide thinking';
+function collapsibleHTML(message, index, editing) {
+  const collapsed = isCollapsed(message, { editing });
+  const noun = isThinking(message) ? 'thinking' : 'result';
+  const hint = collapsed ? `Show ${noun}` : `Hide ${noun}`;
 
   const toggle = `
-    <button class="thinking-toggle" data-command="message.toggleThinking"
+    <button class="collapse-toggle" data-command="message.toggleCollapsed"
             aria-expanded="${collapsed ? 'false' : 'true'}" title="${hint}">
-      <span>${escapeHTML(thinkingLabel(message))}</span>${collapsed ? ICON_CHEVRON_DOWN : ICON_CHEVRON_UP}
+      <span>${escapeHTML(collapsibleLabel(message))}</span>${collapsed ? ICON_CHEVRON_DOWN : ICON_CHEVRON_UP}
     </button>`;
 
   const actions = collapsed
@@ -158,8 +125,8 @@ function thinkingHTML(message, index, editing) {
   const content = collapsed ? '' : `<div class="msg-content">${bodyHTML(message)}</div>`;
 
   return `
-    <div class="msg thinking${collapsed ? ' collapsed' : ''}${editing ? ' editing' : ''}" data-index="${index}">
-      <div class="msg-meta" data-command="message.toggleThinking" title="${hint}">
+    <div class="msg ${escapeHTML(message.role)} collapsible${collapsed ? ' collapsed' : ''}${editing ? ' editing' : ''}" data-index="${index}">
+      <div class="msg-meta" data-command="message.toggleCollapsed" title="${hint}">
         ${toggle}
         ${actions}
       </div>
@@ -168,18 +135,15 @@ function thinkingHTML(message, index, editing) {
 }
 
 export function messageHTML(message, index, { editing = false } = {}) {
-  if (isThinking(message)) return thinkingHTML(message, index, editing);
-
-  const isEmbed = message.role === 'file' && message.mode === 'embed';
-  const config = editing && isEmbed ? embedConfigHTML(message) : '';
+  if (isCollapsible(message)) return collapsibleHTML(message, index, editing);
 
   return `
-    <div class="msg ${message.role}${editing ? ' editing' : ''}" data-index="${index}">
+    <div class="msg ${escapeHTML(message.role)}${editing ? ' editing' : ''}" data-index="${index}">
       <div class="msg-meta">
-        ${metaHTML(message)}
+        ${roleSelectHTML(message)}
         <div class="msg-actions">${actionsHTML(message, editing)}</div>
       </div>
-      <div class="msg-content">${bodyHTML(message)}${config}</div>
+      <div class="msg-content">${bodyHTML(message)}</div>
     </div>`;
 }
 
@@ -217,19 +181,4 @@ export function replaceMessage(message, index, options) {
   const newElement = document.querySelector(`.msg[data-index="${index}"]`);
   enhance(newElement);
   return newElement;
-}
-
-/** Temporary label on an action button while a command runs. */
-export function setMessageBusy(index, command, label) {
-  const button = document.querySelector(
-    `.msg[data-index="${index}"] button[data-command="${command}"]`,
-  );
-  if (!button) return () => {};
-  const original = button.innerHTML;
-  button.textContent = label;
-  button.disabled = true;
-  return () => {
-    button.innerHTML = original;
-    button.disabled = false;
-  };
 }

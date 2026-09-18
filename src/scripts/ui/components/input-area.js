@@ -1,11 +1,18 @@
 import { $, setHidden, setText, setDisabled } from '../dom.js';
-import { state, currentChat, isEmbedding } from '../../store/state.js';
+import {
+  state,
+  currentChat,
+  chatFiles,
+  isEmbedding,
+  embeddingsEnabled,
+} from '../../store/state.js';
 import { estimateTokens } from '../../core/tokens.js';
 import { formatCompactCount, escapeHTML } from '../../core/format.js';
-import { isSendable } from '../../core/roles.js';
+import { buildApiMessages, payloadChars } from '../../core/tool-calls.js';
+import { toolSchemaChars, toolActivityLabel } from '../../core/tools.js';
 import { schemaFor } from '../../services/settings.js';
 import { availableModels } from '../../services/models.js';
-import { DEFAULT_GOD_MODE_PROMPT } from '../../core/settings-schema.js';
+import { toolSchemasFor } from '../../services/tools/index.js';
 import { isRetryable } from './message.js';
 
 /** Input area components: composer and settings editor bars. */
@@ -42,8 +49,10 @@ export function updateModelDropdown() {
 }
 
 /**
- * Cached estimated character count for conversation context. Only what is
- * actually sent counts: errors, thinking and un-run embed placeholders do not.
+ * Cached estimated character count for conversation context. It is measured
+ * on the very payload a send would build, so whatever is left out of the
+ * request (errors, thinking, unpaired tool calls) is left out of the estimate,
+ * and the tool definitions that ride along with every request are counted.
  */
 function contextChars() {
   if (state.runtime.contextChars !== -1) return state.runtime.contextChars;
@@ -51,17 +60,18 @@ function contextChars() {
   let total = 0;
   const chat = currentChat();
   if (chat) {
-    total = chat.messages.reduce(
-      (sum, message) => (isSendable(message) ? sum + (message.content || '').length : sum),
-      0,
-    );
-  }
-  if (state.data.config.godMode) {
-    total += (state.data.config.godModePrompt || DEFAULT_GOD_MODE_PROMPT).length;
+    total = payloadChars(buildApiMessages(chat.messages)) + toolSchemaChars(toolSchemasFor(chat));
   }
 
   state.runtime.contextChars = total;
   return total;
+}
+
+function generationLabel({ phase, tool, loop, maxLoops }) {
+  const suffix = loop > 0 ? ` (Round ${loop}/${maxLoops})` : '';
+  const verb =
+    phase === 'tool' ? toolActivityLabel(tool) : phase === 'generating' ? 'Generating' : 'Thinking';
+  return `${verb}${suffix}...`;
 }
 
 /**
@@ -72,11 +82,8 @@ export function renderSendButton() {
   const button = $('#send-btn');
   if (!button) return;
 
-  const { active, phase, loop, maxLoops } = state.runtime.generation;
-  if (active) {
-    const suffix = loop > 0 ? ` (Loop ${loop}/${maxLoops})` : '';
-    const verb = phase === 'generating' ? 'Generating' : 'Thinking';
-    setText(button, `${verb}${suffix}...`);
+  if (state.runtime.generation.active) {
+    setText(button, generationLabel(state.runtime.generation));
     return;
   }
 
@@ -84,6 +91,26 @@ export function renderSendButton() {
   const tokens = estimateTokens('x'.repeat((input?.value || '').length + contextChars()));
   const label = formatCompactCount(tokens);
   setText(button, label ? `Send (${label} tokens)` : 'Send');
+}
+
+/**
+ * Names the files the current chat may search. The sidebar shows the same
+ * thing, but the sidebar can be hidden, and what the model can read should
+ * never be invisible.
+ */
+export function renderAttachedFiles() {
+  const line = $('#attached-files');
+  if (!line) return;
+
+  const files = chatFiles();
+  setHidden(line, !files.length);
+  if (!files.length) return;
+
+  const names = files.map((file) => escapeHTML(file.name)).join(', ');
+  const warning = embeddingsEnabled()
+    ? ''
+    : ' <span class="attached-files-warning">(not searchable: no embeddings model configured)</span>';
+  line.innerHTML = `<strong>Searchable files:</strong> ${names}${warning}`;
 }
 
 function editingMessage() {
@@ -109,18 +136,15 @@ export function renderInputArea() {
   setHidden($('#model-select'), Boolean(editing));
   setHidden($('#send-btn'), Boolean(editing));
   setHidden($('#save-edit-btn'), !editing);
-  // Retry regenerates from this message, so it only applies to the roles that
+  // Retry regenerates from this message, so it only applies to the role that
   // can start a turn — the same test the non-editing retry button uses.
   setHidden($('#retry-edit-btn'), !editing || !isRetryable(editing));
   setHidden($('#cancel-edit-btn'), !editing);
 
   const input = $('#chat-input');
-  if (!input) return;
-  input.disabled = false;
-  input.placeholder = editing && editing.role === 'file' && editing.mode === 'embed'
-    ? 'Type an embeddings prompt here. Default behavior: Uses subsequent user messages for search.'
-    : 'Type your prompt here...';
+  if (input) input.disabled = false;
 
+  renderAttachedFiles();
   renderSendButton();
 }
 

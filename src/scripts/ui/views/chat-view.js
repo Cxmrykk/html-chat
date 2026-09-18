@@ -5,13 +5,13 @@ import { enhance, renderMarkdown } from '../markdown.js';
 
 /** The transcript. */
 
-const GOD_MODE_BANNER = `
+const JS_EXECUTION_BANNER = `
   <div class="msg system">
     <div class="msg-meta">
       <span>System</span>
       <div class="msg-actions"><span class="readonly-tag">[Read-Only]</span></div>
     </div>
-    <div class="msg-content">${renderMarkdown('**JS Execution Enabled**. Proceed with caution.')}</div>
+    <div class="msg-content">${renderMarkdown('**JavaScript execution enabled.** The model can run code in this page. Proceed with caution.')}</div>
   </div>`;
 
 /**
@@ -53,9 +53,10 @@ export function renderChatView({ preserveScroll = false } = {}) {
   const chat = currentChat();
   if (!chat) return;
 
-  let html = state.data.config.godMode ? GOD_MODE_BANNER : '';
+  const jsExecution = Boolean(state.data.config.jsExecution);
+  let html = jsExecution ? JS_EXECUTION_BANNER : '';
 
-  if (!chat.messages.length && !state.data.config.godMode) {
+  if (!chat.messages.length && !jsExecution) {
     html += '<p class="empty-chat-msg">It is empty in here. Send a prompt.</p>';
   } else {
     html += chat.messages
@@ -75,7 +76,7 @@ export function renderChatView({ preserveScroll = false } = {}) {
 
   const last = container.lastElementChild;
   if (last && last.classList.contains('msg')) {
-    const alignBottom = last.classList.contains('user') || last.classList.contains('file');
+    const alignBottom = last.classList.contains('user');
     container.scrollTop = alignBottom ? container.scrollHeight : last.offsetTop - 15;
   }
 }

@@ -92,34 +92,49 @@ export async function countUnembeddable(chunks, limits) {
 }
 
 /**
- * Post-retrieval assembly: retrieve -> dedupe -> budget -> reorder -> merge.
+ * Post-retrieval assembly across any number of files:
+ * retrieve -> dedupe -> budget -> reorder -> merge.
  *
- * `scored` must already be sorted best-first. Hooks are user-supplied and
- * therefore all failures are contained: a failing retrieval falls back to the
- * raw chunk, a failing dedupe treats the chunk as unique, a failing merge
- * falls back to joining with an ellipsis.
+ * `scored` is one best-first list of `{ fileId, index, text, raw }` drawn from
+ * every file searched, so the files compete for a single `maxTokens` budget on
+ * relevance alone. `sources` maps each `fileId` to `{ fileText, hooks,
+ * maxTokens }`: a candidate is processed by its own file's hooks, deduplicated
+ * against its own file's selections, and counted against that file's cap.
+ *
+ * Returns `[{ fileId, content }]`, best-matching file first, each file's
+ * chunks restored to document order and merged.
+ *
+ * Hooks are user-supplied and therefore all failures are contained: a failing
+ * retrieval falls back to the raw chunk, a failing dedupe treats the chunk as
+ * unique, a failing merge falls back to joining with an ellipsis.
  */
-export async function assembleChunks({ scored, fileText, maxTokens, hooks, onError }) {
-  const selected = [];
+export async function assembleChunks({ scored, sources, maxTokens, onError }) {
+  const groups = new Map();
   let usedTokens = 0;
+  let admitted = 0;
 
   for (let i = 0; i < scored.length; i++) {
     const candidate = scored[i];
+    const source = sources.get(candidate.fileId);
+    if (!source) continue;
+
     const rawChunk = candidate.raw !== undefined ? candidate.raw : candidate.text;
 
     let data;
     try {
-      data = await hooks.retrieve(rawChunk, fileText);
+      data = await source.hooks.retrieve(rawChunk, source.fileText);
     } catch (error) {
       onError?.('retrievalFunc', error);
       data = rawChunk;
     }
     if (data === null || data === undefined) continue;
 
+    const group = groups.get(candidate.fileId) || { selected: [], tokens: 0 };
+
     let duplicate = false;
     try {
-      for (const entry of selected) {
-        if (await hooks.isDuplicate(data, entry.data)) {
+      for (const entry of group.selected) {
+        if (await source.hooks.isDuplicate(data, entry.data)) {
           duplicate = true;
           break;
         }
@@ -131,21 +146,34 @@ export async function assembleChunks({ scored, fileText, maxTokens, hooks, onErr
 
     const tokens = estimateTokensOf(data);
     // Always admit at least one chunk, even if it alone blows the budget.
-    if (selected.length > 0 && usedTokens + tokens > maxTokens) break;
+    if (admitted > 0 && usedTokens + tokens > maxTokens) break;
+    // A file at its own cap steps aside; the others may still have room.
+    if (group.selected.length > 0 && group.tokens + tokens > source.maxTokens) continue;
+
     usedTokens += tokens;
-    selected.push({ index: candidate.index, data });
+    admitted++;
+    group.tokens += tokens;
+    group.selected.push({ index: candidate.index, data });
+    // Map order is first-admission order: the best-matching file leads.
+    groups.set(candidate.fileId, group);
 
     if (i % 50 === 0) await yieldToEventLoop();
   }
 
-  // Restore document order before merging.
-  selected.sort((a, b) => a.index - b.index);
-  const finalChunks = selected.map((entry) => entry.data);
+  const sections = [];
+  for (const [fileId, group] of groups) {
+    // Restore document order before merging.
+    group.selected.sort((a, b) => a.index - b.index);
+    const finalChunks = group.selected.map((entry) => entry.data);
 
-  try {
-    return await hooks.merge(finalChunks);
-  } catch (error) {
-    onError?.('mergeChunksFunc', error);
-    return finalChunks.map(textOf).join('...');
+    let content;
+    try {
+      content = await sources.get(fileId).hooks.merge(finalChunks);
+    } catch (error) {
+      onError?.('mergeChunksFunc', error);
+      content = finalChunks.map(textOf).join('...');
+    }
+    sections.push({ fileId, content });
   }
+  return sections;
 }

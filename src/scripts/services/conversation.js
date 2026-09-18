@@ -13,15 +13,16 @@ import {
 } from '../store/state.js';
 import * as chatsRepo from '../data/chats-repo.js';
 import { requestCompletion } from './api/completions.js';
-import { fullFileContent } from './retrieval.js';
-import { extractRunBlocks, executeRunBlock } from './god-mode.js';
-import { DEFAULT_GOD_MODE_PROMPT } from '../core/settings-schema.js';
-import { isSendable, isThinking, THINKING_ROLE } from '../core/roles.js';
+import { toolSchemasFor, runToolCall } from './tools/index.js';
+import { buildApiMessages, toolCallsSignature } from '../core/tool-calls.js';
+import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
+import { isCollapsible, THINKING_ROLE, TOOL_ROLE } from '../core/roles.js';
+import { pickInteger } from '../core/values.js';
 import { truncate } from '../core/format.js';
 
-/** Chat lifecycle and the send/execute loop. */
+/** Chat lifecycle and the send / tool-call loop. */
 
-const MAX_GOD_MODE_LOOPS = 5;
+const IDLE = { active: false, phase: 'idle', tool: null, loop: 0, maxLoops: 0 };
 
 /* ------------------------------------------------------------------ *
  * Chat CRUD
@@ -29,7 +30,7 @@ const MAX_GOD_MODE_LOOPS = 5;
 
 export async function createChat() {
   const id = Date.now().toString();
-  state.data.chats.unshift({ id, title: 'New Chat', messages: [] });
+  state.data.chats.unshift({ id, title: 'New Chat', messages: [], fileIds: [] });
   state.data.currentChatId = id;
   invalidateContext();
   await persistCurrentChat();
@@ -77,6 +78,7 @@ export async function forkChat(messageIndex) {
     id,
     title: `${chat.title} (Forked)`,
     messages: JSON.parse(JSON.stringify(chat.messages.slice(0, messageIndex + 1))),
+    fileIds: [...(chat.fileIds || [])],
   });
   state.data.currentChatId = id;
 
@@ -85,6 +87,29 @@ export async function forkChat(messageIndex) {
   await persistPrefs();
   emit(EVENTS.CHATS);
   emit(EVENTS.MESSAGES);
+}
+
+/**
+ * Attach a file to the current chat, or detach it. Attached files are what the
+ * model's file search covers; there is no other way for a file to reach a chat.
+ * Returns whether the file is attached afterwards.
+ */
+export async function toggleChatFile(fileId) {
+  if (!state.data.currentChatId) await createChat();
+  const chat = currentChat();
+  if (!chat) return false;
+
+  const ids = new Set(chat.fileIds || []);
+  const attached = !ids.has(fileId);
+  if (attached) ids.add(fileId);
+  else ids.delete(fileId);
+  chat.fileIds = [...ids];
+
+  // The tool definition lists the attached files, so the estimate moves too.
+  invalidateContext();
+  await persistChat();
+  emit(EVENTS.CHAT_FILES);
+  return attached;
 }
 
 /* ------------------------------------------------------------------ *
@@ -112,14 +137,15 @@ export async function updateMessage(index, patch) {
 }
 
 /**
- * Expand or collapse a thinking message. Purely presentational: thinking is
- * never sent, so the context estimate is untouched, and the repaint is
- * `anchored` so the view does not scroll away from the box just clicked.
+ * Expand or collapse a thinking box or a tool result. Purely presentational:
+ * what is sent does not depend on it, so the context estimate is untouched,
+ * and the repaint is `anchored` so the view does not scroll away from the box
+ * just clicked.
  */
-export async function setThinkingCollapsed(index, collapsed) {
+export async function setCollapsed(index, collapsed) {
   const chat = currentChat();
   const message = chat?.messages[index];
-  if (!isThinking(message)) return;
+  if (!isCollapsible(message)) return;
   message.collapsed = collapsed;
   emit(EVENTS.MESSAGE, { index, anchored: true });
   await persistChat();
@@ -148,39 +174,9 @@ export async function truncateMessages(length) {
  * ------------------------------------------------------------------ */
 
 /**
- * The messages that go to the API.
- *
- * Transcript-only rows (errors, thinking, un-run embed placeholders) are
- * dropped, file messages become plain user messages, and everything else is
- * reduced to `{ role, content }` so presentational fields never leave the app.
- */
-async function buildPayload(chat) {
-  const payload = [];
-
-  if (state.data.config.godMode) {
-    payload.push({
-      role: 'system',
-      content: state.data.config.godModePrompt || DEFAULT_GOD_MODE_PROMPT,
-    });
-  }
-
-  for (const message of chat.messages) {
-    if (!isSendable(message)) continue;
-    if (message.role === 'file') {
-      const content = message.content || (await fullFileContent(message.fileId));
-      payload.push({ role: 'user', content: content || '*File not found.*' });
-    } else {
-      payload.push({ role: message.role, content: message.content || '' });
-    }
-  }
-
-  return payload;
-}
-
-/**
  * The transcript side of one model turn: an optional thinking message,
- * followed by the assistant's reply. Both are created lazily, on the first
- * text of their kind.
+ * followed by the assistant's reply — its text, its tool calls, or both. Each
+ * is created lazily, on the first sign of its kind.
  *
  * Messages are held by reference and their index is looked up when emitting,
  * so deleting or truncating mid-stream cannot redirect writes into whichever
@@ -211,12 +207,6 @@ function createTurn(chat, chatId, { onReplyStart } = {}) {
     persistChat(chatId);
   };
 
-  const write = (message, text) => {
-    if (message.content === text) return;
-    message.content = text;
-    repaint(message, true);
-  };
-
   /** Stamp the duration and give the box its final render. Idempotent. */
   const finishThinking = () => {
     if (!thinking || thinkingFinished) return;
@@ -225,28 +215,41 @@ function createTurn(chat, chatId, { onReplyStart } = {}) {
     repaint(thinking, false);
   };
 
-  /** Apply the text accumulated so far. Safe to call repeatedly with the same text. */
-  const apply = ({ thinking: thought, content }) => {
+  /** Apply everything accumulated so far. Safe to call repeatedly with the same reply. */
+  const apply = ({ thinking: thought, content, toolCalls = [] }) => {
     if (thought) {
-      if (thinking) {
-        write(thinking, thought);
-      } else {
+      if (!thinking) {
         thinking = { role: THINKING_ROLE, content: thought, collapsed: true };
         mount(thinking);
+      } else if (thinking.content !== thought) {
+        thinking.content = thought;
+        repaint(thinking, true);
       }
     }
 
-    if (content) {
-      if (assistant) {
-        write(assistant, content);
-      } else {
-        // The first word of the answer is the end of the thinking.
-        finishThinking();
-        onReplyStart?.();
-        assistant = { role: 'assistant', content };
-        mount(assistant);
-      }
+    if (!content && !toolCalls.length) return;
+
+    if (!assistant) {
+      // The first word of the answer — or the first tool call — is the end of
+      // the thinking.
+      finishThinking();
+      onReplyStart?.();
+      assistant = { role: 'assistant', content: content || '' };
+      if (toolCalls.length) assistant.toolCalls = toolCalls;
+      mount(assistant);
+      return;
     }
+
+    let changed = false;
+    if (content && assistant.content !== content) {
+      assistant.content = content;
+      changed = true;
+    }
+    if (toolCallsSignature(assistant.toolCalls) !== toolCallsSignature(toolCalls)) {
+      assistant.toolCalls = toolCalls;
+      changed = true;
+    }
+    if (changed) repaint(assistant, true);
   };
 
   /** Final renders and a durable save, however the request ended. */
@@ -270,160 +273,181 @@ function buildTitle(text) {
 export function abortGeneration() {
   state.runtime.completionAbort?.abort();
   state.runtime.completionAbort = null;
-  setGeneration({ active: false, phase: 'idle', loop: 0, maxLoops: 0 });
+  setGeneration(IDLE);
+}
+
+function appendStopped(chatId) {
+  return appendMessage({ role: 'error', content: '*[Stopped by user]*' }, { chatId });
 }
 
 /**
- * Send the conversation to the API.
- *
- * `loopDepth` tracks God Mode re-entry after code execution; `resend` sends the
- * transcript exactly as it stands (retry) without appending a user message and
- * without consuming a God Mode loop; `skipApi` appends the user's message
- * without calling the API at all; `chatId` pins the turn to the chat it started
- * in, so switching chats mid-run cannot redirect it.
+ * One request to the API, streamed into the transcript. Resolves with the
+ * complete reply and whether the user stopped it; a partial reply is given its
+ * final render and saved before any failure is rethrown.
  */
-export async function sendMessage({
-  text = '',
-  loopDepth = 0,
-  skipApi = false,
-  resend = false,
-  chatId = null,
-} = {}) {
-  const isLoop = loopDepth > 0;
-  // Both a loop turn and a retry resend the transcript as it already stands.
-  const continuing = isLoop || resend;
+async function requestTurn({ chat, chatId, signal, forceAnswer }) {
+  // The phase stays 'thinking' until the answer itself starts, so the send
+  // button and the thinking box agree about what the model is doing.
+  const turn = createTurn(chat, chatId, {
+    onReplyStart: () => setGeneration({ phase: 'generating' }),
+  });
 
-  if (isLoop && loopDepth >= MAX_GOD_MODE_LOOPS) {
-    await appendMessage(
-      {
-        role: 'error',
-        content: `**System Error:** Maximum execution loop depth (${MAX_GOD_MODE_LOOPS}) reached.`,
-      },
-      { chatId: chatId || state.data.currentChatId },
-    );
-    return;
+  let reply = { thinking: '', content: '', toolCalls: [] };
+  let aborted = false;
+  let failure = null;
+
+  try {
+    reply = await requestCompletion({
+      config: state.data.config,
+      model: state.data.config.lastModel,
+      messages: buildApiMessages(chat.messages),
+      tools: toolSchemasFor(chat),
+      forceAnswer,
+      signal,
+      onDelta: turn.apply,
+    });
+    // The resolved reply can differ from the last delta: text held back as a
+    // possible opening `<think>` tag is only released at the end.
+    turn.apply(reply);
+  } catch (error) {
+    if (error.name === 'AbortError') aborted = true;
+    else failure = error;
   }
 
-  if (!continuing) {
-    if (!text.trim()) return;
-    if (!state.data.config.key && !skipApi) {
-      throw new Error('Please enter your API key in the settings first.');
-    }
-    if (!state.data.config.lastModel && !skipApi) {
-      throw new Error('No model selected. Check the connection settings, or add one under Extra Models.');
-    }
-    if (!state.data.currentChatId) await createChat();
+  await turn.settle();
+  if (failure) throw failure;
 
-    const chat = currentChat();
-    if (!chat.messages.length) {
-      chat.title = buildTitle(text.trim());
-      await persistChatIndex();
-      emit(EVENTS.CHATS);
-    }
-    await appendMessage({ role: 'user', content: text.trim() });
-    if (skipApi) return;
+  // Nothing but reasoning (or nothing at all) came back: say so with an empty
+  // reply rather than leaving the turn without an answer.
+  if (!aborted && !turn.hasReply()) {
+    await appendMessage({ role: 'assistant', content: reply.content }, { chatId });
   }
 
-  const targetChatId = chatId || state.data.currentChatId;
-  const chat = findChat(targetChatId);
+  return { reply, aborted };
+}
+
+/**
+ * Run the model until it answers without asking for a tool.
+ *
+ * Each round is one request. If the reply carries tool calls they are run in
+ * order — never in parallel, since JavaScript calls share `window` and may
+ * depend on each other — each result is appended as a `tool` message, and the
+ * transcript is sent again. After `maxToolRounds` of that the model is asked to
+ * answer without tools; if it still calls one, the turn ends with an error.
+ *
+ * This is a loop, not recursion, so there is exactly one abort controller and
+ * one cleanup for the whole turn. The turn is pinned to `chatId`, so switching
+ * chats mid-run cannot redirect it.
+ *
+ * Stopping can leave a call in the transcript with no result. That is fine:
+ * `buildApiMessages` leaves unanswered calls out of the next request.
+ */
+async function runTurns(chatId) {
+  const chat = findChat(chatId);
   if (!chat) return;
 
   const controller = new AbortController();
+  const { signal } = controller;
   state.runtime.completionAbort = controller;
-  setGeneration({
-    active: true,
-    phase: 'thinking',
-    loop: loopDepth,
-    maxLoops: MAX_GOD_MODE_LOOPS,
-  });
+
+  const maxRounds = Math.max(
+    1,
+    pickInteger(10, state.data.config.maxToolRounds, GLOBAL_SETTINGS.maxToolRounds.default),
+  );
 
   try {
-    const payload = await buildPayload(chat);
-
-    // The phase stays 'thinking' until the answer itself starts, so the send
-    // button and the thinking box agree about what the model is doing.
-    const turn = createTurn(chat, targetChatId, {
-      onReplyStart: () => setGeneration({ phase: 'generating' }),
-    });
-
-    let reply = { thinking: '', content: '' };
-    let aborted = false;
-    let failure = null;
-
-    try {
-      reply = await requestCompletion({
-        config: state.data.config,
-        model: state.data.config.lastModel,
-        messages: payload,
-        signal: controller.signal,
-        onDelta: turn.apply,
+    for (let round = 0; ; round++) {
+      setGeneration({
+        active: true,
+        phase: 'thinking',
+        tool: null,
+        loop: round,
+        maxLoops: maxRounds,
       });
-      // The resolved reply can differ from the last delta: text held back as a
-      // possible opening `<think>` tag is only released at the end.
-      turn.apply(reply);
-    } catch (error) {
-      if (error.name === 'AbortError') aborted = true;
-      else failure = error;
-    }
 
-    // Before anything else is appended, and before a failure is reported: a
-    // partial reply still gets its final render and a save.
-    await turn.settle();
-    if (failure) throw failure;
+      const lastRound = round >= maxRounds;
+      const { reply, aborted } = await requestTurn({
+        chat,
+        chatId,
+        signal,
+        forceAnswer: lastRound,
+      });
 
-    if (aborted) {
-      await appendMessage(
-        { role: 'error', content: '*[Stopped by user]*' },
-        { chatId: targetChatId },
-      );
-      return;
-    }
+      if (aborted) {
+        await appendStopped(chatId);
+        return;
+      }
+      if (!reply.toolCalls.length) return;
 
-    // Nothing but reasoning (or nothing at all) came back: say so with an
-    // empty reply rather than leaving the turn without an answer.
-    if (!turn.hasReply()) {
-      await appendMessage(
-        { role: 'assistant', content: reply.content },
-        { chatId: targetChatId },
-      );
-    }
+      if (lastRound) {
+        await appendMessage(
+          {
+            role: 'error',
+            content: `**System Error:** Maximum tool rounds (${maxRounds}) reached.`,
+          },
+          { chatId },
+        );
+        return;
+      }
 
-    // Only the answer is scanned. Models draft `<run>` blocks while reasoning;
-    // those must never execute.
-    if (state.data.config.godMode && reply.content) {
-      const blocks = extractRunBlocks(reply.content);
-      if (blocks.length > 0) {
-        for (const code of blocks) {
-          if (!state.runtime.generation.active) break;
-          const result = await executeRunBlock(code);
-          await appendMessage({ role: 'user', content: result }, { chatId: targetChatId });
-        }
-        if (state.runtime.generation.active) {
-          state.runtime.completionAbort = null;
-          // Awaited, not returned: `return` would evaluate the call and then run
-          // this function's `finally` while the next turn is still in flight,
-          // clearing its abort controller and its generation state.
-          await sendMessage({ loopDepth: loopDepth + 1, chatId: targetChatId });
-          return;
-        } else {
-          await appendMessage(
-            { role: 'error', content: '*[Stopped by user]*' },
-            { chatId: targetChatId },
-          );
+      for (const call of reply.toolCalls) {
+        setGeneration({ phase: 'tool', tool: call.name });
+        const content = await runToolCall(call, { chat, signal });
+        await appendMessage(
+          { role: TOOL_ROLE, toolCallId: call.id, name: call.name, content, collapsed: true },
+          { chatId },
+        );
+        // Running code cannot be interrupted, but the loop can stop after it.
+        if (signal.aborted) {
+          await appendStopped(chatId);
           return;
         }
       }
     }
   } catch (error) {
-    if (error.name !== 'AbortError') {
+    if (error.name === 'AbortError') {
+      await appendStopped(chatId);
+    } else {
       await appendMessage(
         { role: 'error', content: `**Error:**\n\n${error.message}` },
-        { chatId: targetChatId },
+        { chatId },
       );
     }
   } finally {
-    state.runtime.completionAbort = null;
-    setGeneration({ active: false, phase: 'idle', loop: 0, maxLoops: 0 });
+    // A stop followed at once by a new send may already own the runtime state.
+    const current = state.runtime.completionAbort;
+    if (current === controller || current === null) {
+      state.runtime.completionAbort = null;
+      setGeneration(IDLE);
+    }
     invalidateContext();
   }
+}
+
+/**
+ * Append the user's message and run the model's turn. `skipApi` appends the
+ * message without calling the API at all.
+ */
+export async function sendMessage({ text = '', skipApi = false } = {}) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  if (!state.data.config.key && !skipApi) {
+    throw new Error('Please enter your API key in the settings first.');
+  }
+  if (!state.data.config.lastModel && !skipApi) {
+    throw new Error('No model selected. Check the connection settings, or add one under Extra Models.');
+  }
+  if (!state.data.currentChatId) await createChat();
+
+  const chat = currentChat();
+  if (!chat.messages.length) {
+    chat.title = buildTitle(trimmed);
+    await persistChatIndex();
+    emit(EVENTS.CHATS);
+  }
+  await appendMessage({ role: 'user', content: trimmed });
+  if (skipApi) return;
+
+  await runTurns(state.data.currentChatId);
 }

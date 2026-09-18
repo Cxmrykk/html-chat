@@ -7,13 +7,28 @@ const BASE_CONFIG = {
   url: 'https://api.openai.com/v1',
   key: '',
   models: [],
-  godMode: false,
+  jsExecution: false,
   lastModel: '',
 };
 
+/**
+ * Fields from before JavaScript execution became a tool: the switch carries
+ * over under its new name, and the system prompt that used to drive the
+ * feature has no successor (the tool's description does that job now).
+ */
+function migrateLegacyFields(stored) {
+  const config = { ...stored };
+  if (config.jsExecution === undefined && config.godMode !== undefined) {
+    config.jsExecution = Boolean(config.godMode);
+  }
+  delete config.godMode;
+  delete config.godModePrompt;
+  return config;
+}
+
 /** Load the config, filling in any schema keys the stored record predates. */
 export async function loadConfig() {
-  const stored = (await idb.get(KEYS.config)) || {};
+  const stored = migrateLegacyFields((await idb.get(KEYS.config)) || {});
   const config = { ...BASE_CONFIG, ...stored };
   for (const [key, entry] of Object.entries(GLOBAL_SETTINGS)) {
     if (config[key] === undefined) config[key] = entry.default;

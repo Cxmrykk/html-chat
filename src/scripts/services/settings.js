@@ -64,6 +64,8 @@ async function afterMutation(scope, key, fileId, previousEmbeddingsModel) {
     // extraModels (and, in principle, any future global affecting the
     // dropdown) needs the model list repainted.
     emit(EVENTS.MODELS);
+    // Whether file search is on offer depends on the embeddings model.
+    emit(EVENTS.CHAT_FILES);
   }
   invalidateContext();
 }
@@ -124,13 +126,14 @@ export async function resetAllSettings(scope, fileId) {
     await persistConfig();
     if (previousModel !== state.data.config.embeddingsModel) await resetAllEmbeddings();
     emit(EVENTS.MODELS);
+    emit(EVENTS.CHAT_FILES);
   }
   invalidateContext();
 }
 
 /** Save connection configuration options. */
-export async function saveConnectionConfig({ url, key, godMode }) {
-  Object.assign(state.data.config, { url, key, godMode });
+export async function saveConnectionConfig({ url, key, jsExecution }) {
+  Object.assign(state.data.config, { url, key, jsExecution });
   await persistConfig();
   invalidateContext();
   emit(EVENTS.SESSION);

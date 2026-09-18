@@ -9,6 +9,7 @@ import {
   persistPrefs,
   invalidateContext,
   isEmbedding,
+  embeddingsEnabled,
 } from '../store/state.js';
 import * as conversation from '../services/conversation.js';
 import * as library from '../services/file-library.js';
@@ -16,14 +17,11 @@ import * as settings from '../services/settings.js';
 import * as transfer from '../services/transfer.js';
 import * as embedding from '../services/embedding.js';
 import * as models from '../services/models.js';
-import { retrieveChunks, wrapFileContent } from '../services/retrieval.js';
 import { pickFiles, readFileText, pickJSONText } from '../services/file-io.js';
-import { setMessageBusy, isRetryable, isCollapsedThinking } from '../ui/components/message.js';
+import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { renderMainView } from '../ui/bindings.js';
-import { estimateTokens } from '../core/tokens.js';
-import { pickNumber } from '../core/values.js';
-import { isSendable, isModelOutput } from '../core/roles.js';
+import { isSendable } from '../core/roles.js';
 import { ICON_CHECK } from '../ui/icons.js';
 
 /**
@@ -139,14 +137,11 @@ export const commands = {
     const chat = state.data.chats.find((entry) => entry.id === id);
     if (!chat) return;
 
-    // The transcript is the conversation as the model sees it: no errors, no
-    // thinking, no un-run embed placeholders.
+    // The transcript is the conversation as the model sees it: no errors and
+    // no thinking, but tool calls and their results included.
     const body = chat.messages
       .filter(isSendable)
-      .map((message) => {
-        const label = message.role === 'file' ? 'USER' : message.role.toUpperCase();
-        return `## ${label}\n${message.content || ''}\n\n`;
-      })
+      .map((message) => `## ${message.role.toUpperCase()}\n${messageMarkdown(message)}\n\n`)
       .join('');
 
     navigator.clipboard.writeText(`# ${chat.title}\n\n${body}`.trim()).then(() => {
@@ -206,15 +201,10 @@ export const commands = {
   /* ---- messages ---- */
 
   'message.copy': ({ index, element }) => {
-    const chat = currentChat();
-    const message = chat?.messages[index];
+    const message = currentChat()?.messages[index];
     if (!message) return;
 
-    let textToCopy = message.content || '';
-    if (message.role === 'file' && message.mode === 'embed') {
-      textToCopy = message.prompt || '';
-    }
-
+    const textToCopy = messageMarkdown(message);
     if (!textToCopy) return;
 
     navigator.clipboard.writeText(textToCopy).then(() => {
@@ -246,9 +236,7 @@ export const commands = {
 
     const input = $('#chat-input');
     if (input) {
-      input.value = message.role === 'file' && message.mode === 'embed'
-        ? message.prompt || ''
-        : message.content || '';
+      input.value = message.content || '';
       input.focus();
     }
     emit(EVENTS.SESSION);
@@ -257,33 +245,9 @@ export const commands = {
   'message.saveEdit': async () => {
     const index = state.session.editingMessageIndex;
     if (index === null) return;
+    if (!currentChat()?.messages[index]) return;
 
-    const chat = currentChat();
-    const message = chat?.messages[index];
-    if (!message) return;
-
-    const value = $('#chat-input')?.value ?? '';
-
-    if (message.role === 'file' && message.mode === 'embed') {
-      const tokensInput = document.querySelector(
-        `.msg[data-index="${index}"] .embed-cfg-tokens`,
-      );
-      const thresholdInput = document.querySelector(
-        `.msg[data-index="${index}"] .embed-cfg-threshold`,
-      );
-      await conversation.updateMessage(index, {
-        prompt: value,
-        maxTokens: pickNumber(5000, tokensInput?.value),
-        ragThreshold: pickNumber(0, thresholdInput?.value),
-      });
-    } else if (message.role === 'file') {
-      await conversation.updateMessage(index, {
-        content: value,
-        approxTokens: estimateTokens(value),
-      });
-    } else {
-      await conversation.updateMessage(index, { content: value });
-    }
+    await conversation.updateMessage(index, { content: $('#chat-input')?.value ?? '' });
 
     stopEditing();
     emit(EVENTS.SESSION);
@@ -299,7 +263,7 @@ export const commands = {
 
     await commands['message.saveEdit']();
 
-    // Roles that cannot start a turn (assistant, system) just get the save.
+    // Roles that cannot start a turn just get the save.
     const message = currentChat()?.messages[index];
     if (!isRetryable(message)) return;
 
@@ -319,11 +283,11 @@ export const commands = {
     input.style.overflowX = wrapped ? 'hidden' : 'auto';
   },
 
-  /** Expand or collapse a thinking box. */
-  'message.toggleThinking': async ({ index }) => {
+  /** Expand or collapse a thinking box or a tool result. */
+  'message.toggleCollapsed': async ({ index }) => {
     const message = currentChat()?.messages[index];
     if (!message) return;
-    await conversation.setThinkingCollapsed(index, !isCollapsedThinking(message));
+    await conversation.setCollapsed(index, !isCollapsed(message));
   },
 
   'message.fork': async ({ index }) => {
@@ -333,19 +297,10 @@ export const commands = {
   },
 
   'message.retry': async ({ index }) => {
-    const chat = currentChat();
-    const message = chat?.messages[index];
-    if (!message) return;
+    const message = currentChat()?.messages[index];
+    if (!isRetryable(message)) return;
 
     stopEditing();
-
-    if (message.role === 'file') {
-      await conversation.truncateMessages(index + 1);
-      // `resend`, not a loop turn: this is an ordinary retry and must not
-      // report itself as a God Mode loop or consume one of its iterations.
-      await conversation.sendMessage({ resend: true });
-      return;
-    }
 
     const input = $('#chat-input');
     const text = message.content || '';
@@ -371,47 +326,6 @@ export const commands = {
     await conversation.deleteMessage(index);
   },
 
-  'message.runEmbed': async ({ index }) => {
-    const chat = currentChat();
-    const chatId = state.data.currentChatId;
-    const message = chat?.messages[index];
-    if (!message || message.role !== 'file' || message.mode !== 'embed') return;
-
-    const restore = setMessageBusy(index, 'message.runEmbed', 'Embedding...');
-
-    try {
-      // Fall back to the following user messages when no explicit prompt is set.
-      let prompt = (message.prompt || '').trim();
-      if (!prompt) {
-        const lookahead = [];
-        for (let i = index + 1; i < chat.messages.length; i++) {
-          const next = chat.messages[i];
-          // The model's turn — its thinking or its reply — ends the question.
-          if (isModelOutput(next)) break;
-          if (next.role === 'user' && next.content) lookahead.push(next.content);
-        }
-        prompt = lookahead.join('\n').trim();
-      }
-
-      const content = await retrieveChunks({
-        fileId: message.fileId,
-        prompt,
-        maxTokens: message.maxTokens,
-        threshold: message.ragThreshold,
-      });
-
-      const meta = findFile(message.fileId);
-      const wrapped = await wrapFileContent(meta, content, message.fileName);
-
-      // Append to the chat this started in, not whichever is current now.
-      await conversation.appendMessage({ role: 'user', content: wrapped }, { chatId });
-    } catch (error) {
-      alert(`Error fetching embeddings: ${error.message}`);
-    } finally {
-      restore();
-    }
-  },
-
   'message.setRole': async ({ index, element }) => {
     await conversation.updateMessage(index, { role: element.value });
   },
@@ -425,7 +339,11 @@ export const commands = {
     }
   },
 
-  'file.insert': async ({ event, id }) => {
+  /**
+   * Attach a file to the current chat, or detach it. The sidebar stays open on
+   * mobile: attaching several files in a row is the common case.
+   */
+  'file.toggle': async ({ event, id }) => {
     if (event?.ctrlKey || event?.metaKey) {
       event.preventDefault();
       await openSettingsScope('file-settings', id);
@@ -437,26 +355,21 @@ export const commands = {
       if (file) await library.replaceFileContents(id, await readFileText(file));
       return;
     }
-    stopEditing();
-    leaveSettings();
-    if (!state.data.currentChatId) await conversation.createChat();
-    await library.insertFileMessage(id, 'full');
-    collapseSidebarOnMobile();
-  },
 
-  'file.insertEmbed': async ({ event, id }) => {
-    if (event?.ctrlKey || event?.metaKey) {
-      event.preventDefault();
-      await openSettingsScope('file-settings', id);
+    const meta = findFile(id);
+    if (!meta) return;
+
+    const attaching = !(currentChat()?.fileIds || []).includes(id);
+    if (attaching && !embeddingsEnabled()) {
+      alert('Files are searched by embedding. Please configure an embeddings model in Settings first.');
       return;
     }
-    const meta = findFile(id);
-    if (!meta || (meta.progress ?? 0) < 100) return;
-    stopEditing();
-    leaveSettings();
-    if (!state.data.currentChatId) await conversation.createChat();
-    await library.insertFileMessage(id, 'embed');
-    collapseSidebarOnMobile();
+
+    // No view change and no transcript re-render: this only flips a marker.
+    await conversation.toggleChatFile(id);
+
+    // A file uploaded before the embeddings model was set has never been indexed.
+    if (attaching && (meta.progress ?? 0) < 100) embedding.startEmbedding(id);
   },
 
   'file.delete': async ({ event, id }) => {
@@ -495,7 +408,7 @@ export const commands = {
   'file.toggleEmbed': async () => {
     const id = state.session.activeFileId;
     if (!id) return;
-    if (!state.data.config.embeddingsModel?.trim()) {
+    if (!embeddingsEnabled()) {
       alert('Please configure an embeddings model in Settings first.');
       return;
     }
@@ -536,7 +449,7 @@ export const commands = {
     await settings.saveConnectionConfig({
       url: $('#cfg-url').value.trim(),
       key: $('#cfg-key').value.trim(),
-      godMode: $('#cfg-godmode').checked,
+      jsExecution: $('#cfg-js-exec').checked,
     });
     invalidateContext();
     alert('Settings saved.');

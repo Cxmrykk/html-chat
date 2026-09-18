@@ -1,8 +1,8 @@
 import { $ } from '../dom.js';
-import { state, embeddingsEnabled, findFile } from '../../store/state.js';
+import { state, embeddingsEnabled, findFile, currentChat } from '../../store/state.js';
 import { escapeHTML, formatDuration, formatSpeed } from '../../core/format.js';
 import { pickInteger } from '../../core/values.js';
-import { ICON_DELETE, ICON_EMBED } from '../icons.js';
+import { ICON_DELETE } from '../icons.js';
 
 const ROW_HEIGHT = '1.6em + 17px';
 
@@ -30,6 +30,11 @@ function shouldShowStats(file) {
   return Boolean(file.isEmbedding) && (file.progress ?? 0) < 100;
 }
 
+/**
+ * The file list doubles as the current chat's attachment picker: a row reads
+ * `[x]` when the chat may search that file. It therefore repaints when the
+ * current chat changes, not only when the files do.
+ */
 export function renderFileList() {
   const list = $('#file-list');
   if (!list) return;
@@ -42,28 +47,27 @@ export function renderFileList() {
   }
 
   const enabled = embeddingsEnabled();
+  const attached = new Set(currentChat()?.fileIds || []);
 
   list.innerHTML = state.data.files
     .map((file) => {
+      const selected = attached.has(file.id);
       const stats = enabled && shouldShowStats(file)
         ? `<div class="file-progress-stats">${progressStatsHTML(file)}</div>`
         : '';
       const bar = enabled
         ? `<div class="file-progress-bar" style="width: ${file.exactProgress ?? file.progress ?? 0}%"></div>`
         : '';
-      const embedButton = enabled && (file.progress ?? 0) >= 100
-        ? `<button data-command="file.insertEmbed" title="Insert Embedding">${ICON_EMBED}</button>`
-        : '';
 
       return `
-        <div class="chat-item file-item" data-id="${escapeHTML(file.id)}"
+        <div class="chat-item file-item${selected ? ' selected' : ''}" data-id="${escapeHTML(file.id)}"
              data-command="file.openSettings"
              title="Ctrl+Click for Advanced RAG Settings">
           <div class="file-item-row">
-            <div class="chat-item-title" data-command="file.insert"
-                 title="Click to insert full contents into chat&#10;Alt+Click to replace contents">${escapeHTML(file.name)}</div>
+            <div class="chat-item-title" data-command="file.toggle"
+                 role="checkbox" aria-checked="${selected ? 'true' : 'false'}"
+                 title="Click to let this chat search the file&#10;Alt+Click to replace contents"><span class="file-marker" aria-hidden="true">${selected ? '[x]' : '[ ]'}</span> ${escapeHTML(file.name)}</div>
             <div class="chat-item-actions">
-              ${embedButton}
               <button data-command="file.delete" title="Delete File">${ICON_DELETE}</button>
             </div>
           </div>
@@ -93,20 +97,5 @@ export function updateFileProgress(id) {
     stats.innerHTML = progressStatsHTML(file);
   } else if (stats) {
     stats.remove();
-  }
-
-  const actions = item.querySelector('.chat-item-actions');
-  if (!actions) return;
-  const embedButton = actions.querySelector('[data-command="file.insertEmbed"]');
-  const complete = (file.progress ?? 0) >= 100;
-
-  if (complete && !embedButton) {
-    const button = document.createElement('button');
-    button.dataset.command = 'file.insertEmbed';
-    button.title = 'Insert Embedding';
-    button.innerHTML = ICON_EMBED;
-    actions.insertBefore(button, actions.firstChild);
-  } else if (!complete && embedButton) {
-    embedButton.remove();
   }
 }

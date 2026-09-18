@@ -1,4 +1,5 @@
 import { isBlank } from './values.js';
+import { DEFAULT_JS_TOOL_DESCRIPTION, DEFAULT_SEARCH_TOOL_DESCRIPTION } from './tools.js';
 
 /**
  * The single description of every configurable setting.
@@ -9,38 +10,6 @@ import { isBlank } from './values.js';
  * (`requiresReembed` / `resetsEmbeddings`). Nothing else should maintain
  * parallel lists of keys.
  */
-
-export const DEFAULT_GOD_MODE_PROMPT = [
-  '[SYSTEM OVERRIDE: CODE EXECUTION ENABLED]',
-  "You are executing directly inside the user's web browser (JS console). You are NOT in a sandboxed cloud environment. You are NOT in Node.js or Python. You have full, unrestricted access to the user's 'window', 'document', 'navigator', 'localStorage', etc.",
-  '',
-  'However, to execute code, you MUST use this exact syntax (the return value is sent back to you):',
-  '<run>',
-  '// browser-side JS goes here',
-  'return data.toString();',
-  '</run>',
-  '',
-  'CRITICAL RULES FOR TOOL USE:',
-  '1. DO NOT CALCULATE MANUALLY. If the user asks a math, logic, or data question, you MUST use a <run> block to compute it.',
-  '2. NO FAKE CODE, MOCKS, OR HARDCODING. Your JavaScript MUST contain actual logic, algorithms, math, or simulations. DO NOT write "simplified" checks.',
-  "3. VANILLA JS LIMITATIONS. You are in a browser. You do not have Python's `itertools`, `numpy`, or `scipy`. If you need combinations or matrix operations, implement them yourself.",
-  '4. STATE PERSISTENCE. Each <run> block executes in a fresh async scope. Variables declared with `let` or `const` will NOT persist. Use `window`.',
-  '5. ITERATIVE PROBLEM SOLVING. Break down complex problems into multiple <run> blocks.',
-  "6. DEFER YOUR ANSWER. If you output a <run> block, DO NOT attempt to answer the user's prompt in the same message.",
-  '7. WAIT FOR THE RESULT. The system will execute your code and return the result. If your code throws an error, fix it and try again.',
-  '8. DELIVER THE FINAL ANSWER ONLY AFTER EXECUTION.',
-  '9. NEVER use Node.js modules (require, os, fs). They do not exist here.',
-  '10. NEVER use markdown backticks (```) around the <run> tags.',
-  '',
-  'EXAMPLE WORKFLOW:',
-  'User: What is the square root of 9999?',
-  'Assistant: I need to compute this.',
-  '<run>',
-  'return Math.sqrt(9999);',
-  '</run>',
-  'User: **Execution Result:**...',
-  'Assistant: The square root is...',
-].join('\n');
 
 const DEFAULT_FILE_WRAPPER = [
   'const extMatch = (fileName || "").match(/\\.([^.]+)$/);',
@@ -67,19 +36,12 @@ const DEFAULT_CHUNKER = [
 
 /** Display helpers shared by several entries. */
 const showApiDefault = (value) => (isBlank(value) ? 'API Default' : String(value));
+const showValueOrDefault = (value) => (isBlank(value) ? 'Default' : String(value));
 const showCustomOrDefault = (value, entry) =>
   isBlank(value) || value === entry.default ? 'Default' : 'Custom';
 const showInheritedOrCustom = (value) => (isBlank(value) ? 'Default' : 'Custom');
 
 export const GLOBAL_SETTINGS = {
-  godModePrompt: {
-    label: 'God Mode Prompt',
-    category: 'LLM Behavior',
-    type: 'code',
-    default: DEFAULT_GOD_MODE_PROMPT,
-    tooltip: 'System prompt used when God Mode is enabled.',
-    display: showCustomOrDefault,
-  },
   temperature: {
     label: 'Temperature',
     category: 'LLM Behavior',
@@ -126,6 +88,39 @@ export const GLOBAL_SETTINGS = {
     payloadKey: 'presence_penalty',
     display: showApiDefault,
   },
+  maxToolRounds: {
+    label: 'Max Tool Rounds',
+    category: 'Tools',
+    type: 'number',
+    default: '10',
+    tooltip:
+      'How many times in one turn the model may call tools and be sent the results. After that it is asked to answer without tools.',
+    display: showValueOrDefault,
+  },
+  toolResultMaxTokens: {
+    label: 'Max Tool Result Tokens',
+    category: 'Tools',
+    type: 'number',
+    default: '4000',
+    tooltip: 'Estimated-token cap on a JavaScript result. Longer results are truncated. 0 disables the cap.',
+    display: showValueOrDefault,
+  },
+  jsToolDescription: {
+    label: 'JavaScript Tool Description',
+    category: 'Tools',
+    type: 'code',
+    default: DEFAULT_JS_TOOL_DESCRIPTION,
+    tooltip: 'What the model is told about the JavaScript execution tool.',
+    display: showCustomOrDefault,
+  },
+  searchToolDescription: {
+    label: 'File Search Tool Description',
+    category: 'Tools',
+    type: 'code',
+    default: DEFAULT_SEARCH_TOOL_DESCRIPTION,
+    tooltip: 'What the model is told about the file search tool. The attached file names are appended.',
+    display: showCustomOrDefault,
+  },
   embeddingsUrl: {
     label: 'Embeddings Base URL',
     category: 'API & Connections',
@@ -147,7 +142,7 @@ export const GLOBAL_SETTINGS = {
     category: 'API & Connections',
     type: 'text',
     default: '',
-    tooltip: 'Model used for processing local RAG commands. Empty to disable.',
+    tooltip: 'Model used to index files and search them. Empty disables file search.',
     resetsEmbeddings: true,
     display: (value) => (isBlank(value) ? 'Disabled' : String(value)),
   },
@@ -165,7 +160,7 @@ export const GLOBAL_SETTINGS = {
     type: 'code',
     default: DEFAULT_FILE_WRAPPER,
     tooltip:
-      'JS Function [Vars: fileContent, fileName]: Wrap the final file content/chunks before inserting into the prompt.',
+      "JS Function [Vars: fileContent, fileName]: Wrap one file's retrieved passages before they are returned to the model.",
     display: showCustomOrDefault,
   },
   maxRagTokens: {
@@ -173,8 +168,8 @@ export const GLOBAL_SETTINGS = {
     category: 'RAG & Document Processing',
     type: 'number',
     default: '5000',
-    tooltip: 'Maximum estimated tokens to retrieve per file message.',
-    display: showApiDefault,
+    tooltip: 'Maximum estimated tokens returned by one file search, across all files searched.',
+    display: showValueOrDefault,
   },
   ragThreshold: {
     label: 'RAG Match Threshold',
@@ -182,7 +177,7 @@ export const GLOBAL_SETTINGS = {
     type: 'number',
     default: '0.0',
     tooltip: 'Min similarity threshold (0.0 to 1.0). 0.0 allows anything.',
-    display: showApiDefault,
+    display: showValueOrDefault,
   },
   chunkMaxTokens: {
     label: 'Max Tokens Per Chunk',
@@ -190,7 +185,7 @@ export const GLOBAL_SETTINGS = {
     type: 'number',
     default: '1024',
     tooltip: 'Maximum tokens allowed per single chunk.',
-    display: showApiDefault,
+    display: showValueOrDefault,
   },
   chunkBatchSize: {
     label: 'Chunk Batch Size',
@@ -198,7 +193,7 @@ export const GLOBAL_SETTINGS = {
     type: 'number',
     default: '100',
     tooltip: 'Max chunks sent to Embeddings API at once.',
-    display: showApiDefault,
+    display: showValueOrDefault,
   },
   chunkBatchMaxTokens: {
     label: 'Chunk Batch Max Tokens',
@@ -206,7 +201,7 @@ export const GLOBAL_SETTINGS = {
     type: 'number',
     default: '8192',
     tooltip: 'Max estimated tokens sent to Embeddings API per batch.',
-    display: showApiDefault,
+    display: showValueOrDefault,
   },
   maxVisibleChats: {
     label: 'Max Visible Chats',
@@ -250,8 +245,8 @@ export const FILE_SETTINGS = {
     category: 'Overrides',
     type: 'number',
     default: '',
-    tooltip: 'Override global max RAG tokens for this file.',
-    display: showInheritedOrCustom,
+    tooltip: 'Cap on the estimated tokens this file may contribute to a single search. Empty for no cap.',
+    display: (value) => (isBlank(value) ? 'No cap' : String(value)),
   },
   ragThreshold: {
     label: 'RAG Match Threshold',

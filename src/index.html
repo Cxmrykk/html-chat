@@ -70,8 +70,9 @@
           <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1" />
           <label for="cfg-key">API Key</label>
           <input type="password" id="cfg-key" placeholder="sk-..." />
-          <label class="checkbox-label">
-            <input type="checkbox" id="cfg-godmode" />
+          <label class="checkbox-label"
+                 title="Offer the model a tool that runs JavaScript in this page">
+            <input type="checkbox" id="cfg-js-exec" />
             <strong>Execute JavaScript</strong>
           </label>
           <button data-command="settings.saveConnection">Save</button>
@@ -93,7 +94,7 @@
         <div class="sidebar-section">
           <div class="section-header">
             <h3>Your Files</h3>
-            <button data-command="file.upload" title="Upload Files for Vector Search">
+            <button data-command="file.upload" title="Upload files for the model to search">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
               Upload
             </button>
@@ -108,6 +109,7 @@
         <div id="input-area">
           <!-- Composer: prompt entry and message editing. -->
           <div id="composer-bar">
+            <div id="attached-files" class="attached-files hidden"></div>
             <div class="button-row">
               <select id="model-select" data-command="settings.setModel"></select>
               <button id="send-btn" data-command="chat.send" title="Ctrl+Enter / Cmd+Enter">Send</button>

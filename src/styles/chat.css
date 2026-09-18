@@ -54,9 +54,9 @@
   background: var(--role-error-bg);
 }
 
-.msg.file {
-  border-color: var(--role-file);
-  background: var(--role-file-bg);
+.msg.tool {
+  border-color: var(--role-tool);
+  background: var(--role-tool-bg);
 }
 
 .msg.thinking {
@@ -102,24 +102,24 @@
 }
 
 /* ------------------------------------------------------------------ *
- * Thinking box
+ * Collapsible boxes: thinking and tool results
  *
  * Collapsed, the message is nothing but its header row: a label and a
  * chevron. The whole row is the click target (it carries the toggle command);
  * the button inside exists so the box is also reachable from the keyboard.
  * ------------------------------------------------------------------ */
 
-.msg.thinking .msg-meta {
+.msg.collapsible .msg-meta {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.msg.thinking.collapsed .msg-meta {
+.msg.collapsible.collapsed .msg-meta {
   margin-bottom: 0;
 }
 
-.thinking-toggle {
+.collapse-toggle {
   padding: 0;
   border: none;
   background: transparent;
@@ -130,16 +130,16 @@
   gap: 6px;
 }
 
-.thinking-toggle:hover {
+.collapse-toggle:hover {
   background: transparent;
 }
 
-.thinking-toggle .icon {
+.collapse-toggle .icon {
   width: 1.2em;
   height: 1.2em;
 }
 
-.msg.thinking .msg-meta:hover .thinking-toggle {
+.msg.collapsible .msg-meta:hover .collapse-toggle {
   color: var(--text);
 }
 
@@ -318,33 +318,6 @@
 
 .msg-content th {
   background: var(--bg-inset);
-}
-
-/* Embed-message configuration, previously an inline-styled block. */
-.embed-config {
-  display: flex;
-  gap: 15px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  align-items: center;
-  background: var(--bg-inset);
-  padding: 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: 4px;
-}
-
-.embed-config label {
-  display: flex;
-  flex-direction: column;
-  font-size: 0.85em;
-  font-weight: bold;
-}
-
-.embed-config input {
-  width: 100px;
-  margin: 4px 0 0 0;
-  padding: 4px;
-  font-weight: normal;
 }
 
 .role-select {

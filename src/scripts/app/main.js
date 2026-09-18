@@ -16,7 +16,7 @@ function hydrateConnectionForm() {
   const config = state.data.config;
   if ($('#cfg-url')) $('#cfg-url').value = config.url;
   if ($('#cfg-key')) $('#cfg-key').value = config.key;
-  if ($('#cfg-godmode')) $('#cfg-godmode').checked = Boolean(config.godMode);
+  if ($('#cfg-js-exec')) $('#cfg-js-exec').checked = Boolean(config.jsExecution);
 }
 
 /** Resume any file that was mid-embed when the tab last closed. */

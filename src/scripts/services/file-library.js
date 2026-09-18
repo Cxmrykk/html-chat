@@ -1,20 +1,10 @@
 import { EVENTS } from '../store/events.js';
-import {
-  state,
-  emit,
-  findFile,
-  persistFiles,
-  invalidateContext,
-} from '../store/state.js';
+import { state, emit, findFile, persistFiles, invalidateContext } from '../store/state.js';
 import * as filesRepo from '../data/files-repo.js';
 import * as chunksRepo from '../data/chunks-repo.js';
-import { refreshFileChunks, stopEmbedding } from './embedding.js';
-import { fullFileContent } from './retrieval.js';
-import { appendMessage } from './conversation.js';
-import { estimateTokens } from '../core/tokens.js';
-import { pickNumber } from '../core/values.js';
+import { refreshFileChunks, startEmbedding, stopEmbedding } from './embedding.js';
 
-/** Upload, replace, delete and insert files. */
+/** Upload, replace and delete the files that chats can search. */
 
 function uniqueName(name) {
   let candidate = name;
@@ -42,6 +32,10 @@ export async function addFile(name, text) {
   await filesRepo.saveFileData({ id, name: meta.name, text });
   await persistFiles();
   emit(EVENTS.FILES);
+
+  // A file exists to be searched, so indexing starts at once. Not awaited: it
+  // runs in the background, and is a no-op without an embeddings model.
+  startEmbedding(id);
   return id;
 }
 
@@ -65,6 +59,8 @@ export async function deleteFile(id) {
   await filesRepo.deleteFileData(id);
   await chunksRepo.deleteChunks(id);
   await persistFiles();
+  // Chats that had it attached now offer the model one file fewer.
+  invalidateContext();
   emit(EVENTS.FILES);
 }
 
@@ -84,33 +80,4 @@ export async function setFileText(id, text) {
 export async function getFileText(id) {
   const data = await filesRepo.loadFileData(id);
   return data ? data.text : '';
-}
-
-/** Insert a file into the current chat, whole or as a retrieval placeholder. */
-export async function insertFileMessage(fileId, mode = 'full') {
-  const meta = findFile(fileId);
-  if (!meta) return;
-
-  const config = state.data.config;
-  let content = '';
-  let approxTokens = estimateTokens('x'.repeat(meta.textLength || 0));
-
-  if (mode === 'full') {
-    content = await fullFileContent(fileId);
-    approxTokens = estimateTokens(content);
-  }
-
-  await appendMessage({
-    role: 'file',
-    fileId: meta.id,
-    fileName: meta.name,
-    prompt: '',
-    mode,
-    approxTokens,
-    content,
-    maxTokens: pickNumber(5000, config.maxRagTokens),
-    ragThreshold: pickNumber(0, config.ragThreshold),
-  });
-
-  invalidateContext();
 }

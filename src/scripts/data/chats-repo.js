@@ -1,9 +1,14 @@
 import * as idb from './idb.js';
 import { KEYS } from './keys.js';
+import { normalizeChat } from '../core/chats.js';
 
 /**
  * Chats are stored as an index record plus one record per chat, so opening the
  * app does not deserialise every message of every conversation at once.
+ *
+ * Every record read passes through `normalizeChat`, so the rest of the app
+ * only ever sees the current message model. Nothing is rewritten eagerly; a
+ * chat is saved in its new shape the next time it changes.
  */
 
 function toIndex(chats) {
@@ -14,9 +19,10 @@ function toIndex(chats) {
 export async function migrateLegacyChats() {
   const legacy = await idb.get(KEYS.legacyChats);
   if (!Array.isArray(legacy) || legacy.length === 0) return null;
-  await saveAllChats(legacy);
+  const chats = legacy.map(normalizeChat);
+  await saveAllChats(chats);
   await idb.remove(KEYS.legacyChats);
-  return legacy;
+  return chats;
 }
 
 export async function loadChats() {
@@ -27,7 +33,7 @@ export async function loadChats() {
   const chats = [];
   for (const entry of index) {
     const record = await idb.get(KEYS.chat(entry.id));
-    chats.push(record || { id: entry.id, title: entry.title, messages: [] });
+    chats.push(normalizeChat(record || { id: entry.id, title: entry.title, messages: [] }));
   }
   return chats;
 }

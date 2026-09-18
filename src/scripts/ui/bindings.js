@@ -9,13 +9,14 @@ import {
   replaceMessage,
   updateMessageContent,
   hasMessageElement,
-  isCollapsedThinking,
+  isCollapsed,
 } from './components/message.js';
 import {
   renderInputArea,
   renderSendButton,
   renderSettingsEditor,
   renderEmbeddingToggle,
+  renderAttachedFiles,
   applyChromeState,
   updateModelDropdown,
 } from './components/input-area.js';
@@ -47,10 +48,20 @@ export function renderAll() {
   renderInputArea();
 }
 
+/** Everything that shows which files the current chat may search. */
+function renderChatFiles() {
+  renderFileList();
+  renderAttachedFiles();
+}
+
 export function installBindings() {
   on(EVENTS.CHATS, () => {
     renderChatList();
+    // A different current chat means a different set of attached files.
+    renderChatFiles();
   });
+
+  on(EVENTS.CHAT_FILES, renderChatFiles);
 
   on(EVENTS.MESSAGES, () => {
     if (state.session.view === 'chat') renderChatView();
@@ -61,8 +72,9 @@ export function installBindings() {
     if (state.session.view !== 'chat') return;
     const container = $('#chat-container');
     if (container) {
-      // `[data-index]` only: the God Mode banner is also a `.msg`, and counting
-      // it would shift every index by one and remove the wrong elements.
+      // `[data-index]` only: the JavaScript execution banner is also a `.msg`,
+      // and counting it would shift every index by one and remove the wrong
+      // elements.
       const messages = container.querySelectorAll('.msg[data-index]');
       for (let i = length; i < messages.length; i++) {
         messages[i].remove();
@@ -79,9 +91,9 @@ export function installBindings() {
 
     const editing = state.session.editingMessageIndex === index;
 
-    // A closed thinking box shows nothing that a delta could change. Skipping
-    // the render is also what keeps a long reasoning trace cheap to stream.
-    if (streaming && isCollapsedThinking(message, { editing })) {
+    // A closed box shows nothing that a delta could change. Skipping the
+    // render is also what keeps a long reasoning trace cheap to stream.
+    if (streaming && isCollapsed(message, { editing })) {
       if (!hasMessageElement(index)) renderChatView({ preserveScroll: true });
       return;
     }
@@ -113,7 +125,7 @@ export function installBindings() {
     if (message) {
       // Model output arriving while the user reads further up (an opened
       // thinking box, say) must not drag them down. Anything else — their own
-      // message, a file, an error — always scrolls into view.
+      // message, an error — always scrolls into view.
       const follow = !isModelOutput(message) || isPinnedToBottom();
       appendMessageToView(message, index, { follow });
     }
@@ -121,7 +133,7 @@ export function installBindings() {
   });
 
   on(EVENTS.FILES, () => {
-    renderFileList();
+    renderChatFiles();
     if (state.session.view === 'file-settings') renderSettingsView();
   });
 

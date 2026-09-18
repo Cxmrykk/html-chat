@@ -41,7 +41,12 @@ export const state = {
   },
 
   runtime: {
-    generation: { active: false, phase: 'idle', loop: 0, maxLoops: 0 },
+    /**
+     * `phase` is 'idle' | 'thinking' | 'generating' | 'tool'; `tool` names the
+     * tool being run during the last of those; `loop` counts the tool rounds
+     * completed so far in this turn.
+     */
+    generation: { active: false, phase: 'idle', tool: null, loop: 0, maxLoops: 0 },
     completionAbort: null,
     /** fileId -> { controller, promise } */
     embedding: new Map(),
@@ -71,6 +76,17 @@ export function findFile(id) {
 
 export function activeFile() {
   return findFile(state.session.activeFileId);
+}
+
+/**
+ * The files a chat may search, in sidebar order. A chat can outlive a file (or
+ * arrive by import from another browser), so ids with no file are skipped here
+ * rather than being cleaned up everywhere a file can disappear.
+ */
+export function chatFiles(chat = currentChat()) {
+  const ids = new Set(chat?.fileIds || []);
+  if (!ids.size) return [];
+  return state.data.files.filter((file) => ids.has(file.id));
 }
 
 export function embeddingsEnabled() {

@@ -1,6 +1,6 @@
 import { marked, Prism, renderMathInElement } from '../vendor/index.js';
 import { escapeHTML } from '../core/format.js';
-import { RUN_BLOCK_PATTERN } from '../services/god-mode.js';
+import { fenceFor } from '../core/tools.js';
 
 /**
  * Markdown rendering plus the KaTeX/Prism post-pass.
@@ -15,6 +15,13 @@ const MATH_DELIMITERS = [
   { left: '$$', right: '$$', display: true },
   { left: '$', right: '$', display: false },
 ];
+
+/**
+ * Chats from before tool calling hold code the model wrote as `<run>` text.
+ * Nothing parses or executes that any more, but left alone it would reach
+ * `innerHTML` as an unknown element and collapse into one unreadable line.
+ */
+const LEGACY_RUN_BLOCK = /<run>([\s\S]*?)<\/run>/g;
 
 // Claim `$...$` spans before marked can mangle them; auto-render handles the
 // actual typesetting once the HTML is in the document.
@@ -40,22 +47,17 @@ marked.use({
   ],
 });
 
-/**
- * Present `<run>` blocks as fenced JavaScript in the transcript.
- *
- * `executed: false` drops the "Executing Code" heading, for text whose blocks
- * are never run (a model drafting code while it reasons).
- */
-export function displayContentOf(content, { executed = true } = {}) {
-  const heading = executed ? '**Executing Code:**\n' : '\n';
-  return (content || '').replace(
-    RUN_BLOCK_PATTERN,
-    (_match, code) => `${heading}\`\`\`javascript\n${code.trim()}\n\`\`\``,
-  );
+/** Present legacy `<run>` blocks as fenced JavaScript. Display only. */
+function displayContentOf(content) {
+  return (content || '').replace(LEGACY_RUN_BLOCK, (_match, code) => {
+    const body = code.trim();
+    const fence = fenceFor(body);
+    return `\n${fence}javascript\n${body}\n${fence}`;
+  });
 }
 
-export function renderMarkdown(content, options) {
-  return marked.parse(displayContentOf(content, options));
+export function renderMarkdown(content) {
+  return marked.parse(displayContentOf(content));
 }
 
 /** Typeset math and highlight code inside an already-rendered element. */

@@ -2,13 +2,15 @@
 export const EVENTS = {
   /** Chat list membership, ordering, titles or selection changed. */
   CHATS: 'chats',
+  /** Which files the current chat may search changed. */
+  CHAT_FILES: 'chat:files',
   /** The current chat's message array changed wholesale. */
   MESSAGES: 'messages',
   /**
    * One message changed in place. Payload: { index, streaming?, anchored? }.
    * `streaming` marks a partial update that will be followed by more;
    * `anchored` asks the view to stay where it is instead of following the
-   * transcript down (used when a thinking box is toggled).
+   * transcript down (used when a collapsible box is toggled).
    */
   MESSAGE: 'message',
   /** Messages were removed from the end of the chat. Payload: { length }. */

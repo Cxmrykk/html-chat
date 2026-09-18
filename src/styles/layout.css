@@ -79,6 +79,22 @@ header {
   flex-shrink: 0;
 }
 
+/* Which files the current chat may search; visible even with the sidebar hidden. */
+.attached-files {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-left: 8px;
+  border-left: 3px solid var(--role-tool);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attached-files-warning {
+  color: var(--role-error);
+}
+
 .button-row {
   display: flex;
   gap: 10px;

@@ -11,6 +11,7 @@ import * as chatsRepo from '../data/chats-repo.js';
 import * as chunksRepo from '../data/chunks-repo.js';
 import { encodeVectorToBase64, decodeBase64ToVector } from '../core/vector.js';
 import { computeProgress } from '../core/progress.js';
+import { normalizeChat } from '../core/chats.js';
 import { stopEmbedding } from './embedding.js';
 
 /** Import/export of chats and of chunk+vector bundles. */
@@ -46,9 +47,11 @@ export async function importChats(rawJson) {
   const existingIds = new Set(state.data.chats.map((chat) => chat.id));
   let added = 0;
 
-  for (const chat of imported) {
-    if (!chat.id || !chat.messages) continue;
-    if (existingIds.has(chat.id)) continue;
+  for (const entry of imported) {
+    if (!entry || !entry.id || !entry.messages) continue;
+    if (existingIds.has(entry.id)) continue;
+    // Exports from before tool calling still carry `file` messages.
+    const chat = normalizeChat(entry);
     state.data.chats.push(chat);
     existingIds.add(chat.id);
     await chatsRepo.saveChat(chat);

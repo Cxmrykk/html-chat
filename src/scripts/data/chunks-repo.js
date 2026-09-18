@@ -57,35 +57,45 @@ export async function nextEmbeddingBatch(fileId, { maxBatch, maxTokens, chunkLim
 }
 
 /**
- * Score every embedded chunk against a query vector.
+ * Score a file's embedded chunks against a query vector and keep the best
+ * `limit` of those at or above `threshold`.
  *
- * Vectors are compared during the cursor walk and then dropped, so a large
- * file no longer needs every embedding resident in memory at once — only the
- * lightweight `{ index, score, text, raw }` records survive.
+ * Vectors are compared during the cursor walk and then dropped, and the
+ * survivors are trimmed back to `limit` whenever they reach twice that, so
+ * neither the embeddings nor the text of a large file is ever resident all at
+ * once — only the lightweight `{ fileId, index, score, text, raw }` records of
+ * the current leaders.
  *
- * With no query vector, chunks score by negative index so the sort leaves them
- * in document order and the threshold is not applied.
+ * `vectorCount` is how many chunks were searchable at all; zero means the file
+ * has not been indexed.
  */
-export async function scoreChunks(fileId, queryVector, threshold) {
-  const scored = [];
+export async function scoreChunks(fileId, queryVector, { threshold = 0, limit = Infinity } = {}) {
+  let scored = [];
   let vectorCount = 0;
+
+  const trim = () => {
+    scored.sort((a, b) => b.score - a.score);
+    if (scored.length > limit) scored.length = limit;
+  };
 
   await idb.scanByPrefix(KEYS.chunkPrefix(fileId), (chunk) => {
     if (!chunk.vector) return true;
     vectorCount++;
 
-    const score = queryVector ? cosineSimilarity(queryVector, chunk.vector) : -chunk.index;
-    if (queryVector && score < threshold) return true;
+    const score = cosineSimilarity(queryVector, chunk.vector);
+    if (score < threshold) return true;
 
     scored.push({
+      fileId,
       index: chunk.index,
       score,
       text: chunk.text,
       raw: chunk.raw !== undefined ? chunk.raw : chunk.text,
     });
+    if (scored.length >= limit * 2) trim();
     return true;
   });
 
-  scored.sort((a, b) => b.score - a.score);
+  trim();
   return { scored, vectorCount };
 }

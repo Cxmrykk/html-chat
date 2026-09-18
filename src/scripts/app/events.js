@@ -24,8 +24,8 @@ function installCommandDelegation() {
   document.addEventListener('click', (event) => {
     const target = event.target.closest('[data-command]');
     if (!target) return;
-    // Text inputs inside a command element (the embed config fields) must not
-    // trigger it.
+    // A form control inside a command element (the role select in an open
+    // thinking or tool-result header) must not trigger it.
     if (event.target.matches('input, textarea, select')) return;
     runCommand(target.dataset.command, contextFor(target, event));
   });
