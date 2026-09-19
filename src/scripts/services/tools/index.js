@@ -14,10 +14,17 @@ import { runFileSearch } from './file-search.js';
 
 /** Which tools a chat's requests offer, and the running of the calls that come back. */
 
+/**
+ * Every executor takes `(args, { chat, signal })` and resolves with
+ * `{ content, failed }`: the text sent back to the model, and whether that
+ * text reports a failure (the transcript marks those calls).
+ */
 const EXECUTORS = {
   [TOOL_NAMES.javascript]: runJavaScript,
   [TOOL_NAMES.search]: runFileSearch,
 };
+
+const failure = (content) => ({ content, failed: true });
 
 /**
  * JavaScript execution is one global switch. File search needs no switch of its
@@ -46,7 +53,7 @@ export function toolSchemasFor(chat) {
 }
 
 /**
- * Run one call and return the text of its result.
+ * Run one call and resolve with `{ content, failed }`.
  *
  * Only a tool that is offered right now will run: a model can write a call to
  * anything it likes, including `run_javascript` while execution is switched
@@ -56,25 +63,28 @@ export function toolSchemasFor(chat) {
 export async function runToolCall(call, { chat, signal }) {
   const offered = toolSchemasFor(chat).some((tool) => tool.function.name === call.name);
   const execute = EXECUTORS[call.name];
-  if (!offered || !execute) return `Error: the tool "${call.name}" is not available.`;
+  if (!offered || !execute) return failure(`Error: the tool "${call.name}" is not available.`);
 
   const parsed = parseToolArguments(call.arguments);
-  if (!parsed.ok) return `Error: ${parsed.error}`;
+  if (!parsed.ok) return failure(`Error: ${parsed.error}`);
 
-  let result;
+  let outcome;
   try {
-    result = await execute(parsed.value, { chat, signal });
+    outcome = await execute(parsed.value, { chat, signal });
   } catch (error) {
     if (error.name === 'AbortError') throw error;
-    return `Error: ${error.message}`;
+    return failure(`Error: ${error.message}`);
   }
 
+  const content = typeof outcome?.content === 'string' ? outcome.content : '';
+  const failed = Boolean(outcome?.failed);
+
   // File search budgets itself (Max RAG Tokens); everything else is capped here.
-  if (call.name === TOOL_NAMES.search) return result;
+  if (call.name === TOOL_NAMES.search) return { content, failed };
   const cap = pickNumber(
     4000,
     state.data.config.toolResultMaxTokens,
     GLOBAL_SETTINGS.toolResultMaxTokens.default,
   );
-  return clampToolResult(result, cap);
+  return { content: clampToolResult(content, cap), failed };
 }

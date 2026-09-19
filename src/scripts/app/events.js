@@ -11,12 +11,15 @@ import { renderSendButton } from '../ui/components/input-area.js';
 function contextFor(element, event) {
   const owner = element.closest('[data-id]');
   const message = element.closest('[data-index]');
+  const call = element.closest('[data-call]');
   return {
     event,
     element,
     id: owner?.dataset.id,
     index: message ? Number.parseInt(message.dataset.index, 10) : undefined,
     key: element.dataset.key,
+    // A tool call's `"round.call"` position inside its tools box.
+    call: call?.dataset.call,
   };
 }
 
@@ -25,7 +28,7 @@ function installCommandDelegation() {
     const target = event.target.closest('[data-command]');
     if (!target) return;
     // A form control inside a command element (the role select in an open
-    // thinking or tool-result header) must not trigger it.
+    // thinking header) must not trigger it.
     if (event.target.matches('input, textarea, select')) return;
     runCommand(target.dataset.command, contextFor(target, event));
   });

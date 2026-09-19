@@ -14,9 +14,10 @@ import {
 import * as chatsRepo from '../data/chats-repo.js';
 import { requestCompletion } from './api/completions.js';
 import { toolSchemasFor, runToolCall } from './tools/index.js';
-import { buildApiMessages, toolCallsSignature } from '../core/tool-calls.js';
+import { buildApiMessages } from '../core/tool-calls.js';
+import { normalizeChat } from '../core/chats.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
-import { isCollapsible, THINKING_ROLE, TOOL_ROLE } from '../core/roles.js';
+import { isCollapsible, isTools, THINKING_ROLE, TOOLS_ROLE } from '../core/roles.js';
 import { pickInteger } from '../core/values.js';
 import { truncate } from '../core/format.js';
 
@@ -69,17 +70,24 @@ export async function renameChat(id, title) {
   emit(EVENTS.CHATS);
 }
 
+/**
+ * A fork taken mid-turn copies a thinking box that is still counting or a
+ * call that is still running. Nothing will ever finish them in the copy, so
+ * the copy goes through `normalizeChat`, which settles them as interrupted.
+ */
 export async function forkChat(messageIndex) {
   const chat = currentChat();
   if (!chat) return;
 
   const id = Date.now().toString();
-  state.data.chats.unshift({
-    id,
-    title: `${chat.title} (Forked)`,
-    messages: JSON.parse(JSON.stringify(chat.messages.slice(0, messageIndex + 1))),
-    fileIds: [...(chat.fileIds || [])],
-  });
+  state.data.chats.unshift(
+    normalizeChat({
+      id,
+      title: `${chat.title} (Forked)`,
+      messages: JSON.parse(JSON.stringify(chat.messages.slice(0, messageIndex + 1))),
+      fileIds: [...(chat.fileIds || [])],
+    }),
+  );
   state.data.currentChatId = id;
 
   invalidateContext();
@@ -137,16 +145,38 @@ export async function updateMessage(index, patch) {
 }
 
 /**
- * Expand or collapse a thinking box or a tool result. Purely presentational:
- * what is sent does not depend on it, so the context estimate is untouched,
- * and the repaint is `anchored` so the view does not scroll away from the box
- * just clicked.
+ * Expand or collapse a thinking box. Purely presentational: what is sent does
+ * not depend on it, so the context estimate is untouched, and the repaint is
+ * `anchored` so the view does not scroll away from the box just clicked.
  */
 export async function setCollapsed(index, collapsed) {
   const chat = currentChat();
   const message = chat?.messages[index];
   if (!isCollapsible(message)) return;
   message.collapsed = collapsed;
+  emit(EVENTS.MESSAGE, { index, anchored: true });
+  await persistChat();
+}
+
+/** A call inside a tools message, by its `"round.call"` position key. */
+function findCall(message, key) {
+  if (!isTools(message) || typeof key !== 'string') return null;
+  const [roundIndex, callIndex] = key.split('.').map((part) => Number.parseInt(part, 10));
+  if (!Number.isInteger(roundIndex) || !Number.isInteger(callIndex)) return null;
+  return message.rounds?.[roundIndex]?.calls?.[callIndex] || null;
+}
+
+/**
+ * Expand or collapse one call in a tools box. Calls are addressed by position
+ * rather than id: some servers reuse ids like `call_0` in every request, so an
+ * id is only unique within its round.
+ */
+export async function toggleCallCollapsed(index, key) {
+  const chat = currentChat();
+  const call = findCall(chat?.messages[index], key);
+  if (!call) return;
+  // Collapsed unless explicitly opened, so anything but `false` opens.
+  call.collapsed = call.collapsed === false;
   emit(EVENTS.MESSAGE, { index, anchored: true });
   await persistChat();
 }
@@ -174,26 +204,50 @@ export async function truncateMessages(length) {
  * ------------------------------------------------------------------ */
 
 /**
- * The transcript side of one model turn: an optional thinking message,
- * followed by the assistant's reply — its text, its tool calls, or both. Each
- * is created lazily, on the first sign of its kind.
+ * The transcript side of one submission, across all of its tool rounds.
+ *
+ * A thinking box is mounted the moment the request goes out, whether or not
+ * the model reasons, and counts how long the user has been waiting. It stops
+ * at the first visible text of the reply — or, if none ever comes, when the
+ * turn ends. Reasoning from every round streams into that one box.
+ *
+ * Tool calls go into a tools message that grows round by round, for as long
+ * as the model writes nothing between rounds. Text between rounds (the model
+ * announcing what it will do next, say) is an assistant message of its own,
+ * and the calls after it start a new box, so the transcript stays in the
+ * order things happened. Text that shares a round with calls always streams
+ * in before them, so it naturally lands in front of its box.
  *
  * Messages are held by reference and their index is looked up when emitting,
  * so deleting or truncating mid-stream cannot redirect writes into whichever
  * message inherits the old index; a removed message simply stops repainting.
+ * A removed box is not added to again: the next round starts a fresh one.
  *
  * Renders read the message back out of the store by index, so a chat the user
  * has since navigated away from must stay silent: otherwise every delta
  * repaints whichever message happens to share that index in the chat now on
  * screen. Returning to the chat re-renders it in full anyway.
  */
-function createTurn(chat, chatId, { onReplyStart } = {}) {
+function createTurn(chat, chatId) {
   const startedAt = Date.now();
   const isVisible = () => chatId === state.data.currentChatId;
+  const isMounted = (message) => chat.messages.includes(message);
 
-  let thinking = null;
-  let assistant = null;
+  const thinking = { role: THINKING_ROLE, content: '', collapsed: true, startedAt };
   let thinkingFinished = false;
+
+  /** The tools message new rounds join, and whether text has appeared since it. */
+  let box = null;
+  let textSinceBox = false;
+
+  /** Every round of calls this turn started, with the message holding it. */
+  const started = [];
+
+  // Per-round state, reset by `startRound`.
+  let reasoningBefore = '';
+  let assistant = null;
+  let round = null;
+  let replying = false;
 
   const repaint = (message, streaming) => {
     const index = chat.messages.indexOf(message);
@@ -201,67 +255,228 @@ function createTurn(chat, chatId, { onReplyStart } = {}) {
   };
 
   const mount = (message) => {
-    chat.messages.push(message);
-    invalidateContext();
-    if (isVisible()) emit(EVENTS.MESSAGE_APPENDED, { index: chat.messages.length - 1 });
-    persistChat(chatId);
-  };
-
-  /** Stamp the duration and give the box its final render. Idempotent. */
-  const finishThinking = () => {
-    if (!thinking || thinkingFinished) return;
-    thinkingFinished = true;
-    thinking.seconds = (Date.now() - startedAt) / 1000;
-    repaint(thinking, false);
-  };
-
-  /** Apply everything accumulated so far. Safe to call repeatedly with the same reply. */
-  const apply = ({ thinking: thought, content, toolCalls = [] }) => {
-    if (thought) {
-      if (!thinking) {
-        thinking = { role: THINKING_ROLE, content: thought, collapsed: true };
-        mount(thinking);
-      } else if (thinking.content !== thought) {
-        thinking.content = thought;
-        repaint(thinking, true);
+    let removedThinking = false;
+    
+    // We shouldn't keep 'thinking' if the model has already responded with a tool call.
+    if (message.role === TOOLS_ROLE) {
+      const tIndex = chat.messages.indexOf(thinking);
+      if (tIndex !== -1) {
+        chat.messages.splice(tIndex, 1);
+        thinkingFinished = true;
+        removedThinking = true;
       }
     }
 
-    if (!content && !toolCalls.length) return;
+    chat.messages.push(message);
+    invalidateContext();
+    if (isVisible()) {
+      if (removedThinking) {
+        emit(EVENTS.MESSAGES);
+      } else {
+        emit(EVENTS.MESSAGE_APPENDED, { index: chat.messages.length - 1 });
+      }
+    }
+    persistChat(chatId);
+  };
 
+  /**
+   * Stamp how long the wait lasted and give the box its final render.
+   * `outcome` is recorded only when the wait ended without a reply
+   * ('stopped' or 'failed'). Idempotent: the first call wins.
+   */
+  const finishThinking = (outcome = null) => {
+    if (thinkingFinished) return;
+    thinkingFinished = true;
+    thinking.seconds = (Date.now() - startedAt) / 1000;
+    if (outcome) thinking.outcome = outcome;
+
+    // The 'Responded after xyz' should not be visible (remove it after thinking).
+    if (!thinking.content) {
+      const index = chat.messages.indexOf(thinking);
+      if (index !== -1) {
+        chat.messages.splice(index, 1);
+        if (isVisible()) emit(EVENTS.MESSAGES);
+      }
+    } else {
+      repaint(thinking, false);
+    }
+  };
+
+  /**
+   * Fold the latest calls into the current round. Positions are stable while
+   * a round streams, so each call keeps its status and open/closed state as
+   * its name and arguments grow. Returns whether anything changed.
+   */
+  const mergeCalls = (toolCalls) => {
+    let changed = false;
+    toolCalls.forEach((incoming, i) => {
+      const existing = round.calls[i];
+      if (!existing) {
+        round.calls.push({
+          id: incoming.id,
+          name: incoming.name,
+          arguments: incoming.arguments,
+          status: 'pending',
+          collapsed: true,
+        });
+        changed = true;
+        return;
+      }
+      if (
+        existing.id !== incoming.id ||
+        existing.name !== incoming.name ||
+        existing.arguments !== incoming.arguments
+      ) {
+        existing.id = incoming.id;
+        existing.name = incoming.name;
+        existing.arguments = incoming.arguments;
+        changed = true;
+      }
+    });
+    return changed;
+  };
+
+  const applyReasoning = (thought) => {
+    if (!thought) return;
+    const combined = reasoningBefore ? `${reasoningBefore}\n\n${thought}` : thought;
+    if (thinking.content === combined) return;
+    const first = !thinking.content;
+    thinking.content = combined;
+    // The first reasoning turns a plain header into an expandable box, so the
+    // whole row is re-rendered; after that only the body changes.
+    repaint(thinking, !first);
+  };
+
+  const applyContent = (content) => {
+    if (!content) return;
     if (!assistant) {
-      // The first word of the answer — or the first tool call — is the end of
-      // the thinking.
+      // The first word of a reply ends the wait.
       finishThinking();
-      onReplyStart?.();
-      assistant = { role: 'assistant', content: content || '' };
-      if (toolCalls.length) assistant.toolCalls = toolCalls;
+      assistant = { role: 'assistant', content };
       mount(assistant);
+      textSinceBox = true;
+      return;
+    }
+    if (assistant.content !== content) {
+      assistant.content = content;
+      repaint(assistant, true);
+    }
+  };
+
+  const applyToolCalls = (toolCalls) => {
+    if (!toolCalls.length) return;
+
+    if (round) {
+      if (mergeCalls(toolCalls)) repaint(box, true);
       return;
     }
 
-    let changed = false;
-    if (content && assistant.content !== content) {
-      assistant.content = content;
-      changed = true;
+    round = { calls: [] };
+    mergeCalls(toolCalls);
+
+    if (box && !textSinceBox && isMounted(box)) {
+      box.rounds.push(round);
+      started.push({ round, message: box });
+      repaint(box, true);
+      return;
     }
-    if (toolCallsSignature(assistant.toolCalls) !== toolCallsSignature(toolCalls)) {
-      assistant.toolCalls = toolCalls;
-      changed = true;
-    }
-    if (changed) repaint(assistant, true);
+
+    box = { role: TOOLS_ROLE, rounds: [round] };
+    textSinceBox = false;
+    started.push({ round, message: box });
+    mount(box);
   };
 
-  /** Final renders and a durable save, however the request ended. */
-  const settle = async () => {
-    finishThinking();
-    if (!thinking && !assistant) return;
-    if (assistant) repaint(assistant, false);
-    invalidateContext();
-    await persistChat(chatId);
-  };
+  return {
+    begin() {
+      mount(thinking);
+    },
 
-  return { apply, settle, hasReply: () => assistant !== null };
+    startRound() {
+      reasoningBefore = thinking.content;
+      assistant = null;
+      round = null;
+      replying = false;
+    },
+
+    /** Apply everything accumulated so far this round. Safe to call repeatedly with the same reply. */
+    apply({ thinking: thought = '', content = '', toolCalls = [] } = {}) {
+      applyReasoning(thought);
+      if (!replying && (content || toolCalls.length)) {
+        replying = true;
+        setGeneration({ phase: 'generating' });
+      }
+      applyContent(content);
+      applyToolCalls(toolCalls);
+    },
+
+    /** Final renders and a durable save for the round, however its request ended. */
+    async settleRound() {
+      if (thinking.content !== reasoningBefore) repaint(thinking, false);
+      if (assistant) repaint(assistant, false);
+      if (round) repaint(box, false);
+      invalidateContext();
+      await persistChat(chatId);
+    },
+
+    /** The calls of the current round, in the order they must run. */
+    roundCalls() {
+      return round ? round.calls : [];
+    },
+
+    /** Whether the current round produced any text or calls. */
+    roundHasOutput() {
+      return Boolean(assistant || round);
+    },
+
+    /**
+     * Run one call of the current round. `execute` resolves with
+     * `{ content, failed }` and rejects only on the user's abort, which leaves
+     * the call running for `finish` to mark as stopped.
+     */
+    async runCall(call, execute) {
+      const holder = started.find((entry) => entry.round.calls.includes(call))?.message;
+
+      call.status = 'running';
+      call.startedAt = Date.now();
+      if (holder) repaint(holder, false);
+
+      const outcome = await execute();
+
+      call.result = outcome.content;
+      call.status = outcome.failed ? 'error' : 'done';
+      call.seconds = (Date.now() - call.startedAt) / 1000;
+      invalidateContext();
+      if (holder) repaint(holder, false);
+      await persistChat(chatId);
+    },
+
+    /**
+     * Close the turn: calls that never returned are marked stopped (the user
+     * stopped the turn) or skipped (it ended any other way), and the wait is
+     * stamped if no reply ever started.
+     */
+    async finish(outcome = null) {
+      const now = Date.now();
+      const touched = new Set();
+
+      for (const { round: entry, message } of started) {
+        for (const call of entry.calls) {
+          if (call.status !== 'pending' && call.status !== 'running') continue;
+          if (call.status === 'running' && Number.isFinite(call.startedAt)) {
+            call.seconds = (now - call.startedAt) / 1000;
+          }
+          call.status = outcome === 'stopped' ? 'stopped' : 'skipped';
+          touched.add(message);
+        }
+      }
+      for (const message of touched) repaint(message, false);
+
+      finishThinking(outcome);
+      invalidateContext();
+      await persistChat(chatId);
+    },
+  };
 }
 
 function buildTitle(text) {
@@ -281,16 +496,12 @@ function appendStopped(chatId) {
 }
 
 /**
- * One request to the API, streamed into the transcript. Resolves with the
- * complete reply and whether the user stopped it; a partial reply is given its
- * final render and saved before any failure is rethrown.
+ * One request to the API, streamed into the turn. Resolves with whether the
+ * user stopped it; the round is given its final render and saved before any
+ * failure is rethrown.
  */
-async function requestTurn({ chat, chatId, signal, forceAnswer }) {
-  // The phase stays 'thinking' until the answer itself starts, so the send
-  // button and the thinking box agree about what the model is doing.
-  const turn = createTurn(chat, chatId, {
-    onReplyStart: () => setGeneration({ phase: 'generating' }),
-  });
+async function requestRound({ turn, chat, chatId, signal, forceAnswer }) {
+  turn.startRound();
 
   let reply = { thinking: '', content: '', toolCalls: [] };
   let aborted = false;
@@ -314,16 +525,16 @@ async function requestTurn({ chat, chatId, signal, forceAnswer }) {
     else failure = error;
   }
 
-  await turn.settle();
+  await turn.settleRound();
   if (failure) throw failure;
 
   // Nothing but reasoning (or nothing at all) came back: say so with an empty
   // reply rather than leaving the turn without an answer.
-  if (!aborted && !turn.hasReply()) {
+  if (!aborted && !turn.roundHasOutput()) {
     await appendMessage({ role: 'assistant', content: reply.content }, { chatId });
   }
 
-  return { reply, aborted };
+  return { aborted };
 }
 
 /**
@@ -331,16 +542,16 @@ async function requestTurn({ chat, chatId, signal, forceAnswer }) {
  *
  * Each round is one request. If the reply carries tool calls they are run in
  * order — never in parallel, since JavaScript calls share `window` and may
- * depend on each other — each result is appended as a `tool` message, and the
- * transcript is sent again. After `maxToolRounds` of that the model is asked to
- * answer without tools; if it still calls one, the turn ends with an error.
+ * depend on each other — each result is stored on its call, and the
+ * transcript is sent again. After `maxToolRounds` of that the model is asked
+ * to answer without tools; if it still calls one, the turn ends with an error.
  *
  * This is a loop, not recursion, so there is exactly one abort controller and
  * one cleanup for the whole turn. The turn is pinned to `chatId`, so switching
  * chats mid-run cannot redirect it.
  *
- * Stopping can leave a call in the transcript with no result. That is fine:
- * `buildApiMessages` leaves unanswered calls out of the next request.
+ * Stopping can leave a call with no result. That is fine: `buildApiMessages`
+ * leaves unanswered calls out of the next request.
  */
 async function runTurns(chatId) {
   const chat = findChat(chatId);
@@ -355,6 +566,13 @@ async function runTurns(chatId) {
     pickInteger(10, state.data.config.maxToolRounds, GLOBAL_SETTINGS.maxToolRounds.default),
   );
 
+  const turn = createTurn(chat, chatId);
+  /** How the turn ended when it ended without a reply: 'stopped' or 'failed'. */
+  let outcome = null;
+
+  setGeneration({ active: true, phase: 'thinking', tool: null, loop: 0, maxLoops: maxRounds });
+  turn.begin();
+
   try {
     for (let round = 0; ; round++) {
       setGeneration({
@@ -366,7 +584,8 @@ async function runTurns(chatId) {
       });
 
       const lastRound = round >= maxRounds;
-      const { reply, aborted } = await requestTurn({
+      const { aborted } = await requestRound({
+        turn,
         chat,
         chatId,
         signal,
@@ -374,12 +593,16 @@ async function runTurns(chatId) {
       });
 
       if (aborted) {
+        outcome = 'stopped';
         await appendStopped(chatId);
         return;
       }
-      if (!reply.toolCalls.length) return;
+
+      const calls = turn.roundCalls();
+      if (!calls.length) return;
 
       if (lastRound) {
+        outcome = 'failed';
         await appendMessage(
           {
             role: 'error',
@@ -390,15 +613,12 @@ async function runTurns(chatId) {
         return;
       }
 
-      for (const call of reply.toolCalls) {
+      for (const call of calls) {
         setGeneration({ phase: 'tool', tool: call.name });
-        const content = await runToolCall(call, { chat, signal });
-        await appendMessage(
-          { role: TOOL_ROLE, toolCallId: call.id, name: call.name, content, collapsed: true },
-          { chatId },
-        );
+        await turn.runCall(call, () => runToolCall(call, { chat, signal }));
         // Running code cannot be interrupted, but the loop can stop after it.
         if (signal.aborted) {
+          outcome = 'stopped';
           await appendStopped(chatId);
           return;
         }
@@ -406,14 +626,24 @@ async function runTurns(chatId) {
     }
   } catch (error) {
     if (error.name === 'AbortError') {
+      outcome = 'stopped';
       await appendStopped(chatId);
     } else {
+      outcome = 'failed';
       await appendMessage(
         { role: 'error', content: `**Error:**\n\n${error.message}` },
         { chatId },
       );
     }
   } finally {
+    // Settled before going idle: the live counters stop ticking at idle, and
+    // must already show their final values by then.
+    try {
+      await turn.finish(outcome);
+    } catch (error) {
+      console.error('Could not settle the turn:', error);
+    }
+
     // A stop followed at once by a new send may already own the runtime state.
     const current = state.runtime.completionAbort;
     if (current === controller || current === null) {

@@ -22,14 +22,17 @@
   border-left: 4px solid var(--border);
   margin-bottom: 20px;
   background: var(--bg-raised);
+  --msg-bg: var(--bg-raised);
   padding: 10px 10px 10px 15px;
   border-radius: 0 5px 5px 0;
   box-shadow: var(--shadow);
+  position: relative;
 }
 
 .msg.editing {
   border-left-style: dashed;
   background: var(--bg-inset);
+  --msg-bg: var(--bg-inset);
 }
 
 .msg:last-child {
@@ -47,21 +50,25 @@
 .msg.system {
   border-color: var(--role-system);
   background: var(--role-system-bg);
+  --msg-bg: var(--role-system-bg);
 }
 
 .msg.error {
   border-color: var(--role-error);
   background: var(--role-error-bg);
+  --msg-bg: var(--role-error-bg);
 }
 
-.msg.tool {
+.msg.tools {
   border-color: var(--role-tool);
   background: var(--role-tool-bg);
+  --msg-bg: var(--role-tool-bg);
 }
 
 .msg.thinking {
   border-color: var(--role-thinking);
   background: var(--role-thinking-bg);
+  --msg-bg: var(--role-thinking-bg);
 }
 
 .msg-meta {
@@ -75,11 +82,41 @@
   align-items: center;
 }
 
+/* A row that is nothing but its header: no gap below it. */
+.msg.headline-only .msg-meta {
+  margin-bottom: 0;
+}
+
+/* 
+ * A zero-height sticky wrapper. It overlays the top right of the message content 
+ * without pushing the actual text down. 
+ */
+.msg-actions-container {
+  position: sticky;
+  top: 10px;
+  width: 100%;
+  height: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
 .msg-actions {
-  flex-shrink: 0;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 5px;
+  
+  /* Matches parent block to hide the scrolling text beneath the buttons */
+  background: var(--msg-bg);
+  padding: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--border-soft);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  
+  margin-top: -6px;
+  margin-right: -6px;
 }
 
 .msg-actions button {
@@ -101,22 +138,28 @@
   color: var(--text-faint);
 }
 
+/*
+ * Durations and live counters. Headers are uppercase, but "2.4S" misreads,
+ * and fixed-width digits stop a ticking counter from jittering sideways.
+ */
+.elapsed {
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ------------------------------------------------------------------ *
- * Collapsible boxes: thinking and tool results
+ * Thinking box
  *
- * Collapsed, the message is nothing but its header row: a label and a
+ * With reasoning in it, the box folds to a header row: a label and a
  * chevron. The whole row is the click target (it carries the toggle command);
  * the button inside exists so the box is also reachable from the keyboard.
+ * Without reasoning (`.static`) the header is plain text with nothing to open.
  * ------------------------------------------------------------------ */
 
 .msg.collapsible .msg-meta {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-}
-
-.msg.collapsible.collapsed .msg-meta {
-  margin-bottom: 0;
 }
 
 .collapse-toggle {
@@ -146,6 +189,164 @@
 .msg.thinking .msg-content {
   color: var(--text-muted);
 }
+
+/* ------------------------------------------------------------------ *
+ * Tools box
+ *
+ * One green message per run of tool rounds. Each call is a row whose header
+ * reads what it did; the header is a button, so rows open from the keyboard
+ * too. A closed row renders no details at all.
+ * ------------------------------------------------------------------ */
+
+.tool-call {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-raised);
+  margin: 6px 0;
+}
+
+.tool-call:first-child {
+  margin-top: 0;
+}
+
+.tool-call:last-child {
+  margin-bottom: 0;
+}
+
+.tool-call-header {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.tool-call-header:hover {
+  background: var(--bg-soft-hover);
+}
+
+.tool-call-status {
+  flex-shrink: 0;
+  width: 1em;
+  text-align: center;
+}
+
+.tool-call-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-call-verb {
+  font-weight: bold;
+}
+
+.tool-call-detail {
+  color: var(--text-muted);
+}
+
+.tool-call-time {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tool-call-header .icon {
+  flex-shrink: 0;
+  width: 1.2em;
+  height: 1.2em;
+  /* Sits on the first text line when a long query wraps. */
+  margin-top: 0.15em;
+}
+
+/* One glyph per status, so a row's state reads without colour alone. */
+.tool-call-status::before {
+  display: inline-block;
+}
+
+.tool-call.status-pending .tool-call-status::before {
+  content: '○';
+  color: var(--text-faint);
+}
+
+.tool-call.status-running .tool-call-status::before {
+  content: '◐';
+  color: var(--role-tool);
+  animation: tool-call-spin 1s linear infinite;
+}
+
+.tool-call.status-done .tool-call-status::before {
+  content: '✓';
+  color: var(--role-tool);
+}
+
+.tool-call.status-error .tool-call-status::before {
+  content: '✕';
+  color: var(--role-error);
+}
+
+.tool-call.status-error .tool-call-time {
+  color: var(--role-error);
+}
+
+.tool-call.status-stopped .tool-call-status::before {
+  content: '■';
+  color: var(--text-faint);
+}
+
+.tool-call.status-skipped .tool-call-status::before {
+  content: '–';
+  color: var(--text-faint);
+}
+
+.tool-call.status-interrupted .tool-call-status::before {
+  content: '!';
+  color: var(--role-system);
+}
+
+@keyframes tool-call-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-call.status-running .tool-call-status::before {
+    animation: none;
+  }
+}
+
+.tool-call-body {
+  padding: 0 10px 10px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.tool-call-request,
+.tool-call-result {
+  margin-top: 8px;
+}
+
+.tool-call-request + .tool-call-result {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.tool-call-note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ *
+ * Message content
+ * ------------------------------------------------------------------ */
 
 .msg-content {
   overflow-wrap: anywhere;

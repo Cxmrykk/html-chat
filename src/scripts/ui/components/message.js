@@ -1,11 +1,19 @@
-import { escapeHTML, formatDuration } from '../../core/format.js';
+import { escapeHTML, formatElapsed } from '../../core/format.js';
 import {
   isThinking,
+  isTools,
   isCollapsible,
-  hasToolCalls,
+  isEditable,
   roleOptionsFor,
 } from '../../core/roles.js';
-import { toolCallMarkdown, toolResultLabel } from '../../core/tools.js';
+import { callsOf } from '../../core/tool-calls.js';
+import {
+  toolCallHeadline,
+  toolCallRequestMarkdown,
+  toolCallMarkdown,
+  callStatusOf,
+  callStatusNote,
+} from '../../core/tools.js';
 import { renderMarkdown, enhance } from '../markdown.js';
 import {
   ICON_COPY,
@@ -31,23 +39,27 @@ export function isRetryable(message) {
 }
 
 /**
- * A thinking box or a tool result is collapsed unless the user has opened it.
- * Anything without the flag (an import, say) counts as collapsed; a message
- * being edited is always shown in full so the text under edit stays visible.
+ * A thinking box with reasoning in it is collapsed unless the user has opened
+ * it. Anything without the flag (an import, say) counts as collapsed; a
+ * message being edited is always shown in full so the text under edit stays
+ * visible.
  */
 export function isCollapsed(message, { editing = false } = {}) {
   return isCollapsible(message) && !editing && message.collapsed !== false;
 }
 
 /**
- * The markdown shown for a message: its text, then any tool calls it made.
- * Also what "copy" and the transcript export use, so they match the screen.
+ * The markdown for a message: its text, or for a tools box every call with its
+ * result. What "copy" and the transcript export use, so they match the screen.
  */
 export function messageMarkdown(message) {
-  const parts = [message?.content || ''];
-  if (hasToolCalls(message)) parts.push(...message.toolCalls.map(toolCallMarkdown));
-  return parts.filter(Boolean).join('\n\n');
+  if (isTools(message)) return callsOf(message).map(toolCallMarkdown).join('\n\n');
+  return message?.content || '';
 }
+
+/* ------------------------------------------------------------------ *
+ * Shared pieces
+ * ------------------------------------------------------------------ */
 
 function actionsHTML(message, editing) {
   const btn = (cmd, label, icon) =>
@@ -67,24 +79,24 @@ function actionsHTML(message, editing) {
 
   const buttons = [];
   if (isRetryable(message)) buttons.push(btn('message.retry', 'Retry', ICON_RETRY));
+  buttons.push(btn('message.copy', 'Copy', ICON_COPY));
+  if (isEditable(message)) buttons.push(btn('message.edit', 'Edit', ICON_EDIT));
   buttons.push(
-    btn('message.copy', 'Copy', ICON_COPY),
-    btn('message.edit', 'Edit', ICON_EDIT),
     btn('message.fork', 'Fork', ICON_FORK),
     btn('message.delete', 'Delete', ICON_DELETE),
   );
   return buttons.join('');
 }
 
-function roleSelectHTML(message) {
-  // A collapsible box already has a label ("Thinking", "JavaScript Result"),
-  // so the role is obvious and doesn't need to be rendered in the actions area.
-  if (isCollapsible(message)) return '';
+function actionsBarHTML(message, editing) {
+  return `<div class="msg-actions-container"><div class="msg-actions">${actionsHTML(message, editing)}</div></div>`;
+}
 
+/** The role dropdown of an ordinary message. */
+function roleSelectHTML(message) {
   const options = roleOptionsFor(message);
-  
-  // If the role is locked (like an assistant message with tool calls), 
-  // just show plain text instead of a pointless single-option dropdown.
+
+  // A locked role gets plain text instead of a pointless single-option dropdown.
   if (options.length === 1) {
     return `<span>${escapeHTML(options[0])}</span>`;
   }
@@ -98,62 +110,202 @@ function roleSelectHTML(message) {
   return `<select class="role-select">${optionsHTML}</select>`;
 }
 
+/**
+ * A counter that `ui/ticker.js` keeps current while a turn runs. It carries
+ * the moment the wait began; the text rendered here is only its first frame.
+ */
+function liveElapsedHTML(startedAt) {
+  const seconds = (Date.now() - startedAt) / 1000;
+  return `<span class="elapsed" data-started-at="${startedAt}">${escapeHTML(formatElapsed(seconds))}</span>`;
+}
+
+/** A finished duration: no timestamp, so the ticker leaves it alone. */
+function elapsedHTML(seconds) {
+  return `<span class="elapsed">${escapeHTML(formatElapsed(seconds))}</span>`;
+}
+
 function bodyHTML(message) {
+  if (isTools(message)) return toolsBodyHTML(message);
   return renderMarkdown(messageMarkdown(message));
 }
 
-/** "Thinking..." until the turn stamps a duration, then "Thought for 12s". */
-function thinkingLabel(message) {
-  if (!Number.isFinite(message.seconds)) return 'Thinking...';
-  return `Thought for ${formatDuration(Math.max(1, message.seconds))}`;
+/* ------------------------------------------------------------------ *
+ * Thinking box
+ * ------------------------------------------------------------------ */
+
+/** Still counting: the wait began and has neither ended nor been cut off. */
+function isWaiting(message) {
+  return (
+    Number.isFinite(message.startedAt) && !Number.isFinite(message.seconds) && !message.outcome
+  );
 }
 
-function collapsibleLabel(message) {
-  return isThinking(message) ? thinkingLabel(message) : toolResultLabel(message.name);
+const WAIT_OUTCOMES = { stopped: 'Stopped after', failed: 'Failed after' };
+
+/**
+ * "Thinking... 2.4s" while waiting. Afterwards: "Thought for" when the model
+ * reasoned, "Responded after" when it did not, or how the wait ended if no
+ * reply ever came. Boxes from before timing existed have no duration at all.
+ */
+function thinkingLabelHTML(message) {
+  if (isWaiting(message)) return `Thinking... ${liveElapsedHTML(message.startedAt)}`;
+  if (message.outcome === 'interrupted') return 'Interrupted';
+  if (Number.isFinite(message.seconds)) {
+    const verb =
+      WAIT_OUTCOMES[message.outcome] || (message.content ? 'Thought for' : 'Responded after');
+    return `${verb} ${elapsedHTML(message.seconds)}`;
+  }
+  return message.content ? 'Thought' : 'Thinking';
 }
 
 /**
- * A thinking box or a tool result. Collapsed, it is a single header row —
- * label and chevron — and carries no content node at all, so a long reasoning
- * trace or a page of search results costs nothing to render until someone
- * opens it. The whole header toggles it; the role select and action buttons
- * only exist once it is open.
+ * The thinking box. With reasoning in it, it is a collapsible header that
+ * carries no content node until opened, so a long reasoning trace costs
+ * nothing to render until someone asks for it. Without reasoning it is a plain
+ * header with nothing to open. Actions appear whenever the box is not folded.
  */
-function collapsibleHTML(message, index, editing) {
+function thinkingHTML(message, index, editing) {
+  const expandable = isCollapsible(message);
   const collapsed = isCollapsed(message, { editing });
-  const noun = isThinking(message) ? 'thinking' : 'result';
-  const hint = collapsed ? `Show ${noun}` : `Hide ${noun}`;
+  const showBody = editing || (expandable && !collapsed);
+  const label = `<span class="collapse-label">${thinkingLabelHTML(message)}</span>`;
 
-  const toggle = `
-    <button class="collapse-toggle" data-command="message.toggleCollapsed"
-            aria-expanded="${collapsed ? 'false' : 'true'}" title="${hint}">
-      <span>${escapeHTML(collapsibleLabel(message))}</span>${collapsed ? ICON_CHEVRON_DOWN : ICON_CHEVRON_UP}
-    </button>`;
+  let meta;
+  if (expandable) {
+    const hint = collapsed ? 'Show thinking' : 'Hide thinking';
+    meta = `
+      <div class="msg-meta" data-command="message.toggleCollapsed" title="${hint}">
+        <button class="collapse-toggle" data-command="message.toggleCollapsed"
+                aria-expanded="${collapsed ? 'false' : 'true'}" title="${hint}">
+          ${label}${collapsed ? ICON_CHEVRON_DOWN : ICON_CHEVRON_UP}
+        </button>
+      </div>`;
+  } else {
+    meta = `<div class="msg-meta">${label}</div>`;
+  }
 
-  const actions = collapsed
-    ? ''
-    : `<div class="msg-actions">${roleSelectHTML(message)}${actionsHTML(message, editing)}</div>`;
-
-  const content = collapsed ? '' : `<div class="msg-content">${bodyHTML(message)}</div>`;
+  const classes = ['msg', 'thinking', expandable ? 'collapsible' : 'static'];
+  if (collapsed) classes.push('collapsed');
+  if (!showBody) classes.push('headline-only');
+  if (editing) classes.push('editing');
 
   return `
-    <div class="msg ${escapeHTML(message.role)} collapsible${collapsed ? ' collapsed' : ''}${editing ? ' editing' : ''}" data-index="${index}">
-      <div class="msg-meta" data-command="message.toggleCollapsed" title="${hint}">
-        ${toggle}
-        ${actions}
-      </div>
-      ${content}
+    <div class="${classes.join(' ')}" data-index="${index}">
+      ${meta}
+      ${showBody ? `<div class="msg-content">${bodyHTML(message)}</div>` : ''}
     </div>`;
 }
 
+/* ------------------------------------------------------------------ *
+ * Tools box
+ * ------------------------------------------------------------------ */
+
+/** The right-hand side of a call's header: a live counter, a duration, or its fate. */
+function callTimeHTML(call, status) {
+  const took = Number.isFinite(call.seconds) ? elapsedHTML(call.seconds) : '';
+  switch (status) {
+    case 'running':
+      return Number.isFinite(call.startedAt) ? liveElapsedHTML(call.startedAt) : '';
+    case 'done':
+      return took;
+    case 'error':
+      return took ? `failed · ${took}` : 'failed';
+    case 'stopped':
+      return took ? `stopped · ${took}` : 'stopped';
+    case 'skipped':
+      return 'not run';
+    case 'interrupted':
+      return 'interrupted';
+    default:
+      return '';
+  }
+}
+
+/** What an opened call shows: the code it ran (if any), then its result. */
+function toolCallBodyHTML(call, status) {
+  const parts = [];
+  const request = toolCallRequestMarkdown(call);
+  if (request) parts.push(`<div class="tool-call-request">${renderMarkdown(request)}</div>`);
+
+  if (typeof call.result === 'string') {
+    parts.push(`<div class="tool-call-result">${renderMarkdown(call.result || '*Empty result.*')}</div>`);
+  } else {
+    parts.push(`<p class="tool-call-note">${escapeHTML(callStatusNote(status))}</p>`);
+  }
+  return parts.join('');
+}
+
+/**
+ * One call: a header row reading what the call does (the search query, or the
+ * first line of the code), its status and its time. Clicking the header opens
+ * the details; a closed call renders no details at all.
+ */
+function toolCallHTML(call, key) {
+  const status = callStatusOf(call);
+  const collapsed = call.collapsed !== false;
+  const { verb, detail, scope } = toolCallHeadline(call);
+  const hint = collapsed ? 'Show details' : 'Hide details';
+  const title = `${verb}${scope ? ` in ${scope}` : ''}${detail ? ':' : ''}`;
+  const time = callTimeHTML(call, status);
+
+  const header = `
+    <button class="tool-call-header" data-command="message.toggleCall"
+            aria-expanded="${collapsed ? 'false' : 'true'}" title="${hint}">
+      <span class="tool-call-status" aria-hidden="true"></span>
+      <span class="tool-call-text"><span class="tool-call-verb">${escapeHTML(title)}</span>${
+        detail ? ` <span class="tool-call-detail">${escapeHTML(detail)}</span>` : ''
+      }</span>
+      ${time ? `<span class="tool-call-time">${time}</span>` : ''}
+      ${collapsed ? ICON_CHEVRON_DOWN : ICON_CHEVRON_UP}
+    </button>`;
+
+  const body = collapsed ? '' : `<div class="tool-call-body">${toolCallBodyHTML(call, status)}</div>`;
+
+  return `
+    <div class="tool-call status-${status}${collapsed ? ' collapsed' : ''}" data-call="${escapeHTML(key)}">
+      ${header}
+      ${body}
+    </div>`;
+}
+
+/** Every call of every round, keyed by position (`"round.call"`). */
+function toolsBodyHTML(message) {
+  const rows = [];
+  (Array.isArray(message.rounds) ? message.rounds : []).forEach((round, roundIndex) => {
+    (Array.isArray(round?.calls) ? round.calls : []).forEach((call, callIndex) => {
+      rows.push(toolCallHTML(call, `${roundIndex}.${callIndex}`));
+    });
+  });
+  return rows.join('') || '<p class="tool-call-note">No tool calls.</p>';
+}
+
+/**
+ * The tools box: one green message holding every call of one or more
+ * consecutive rounds, JavaScript and file search alike. It is never folded
+ * itself; its calls are.
+ */
+function toolsHTML(message, index) {
+  return `
+    <div class="msg tools" data-index="${index}">
+      ${actionsBarHTML(message, false)}
+      <div class="msg-meta"><span>Tools</span></div>
+      <div class="msg-content">${bodyHTML(message)}</div>
+    </div>`;
+}
+
+/* ------------------------------------------------------------------ *
+ * Public API
+ * ------------------------------------------------------------------ */
+
 export function messageHTML(message, index, { editing = false } = {}) {
-  if (isCollapsible(message)) return collapsibleHTML(message, index, editing);
+  if (isThinking(message)) return thinkingHTML(message, index, editing);
+  if (isTools(message)) return toolsHTML(message, index);
 
   return `
     <div class="msg ${escapeHTML(message.role)}${editing ? ' editing' : ''}" data-index="${index}">
+      ${actionsBarHTML(message, editing)}
       <div class="msg-meta">
         ${roleSelectHTML(message)}
-        <div class="msg-actions">${actionsHTML(message, editing)}</div>
       </div>
       <div class="msg-content">${bodyHTML(message)}</div>
     </div>`;
@@ -175,7 +327,7 @@ export function hasMessageElement(index) {
 
 /** Swap a message's content only, for streaming updates. */
 export function updateMessageContent(index, message, { final = true } = {}) {
-  const element = document.querySelector(`.msg[data-index="${index}"] .msg-content`);
+  const element = document.querySelector(`.msg[data-index="${index}"] > .msg-content`);
   if (!element) return null;
   element.innerHTML = bodyHTML(message);
   if (final) enhance(element);

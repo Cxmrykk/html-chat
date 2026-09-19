@@ -15,11 +15,12 @@ function stringify(value) {
 /**
  * Run `args.code` as the body of an async function and report what happened:
  * captured console output, the return value, and any error. Never throws — a
- * failure is a result the model can read and act on.
+ * failure is a result the model can read and act on; `failed` marks it for
+ * the transcript.
  */
 export async function runJavaScript(args) {
   if (typeof args.code !== 'string' || !args.code.trim()) {
-    return 'Error: `code` must be a non-empty string.';
+    return { content: 'Error: `code` must be a non-empty string.', failed: true };
   }
 
   const logs = [];
@@ -44,5 +45,5 @@ export async function runJavaScript(args) {
 
   const body = lines.join('\n');
   const fence = fenceFor(body);
-  return `${fence}text\n${body}\n${fence}`;
+  return { content: `${fence}text\n${body}\n${fence}`, failed: Boolean(errorText) };
 }

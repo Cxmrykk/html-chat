@@ -27,6 +27,7 @@ import {
   scrollToBottom,
 } from './views/chat-view.js';
 import { renderSettingsView } from './views/settings-view.js';
+import { syncTicker } from './ticker.js';
 
 /** Declarative event bindings mapping store events to UI renders. */
 
@@ -115,7 +116,7 @@ export function installBindings() {
     }
 
     // Follow the reply down unless the user has deliberately scrolled away —
-    // or has just toggled a box, which must stay under the cursor.
+    // or has just toggled a box or a call, which must stay under the cursor.
     if (pinned && !anchored) scrollToBottom();
   });
 
@@ -151,6 +152,8 @@ export function installBindings() {
 
   on(EVENTS.GENERATION, () => {
     renderSendButton();
+    // Live counters only move while a turn is running.
+    syncTicker(state.runtime.generation.active);
   });
 
   on(EVENTS.CONTEXT, () => {

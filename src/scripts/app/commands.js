@@ -21,7 +21,7 @@ import { pickFiles, readFileText, pickJSONText } from '../services/file-io.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { renderMainView } from '../ui/bindings.js';
-import { isSendable } from '../core/roles.js';
+import { isSendable, isEditable } from '../core/roles.js';
 import { ICON_CHECK } from '../ui/icons.js';
 
 /**
@@ -29,7 +29,8 @@ import { ICON_CHECK } from '../ui/icons.js';
  * `data-command`; nothing is bound to `window` and there are no inline
  * `onclick` attributes anywhere.
  *
- * Each command receives `{ event, element, id, index, key }`.
+ * Each command receives `{ event, element, id, index, key, call }`, where
+ * `call` is the `"round.call"` position of a tool call inside a tools box.
  */
 
 /* ------------------------------------------------------------------ *
@@ -226,7 +227,8 @@ export const commands = {
   'message.edit': ({ index }) => {
     const chat = currentChat();
     const message = chat?.messages[index];
-    if (!message) return;
+    // A tools box is structured calls, not text the composer could hold.
+    if (!message || !isEditable(message)) return;
 
     const previous = state.session.editingMessageIndex;
     setSession({ editingMessageIndex: index }, { silent: true });
@@ -283,11 +285,17 @@ export const commands = {
     input.style.overflowX = wrapped ? 'hidden' : 'auto';
   },
 
-  /** Expand or collapse a thinking box or a tool result. */
+  /** Expand or collapse a thinking box. */
   'message.toggleCollapsed': async ({ index }) => {
     const message = currentChat()?.messages[index];
     if (!message) return;
     await conversation.setCollapsed(index, !isCollapsed(message));
+  },
+
+  /** Expand or collapse one call inside a tools box. */
+  'message.toggleCall': async ({ index, call }) => {
+    if (!Number.isInteger(index) || !call) return;
+    await conversation.toggleCallCollapsed(index, call);
   },
 
   'message.fork': async ({ index }) => {

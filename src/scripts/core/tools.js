@@ -1,4 +1,5 @@
 import { parseToolArguments } from './tool-calls.js';
+import { truncate } from './format.js';
 
 /**
  * The tools this app can offer a model: their wire schemas, the wording that
@@ -87,12 +88,56 @@ export function toolActivityLabel(name) {
   return 'Running tool';
 }
 
-/** Header wording for a tool result row. */
-export function toolResultLabel(name) {
-  if (name === TOOL_NAMES.javascript) return 'JavaScript result';
-  if (name === TOOL_NAMES.search) return 'Search results';
-  return name ? `Result: ${name}` : 'Tool result';
+/* ------------------------------------------------------------------ *
+ * Call status
+ * ------------------------------------------------------------------ */
+
+/**
+ * Where a call is in its life:
+ *
+ *   pending     — still streaming in from the model
+ *   running     — being executed
+ *   done        — returned a result
+ *   error       — returned a result that reports a failure
+ *   stopped     — the user stopped the turn before it returned
+ *   skipped     — the turn ended without running it (round limit, failed request)
+ *   interrupted — found unfinished in storage (a reload, a fork mid-turn)
+ */
+export const CALL_STATUSES = [
+  'pending',
+  'running',
+  'done',
+  'error',
+  'stopped',
+  'skipped',
+  'interrupted',
+];
+
+const ACTIVE_STATUSES = ['pending', 'running'];
+const RETURNED_STATUSES = ['done', 'error'];
+
+/** A known status for any call, whatever a stored or imported record says. */
+export function callStatusOf(call) {
+  if (CALL_STATUSES.includes(call?.status)) return call.status;
+  return typeof call?.result === 'string' ? 'done' : 'interrupted';
 }
+
+const STATUS_NOTES = {
+  pending: 'Waiting for the call to finish arriving...',
+  running: 'Running...',
+  stopped: 'Stopped before it returned.',
+  skipped: 'Not run.',
+  interrupted: 'Interrupted before it returned.',
+};
+
+/** What stands in for the result of a call that has none. */
+export function callStatusNote(status) {
+  return STATUS_NOTES[status] || 'No result.';
+}
+
+/* ------------------------------------------------------------------ *
+ * Reading a call
+ * ------------------------------------------------------------------ */
 
 const JSON_ESCAPES = { n: '\n', t: '\t', r: '\r', b: '\b', f: '\f', '/': '/', '\\': '\\', '"': '"' };
 
@@ -127,6 +172,76 @@ export function partialStringField(raw, field) {
   return out;
 }
 
+function argumentsOf(call) {
+  const parsed = parseToolArguments(call?.arguments);
+  return parsed.ok ? parsed.value : {};
+}
+
+/** A string argument, read from complete JSON or from JSON still streaming in. */
+function stringArgument(call, field) {
+  const value = argumentsOf(call)[field];
+  if (typeof value === 'string') return value;
+  return partialStringField(call?.arguments, field);
+}
+
+function filesOf(call) {
+  const files = argumentsOf(call).files;
+  return Array.isArray(files) ? files.filter((name) => typeof name === 'string' && name) : [];
+}
+
+function firstLine(text) {
+  return (
+    (text || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .find(Boolean) || ''
+  );
+}
+
+const MAX_HEADLINE_CODE = 80;
+
+/** 'active' while a call is under way, 'past' once it returned, 'none' if it never did. */
+function tenseOf(call) {
+  const status = callStatusOf(call);
+  if (ACTIVE_STATUSES.includes(status)) return 'active';
+  return RETURNED_STATUSES.includes(status) ? 'past' : 'none';
+}
+
+const VERBS = {
+  [TOOL_NAMES.javascript]: { active: 'Running JavaScript', past: 'Ran JavaScript', none: 'JavaScript' },
+  [TOOL_NAMES.search]: { active: 'Searching files', past: 'Searched files', none: 'File search' },
+};
+
+/**
+ * The one-line header of a call: what it does, in the tense of its status
+ * (`verb`), what it was given (`detail`: the first line of the code, or the
+ * whole search query), and which files a search was limited to (`scope`).
+ */
+export function toolCallHeadline(call) {
+  const tense = tenseOf(call);
+  const known = VERBS[call?.name];
+
+  if (!known) {
+    const name = call?.name || 'tool';
+    const verb = tense === 'active' ? `Calling ${name}` : tense === 'past' ? `Called ${name}` : name;
+    return { verb, detail: '', scope: '' };
+  }
+
+  if (call.name === TOOL_NAMES.javascript) {
+    return {
+      verb: known[tense],
+      detail: truncate(firstLine(stringArgument(call, 'code')), MAX_HEADLINE_CODE),
+      scope: '',
+    };
+  }
+
+  return {
+    verb: known[tense],
+    detail: stringArgument(call, 'query').trim(),
+    scope: filesOf(call).join(', '),
+  };
+}
+
 /** A fence longer than any run of backticks inside `text`. */
 export function fenceFor(text) {
   const longest = Math.max(0, ...((text || '').match(/`+/g) || []).map((run) => run.length));
@@ -138,21 +253,30 @@ function fenced(text, language = '') {
   return `${fence}${language}\n${text}\n${fence}`;
 }
 
-/** How one tool call reads in the transcript, as markdown. */
+/**
+ * What an opened call shows above its result, as markdown. A search has
+ * nothing to add — its query is the header — so opening it shows the
+ * passages alone; code is shown whole.
+ */
+export function toolCallRequestMarkdown(call) {
+  if (call?.name === TOOL_NAMES.javascript) {
+    return fenced(stringArgument(call, 'code').trim(), 'javascript');
+  }
+  if (call?.name === TOOL_NAMES.search) return '';
+  return fenced(call?.arguments || '{}', 'json');
+}
+
+/** One call, request and result, as markdown: what copy and the transcript export use. */
 export function toolCallMarkdown(call) {
-  const parsed = parseToolArguments(call.arguments);
-  const args = parsed.ok ? parsed.value : {};
-
-  if (call.name === TOOL_NAMES.javascript) {
-    const code = typeof args.code === 'string' ? args.code : partialStringField(call.arguments, 'code');
-    return `**Running JavaScript:**\n${fenced(code.trim(), 'javascript')}`;
-  }
-
-  if (call.name === TOOL_NAMES.search) {
-    const query = typeof args.query === 'string' ? args.query : partialStringField(call.arguments, 'query');
-    const files = Array.isArray(args.files) && args.files.length ? ` in ${args.files.join(', ')}` : '';
-    return `**Searching files${files}:**\n${fenced(query.trim())}`;
-  }
-
-  return `**Calling \`${call.name}\`:**\n${fenced(call.arguments || '{}', 'json')}`;
+  const { verb, scope } = toolCallHeadline(call);
+  const title = `**${verb}${scope ? ` in ${scope}` : ''}:**`;
+  const request =
+    call?.name === TOOL_NAMES.search
+      ? fenced(stringArgument(call, 'query').trim())
+      : toolCallRequestMarkdown(call);
+  const outcome =
+    typeof call?.result === 'string'
+      ? `**Result:**\n${call.result || '*(empty)*'}`
+      : `*(${callStatusNote(callStatusOf(call))})*`;
+  return `${title}\n${request}\n\n${outcome}`;
 }

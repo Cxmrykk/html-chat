@@ -1,13 +1,20 @@
 import { estimateTokens } from './tokens.js';
-import { isSendable, isToolResult, hasToolCalls } from './roles.js';
+import { isSendable, isTools } from './roles.js';
 
 /**
  * Tool calls on the wire: assembling them from streamed fragments, parsing
  * their arguments, and turning a transcript into a request the API will accept.
  *
- * In the transcript a call is `{ id, name, arguments }` (arguments being the
- * raw JSON string the model wrote) on an assistant message's `toolCalls`, and
- * a result is a `tool` message carrying `toolCallId`.
+ * In the transcript, the calls of one or more consecutive rounds share a
+ * single `tools` message:
+ *
+ *   { role: 'tools', rounds: [{ calls: [{ id, name, arguments, result?, status,
+ *                                         startedAt?, seconds?, collapsed }] }] }
+ *
+ * `arguments` is the raw JSON string the model wrote and `result` the text
+ * that was sent back. `status` is described in `core/tools.js`. On the wire,
+ * each round is one assistant message carrying its calls, followed by one
+ * `tool` message per answered call.
  */
 
 /**
@@ -103,11 +110,14 @@ export function parseToolArguments(raw) {
   }
 }
 
-/** A cheap way to tell whether a list of calls changed between two deltas. */
-export function toolCallsSignature(calls) {
-  return (calls || [])
-    .map((call) => `${call.id}:${call.name}:${(call.arguments || '').length}`)
-    .join('|');
+/** Every call in a tools message, across its rounds, in order. */
+export function callsOf(message) {
+  if (!isTools(message) || !Array.isArray(message.rounds)) return [];
+  return message.rounds.flatMap((round) => (Array.isArray(round?.calls) ? round.calls : []));
+}
+
+function hasResult(call) {
+  return typeof call?.result === 'string' && Boolean(call.name);
 }
 
 function toWireCall(call) {
@@ -119,17 +129,43 @@ function toWireCall(call) {
 }
 
 /**
+ * The wire messages for one tools message. `preamble` is the text the model
+ * wrote alongside its first round; it rides on the first round actually sent,
+ * or goes out alone if no call was answered.
+ */
+function wireRounds(message, preamble) {
+  const payload = [];
+  let pending = preamble || '';
+
+  for (const round of Array.isArray(message.rounds) ? message.rounds : []) {
+    const answered = (Array.isArray(round?.calls) ? round.calls : []).filter(hasResult);
+    if (!answered.length) continue;
+
+    payload.push(
+      { role: 'assistant', content: pending || null, tool_calls: answered.map(toWireCall) },
+      ...answered.map((call) => ({ role: 'tool', tool_call_id: call.id, content: call.result })),
+    );
+    pending = '';
+  }
+
+  if (pending) payload.push({ role: 'assistant', content: pending });
+  return payload;
+}
+
+/**
  * The messages that go to the API.
  *
  * Servers reject a request in which a tool result has no preceding call, or a
- * call has no result. Deleting, forking, truncating for a retry, or stopping
- * mid-execution can all leave a transcript in that state, so rather than guard
- * every one of those actions the pairing is repaired here, once:
+ * call has no result. Stopping a turn, hitting the round limit, or reloading
+ * mid-execution all leave calls without results, so the rules are applied
+ * here, once:
  *
  *   - transcript-only rows (errors, thinking) are dropped;
- *   - a call is sent only if its result directly follows its message;
- *   - a result is sent only as the answer to such a call;
- *   - an assistant message left with no text and no calls is dropped.
+ *   - each round of a tools message becomes an assistant message carrying the
+ *     calls that have a result, followed by those results;
+ *   - a call with no result is left out, and a round left with none is dropped;
+ *   - assistant text directly before a tools message is what the model wrote
+ *     alongside that box's first round, so it travels on that round's message.
  *
  * Everything is reduced to wire fields, so presentational ones never leave.
  */
@@ -140,37 +176,18 @@ export function buildApiMessages(messages) {
   for (let i = 0; i < sendable.length; i++) {
     const message = sendable[i];
 
-    // Results are consumed with their assistant message below; one met here
-    // has no call to answer.
-    if (isToolResult(message)) continue;
-
-    if (!hasToolCalls(message)) {
-      payload.push({ role: message.role, content: message.content || '' });
+    if (isTools(message)) {
+      payload.push(...wireRounds(message, ''));
       continue;
     }
 
-    const results = [];
-    while (i + 1 < sendable.length && isToolResult(sendable[i + 1])) {
-      results.push(sendable[++i]);
+    if (message.role === 'assistant' && isTools(sendable[i + 1])) {
+      payload.push(...wireRounds(sendable[i + 1], message.content || ''));
+      i++;
+      continue;
     }
 
-    const calls = [];
-    const answers = [];
-    for (const call of message.toolCalls) {
-      const result = results.find((entry) => entry.toolCallId === call.id);
-      if (!result) continue;
-      calls.push(toWireCall(call));
-      answers.push({ role: 'tool', tool_call_id: call.id, content: result.content || '' });
-    }
-
-    if (calls.length) {
-      payload.push(
-        { role: 'assistant', content: message.content || null, tool_calls: calls },
-        ...answers,
-      );
-    } else if (message.content) {
-      payload.push({ role: 'assistant', content: message.content });
-    }
+    payload.push({ role: message.role, content: message.content || '' });
   }
 
   return payload;

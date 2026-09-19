@@ -26,6 +26,21 @@ export function formatDuration(seconds) {
   return `${Math.round(total)}s`;
 }
 
+/**
+ * A running or finished wait, e.g. "2.4s" or "1m 5s". Tenths of a second
+ * under ten seconds, so a short wait reads as more than "0s"; whole seconds
+ * above that. Always rounded down, so a live counter never runs ahead of the
+ * clock and then appears to jump back when the final value lands.
+ */
+export function formatElapsed(seconds) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) {
+    return '...';
+  }
+  const total = Math.max(0, seconds);
+  if (total < 10) return `${(Math.floor(total * 10) / 10).toFixed(1)}s`;
+  return formatDuration(Math.floor(total));
+}
+
 /** Compact count, e.g. 1500 -> "1.5k". Returns null below 1000. */
 export function formatCompactCount(value) {
   if (value < 1000) return null;
