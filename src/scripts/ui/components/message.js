@@ -41,7 +41,7 @@ import {
  * means something for the role that starts a turn.
  */
 export function isRetryable(message) {
-  return message?.role === 'user';
+  return message?.role === 'user' || isTools(message);
 }
 
 /**

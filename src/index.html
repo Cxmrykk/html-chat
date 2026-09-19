@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <link
       rel="manifest"
-      href='data:application/json,{"name":"HTML Chat","display":"standalone","icons":[{"src":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTIwIDJINGMtMS4xIDAtMiAuOS0yIDJ2MThsNC00aDE0YzEuMSAwIDItLjkgMi0yVjRjMC0xLjEtLjktMi0yLTJ6Ii8+PC9zdmc+","sizes":"512x512","type":"image/svg+xml"}]}'
+      href='data:application/json,{"name":"HTML Chat","display":"standalone","icons":[{"src":"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTIwIDJINGMtMS4xIDAtMiAuOS0yIDJ2MThsNC00aDE0YzEuMSAwIDItLjkgMi0yLTJ6Ii8+PC9zdmc+","sizes":"512x512","type":"image/svg+xml"}]}'
     />
 
     <title>HTML Chat</title>
@@ -67,15 +67,14 @@
           <h3 id="settings-heading" data-command="settings.toggle"
               title="Ctrl+Click for Super Secret Settings">Settings</h3>
           <label for="cfg-url">Base URL</label>
-          <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1" />
+          <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1" data-command="settings.saveConnection" />
           <label for="cfg-key">API Key</label>
-          <input type="password" id="cfg-key" placeholder="sk-..." />
+          <input type="password" id="cfg-key" placeholder="sk-..." data-command="settings.saveConnection" />
           <label class="checkbox-label"
                  title="Offer the model a tool that runs JavaScript in this page">
-            <input type="checkbox" id="cfg-js-exec" />
+            <input type="checkbox" id="cfg-js-exec" data-command="settings.saveConnection" />
             <strong>Execute JavaScript</strong>
           </label>
-          <button data-command="settings.saveConnection">Save</button>
           <button data-command="chat.import">Import</button>
           <button data-command="chat.export">Export</button>
         </div>

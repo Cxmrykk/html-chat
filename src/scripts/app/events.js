@@ -34,9 +34,9 @@ function installCommandDelegation() {
   });
 
   document.addEventListener('change', (event) => {
-    const select = event.target.closest('select[data-command]');
-    if (select) {
-      runCommand(select.dataset.command, contextFor(select, event));
+    const cmdElement = event.target.closest('select[data-command], input[data-command]');
+    if (cmdElement) {
+      runCommand(cmdElement.dataset.command, contextFor(cmdElement, event));
       return;
     }
     if (event.target.classList.contains('role-select')) {

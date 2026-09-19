@@ -682,3 +682,15 @@ export async function sendMessage({ text = '', skipApi = false } = {}) {
 
   await runTurns(state.data.currentChatId);
 }
+
+export async function regenerate() {
+  if (!state.data.config.key) {
+    throw new Error('Please enter your API key in the settings first.');
+  }
+  if (!state.data.config.lastModel) {
+    throw new Error('No model selected. Check the connection settings, or add one under Extra Models.');
+  }
+  if (!state.data.currentChatId) return;
+
+  await runTurns(state.data.currentChatId);
+}

@@ -310,15 +310,24 @@ export const commands = {
 
     stopEditing();
 
-    const input = $('#chat-input');
-    const text = message.content || '';
-    await conversation.truncateMessages(index);
-    if (input) input.value = '';
-    try {
-      await conversation.sendMessage({ text });
-    } catch (error) {
-      if (input) input.value = text;
-      alert(error.message);
+    if (message.role === 'user') {
+      const input = $('#chat-input');
+      const text = message.content || '';
+      await conversation.truncateMessages(index);
+      if (input) input.value = '';
+      try {
+        await conversation.sendMessage({ text });
+      } catch (error) {
+        if (input) input.value = text;
+        alert(error.message);
+      }
+    } else {
+      await conversation.truncateMessages(index);
+      try {
+        await conversation.regenerate();
+      } catch (error) {
+        alert(error.message);
+      }
     }
   },
 
@@ -460,7 +469,6 @@ export const commands = {
       jsExecution: $('#cfg-js-exec').checked,
     });
     invalidateContext();
-    alert('Settings saved.');
     await models.refreshModels();
   },
 
