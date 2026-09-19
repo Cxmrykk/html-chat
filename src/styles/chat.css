@@ -205,10 +205,10 @@
 .tool-call-header {
   display: flex;
   width: 100%;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-start;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px;
   border: none;
   background: transparent;
   color: var(--text);
@@ -276,6 +276,12 @@
   overflow-wrap: anywhere;
 }
 
+.tool-call.collapsed .tool-call-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tool-call-verb {
   font-weight: bold;
 }
@@ -295,8 +301,6 @@
   flex-shrink: 0;
   width: 1.2em;
   height: 1.2em;
-  /* Sits on the first text line when a long query wraps. */
-  margin-top: 0.15em;
 }
 
 @keyframes tool-call-spin {
