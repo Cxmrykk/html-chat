@@ -1,0 +1,574 @@
+#chat-container {
+  position: relative;
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 2px solid var(--border);
+  background: var(--bg-panel);
+  padding: 15px;
+  margin-bottom: 15px;
+}
+
+.chat-placeholder {
+  margin: 0;
+}
+
+.empty-chat-msg {
+  margin: 0;
+  padding-top: 15px;
+}
+
+.msg {
+  border-left: 4px solid var(--border);
+  margin-bottom: 20px;
+  background: var(--bg-raised);
+  --msg-bg: var(--bg-raised);
+  padding: 10px 10px 10px 15px;
+  border-radius: 0 5px 5px 0;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+
+.msg.editing {
+  border-left-style: dashed;
+  background: var(--bg-inset);
+  --msg-bg: var(--bg-inset);
+}
+
+.msg:last-child {
+  margin-bottom: 0;
+}
+
+.msg.user {
+  border-color: var(--role-user);
+}
+
+.msg.assistant {
+  border-color: var(--role-assistant);
+}
+
+.msg.system {
+  border-color: var(--role-system);
+  background: var(--role-system-bg);
+  --msg-bg: var(--role-system-bg);
+}
+
+.msg.error {
+  border-color: var(--role-error);
+  background: var(--role-error-bg);
+  --msg-bg: var(--role-error-bg);
+}
+
+.msg.tools {
+  border-color: var(--role-tool);
+  background: var(--role-tool-bg);
+  --msg-bg: var(--role-tool-bg);
+}
+
+.msg.thinking {
+  border-color: var(--role-thinking);
+  background: var(--role-thinking-bg);
+  --msg-bg: var(--role-thinking-bg);
+}
+
+.msg-meta {
+  font-size: 0.85em;
+  text-transform: uppercase;
+  font-weight: bold;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* A row that is nothing but its header: no gap below it. */
+.msg.headline-only .msg-meta {
+  margin-bottom: 0;
+}
+
+/* 
+ * A zero-height sticky wrapper. It overlays the top right of the message content 
+ * without pushing the actual text down. 
+ */
+.msg-actions-container {
+  position: sticky;
+  top: 10px;
+  width: 100%;
+  height: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.msg-actions {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.msg-actions button {
+  font-size: 0.8em;
+  padding: 2px 6px;
+}
+
+.msg-actions button.icon-btn {
+  padding: 3px;
+}
+
+.msg-actions button.icon-btn .icon {
+  width: 1.2em;
+  height: 1.2em;
+}
+
+.readonly-tag {
+  font-size: 0.8em;
+  color: var(--text-faint);
+}
+
+/*
+ * Durations and live counters. Headers are uppercase, but "2.4S" misreads,
+ * and fixed-width digits stop a ticking counter from jittering sideways.
+ */
+.elapsed {
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ *
+ * Thinking box
+ *
+ * With reasoning in it, the box folds to a header row: a label and a
+ * chevron. The whole row is the click target (it carries the toggle command);
+ * the button inside exists so the box is also reachable from the keyboard.
+ * Without reasoning (`.static`) the header is plain text with nothing to open.
+ * ------------------------------------------------------------------ */
+
+.msg.collapsible .msg-meta {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.collapse-toggle {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: inherit;
+  gap: 6px;
+}
+
+.collapse-toggle:hover {
+  background: transparent;
+}
+
+.collapse-toggle .icon {
+  width: 1.2em;
+  height: 1.2em;
+}
+
+.msg.collapsible .msg-meta:hover .collapse-toggle {
+  color: var(--text);
+}
+
+.msg.thinking .msg-content {
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------ *
+ * Tools box
+ *
+ * One green message per run of tool rounds. Each call is a row whose header
+ * reads what it did; the header is a button, so rows open from the keyboard
+ * too. A closed row renders no details at all.
+ * ------------------------------------------------------------------ */
+
+.tool-call {
+  border: 1px solid var(--border-soft);
+  background: var(--bg-raised);
+  margin: 6px 0;
+}
+
+.tool-call:first-child {
+  margin-top: 0;
+}
+
+.tool-call:last-child {
+  margin-bottom: 0;
+}
+
+.tool-call-header {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.tool-call-header:hover {
+  background: var(--bg-soft-hover);
+}
+
+.tool-call-status {
+  flex-shrink: 0;
+  width: 1.2em;
+  height: 1.5em; /* Aligns center with the 1.5 line-height of the text */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-call-status .icon {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.tool-call.status-pending .tool-call-status {
+  color: var(--text-faint);
+}
+
+.tool-call.status-running .tool-call-status {
+  color: var(--role-tool);
+}
+
+.tool-call.status-running .tool-call-status .icon {
+  animation: tool-call-spin 1s linear infinite;
+}
+
+.tool-call.status-done .tool-call-status {
+  color: var(--role-tool);
+}
+
+.tool-call.status-error .tool-call-status {
+  color: var(--role-error);
+}
+
+.tool-call.status-error .tool-call-time {
+  color: var(--role-error);
+}
+
+.tool-call.status-stopped .tool-call-status {
+  color: var(--text-faint);
+}
+
+.tool-call.status-skipped .tool-call-status {
+  color: var(--text-faint);
+}
+
+.tool-call.status-interrupted .tool-call-status {
+  color: var(--role-system);
+}
+
+.tool-call-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-call.collapsed .tool-call-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-call-verb {
+  font-weight: bold;
+}
+
+.tool-call-detail {
+  color: var(--text-muted);
+}
+
+.tool-call-time {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tool-call-header > .icon {
+  flex-shrink: 0;
+  width: 1.2em;
+  height: 1.2em;
+  /* Sits perfectly on the first text line when a long query wraps (1.5 - 1.2) / 2 */
+  margin-top: 0.15em;
+}
+
+@keyframes tool-call-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-call.status-running .tool-call-status .icon {
+    animation: none;
+  }
+}
+
+.tool-call-body {
+  padding: 0 10px 10px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.tool-call-request,
+.tool-call-result {
+  margin-top: 8px;
+}
+
+.tool-call-request + .tool-call-result {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.tool-call-note {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ *
+ * Message content
+ * ------------------------------------------------------------------ */
+
+.msg-content {
+  overflow-wrap: anywhere;
+}
+
+.msg-content p:first-child {
+  margin-top: 0;
+}
+
+.msg-content p:last-child {
+  margin-bottom: 0;
+}
+
+.msg-content a {
+  color: var(--accent);
+}
+
+.msg-content a:hover {
+  color: var(--accent-hot);
+}
+
+.msg-content blockquote {
+  margin: 0.75em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-soft);
+  color: var(--text-muted);
+}
+
+.msg-content hr {
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  margin: 1em 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Code blocks
+ *
+ * Prism's stylesheet is a light theme bundled into the same file as this one,
+ * so its rules cannot be beaten on order — only on specificity. Every rule
+ * below is scoped to `.msg-content` for that reason. Highlighted and plain
+ * blocks are given identical geometry so they cannot drift apart.
+ * ------------------------------------------------------------------ */
+
+.msg-content pre,
+.msg-content pre[class*='language-'] {
+  margin: 0.5em 0;
+  padding: 10px;
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-height: none;
+}
+
+.msg-content code {
+  background: var(--bg-code);
+  color: var(--text);
+  padding: 2px 4px;
+}
+
+.msg-content pre code,
+.msg-content pre code[class*='language-'] {
+  padding: 0;
+  background: transparent;
+}
+
+.msg-content :not(pre) > code[class*='language-'] {
+  padding: 2px 4px;
+  border-radius: 0;
+  background: var(--bg-code);
+}
+
+.msg-content code[class*='language-'],
+.msg-content pre[class*='language-'] {
+  color: var(--code-fg);
+  /* Prism paints a white text-shadow that smears badly on any dark surface. */
+  text-shadow: none;
+  font-family: inherit;
+  font-size: 0.9em;
+  line-height: 1.6;
+  direction: ltr;
+  tab-size: 2;
+}
+
+.msg-content .token.comment,
+.msg-content .token.prolog,
+.msg-content .token.doctype,
+.msg-content .token.cdata {
+  color: var(--code-comment);
+}
+
+.msg-content .token.punctuation {
+  color: var(--code-punctuation);
+}
+
+.msg-content .token.namespace {
+  opacity: 0.7;
+}
+
+.msg-content .token.property,
+.msg-content .token.tag,
+.msg-content .token.boolean,
+.msg-content .token.number,
+.msg-content .token.constant,
+.msg-content .token.symbol,
+.msg-content .token.deleted {
+  color: var(--code-literal);
+}
+
+.msg-content .token.selector,
+.msg-content .token.attr-name,
+.msg-content .token.string,
+.msg-content .token.char,
+.msg-content .token.builtin,
+.msg-content .token.inserted {
+  color: var(--code-string);
+}
+
+.msg-content .token.operator,
+.msg-content .token.entity,
+.msg-content .token.url,
+.msg-content .language-css .token.string,
+.msg-content .style .token.string {
+  color: var(--code-operator);
+  /* Prism washes these tokens with a half-opaque white. */
+  background: none;
+}
+
+.msg-content .token.atrule,
+.msg-content .token.attr-value,
+.msg-content .token.keyword {
+  color: var(--code-keyword);
+}
+
+.msg-content .token.function,
+.msg-content .token.class-name {
+  color: var(--code-function);
+}
+
+.msg-content .token.regex,
+.msg-content .token.important,
+.msg-content .token.variable {
+  color: var(--code-variable);
+}
+
+.msg-content .token.important,
+.msg-content .token.bold {
+  font-weight: bold;
+}
+
+.msg-content .token.italic {
+  font-style: italic;
+}
+
+.msg-content table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+  max-width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+}
+
+.msg-content th,
+.msg-content td {
+  border: 1px solid var(--border-soft);
+  padding: 6px 12px;
+}
+
+.msg-content th {
+  background: var(--bg-inset);
+}
+
+.role-select {
+  appearance: none;
+  width: auto;
+  margin-bottom: 0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  padding: 0 4px;
+  margin-left: -4px;
+  outline: none;
+}
+
+.role-select:hover {
+  background: var(--bg-inset);
+  border-color: var(--border-soft);
+}
+
+.katex {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+}
+
+/* Long display equations scroll instead of stretching the message. */
+.msg-content .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+body.ctrl-down pre,
+body.ctrl-down code,
+body.ctrl-down .katex,
+body.ctrl-down #settings-heading {
+  cursor: pointer !important;
+}
+
+body.ctrl-down pre:hover,
+body.ctrl-down code:hover,
+body.ctrl-down .katex:hover,
+body.ctrl-down #settings-heading:hover {
+  background: var(--bg-soft-hover);
+}
+
+body.ctrl-down .msg-content pre[class*='language-']:hover {
+  background: var(--bg-soft-hover);
+}
+
+body.ctrl-down pre:hover code {
+  background: transparent;
+}
