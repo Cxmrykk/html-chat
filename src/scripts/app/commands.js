@@ -21,7 +21,7 @@ import { pickFiles, readFileText, pickJSONText } from '../services/file-io.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { renderMainView } from '../ui/bindings.js';
-import { isSendable, isEditable } from '../core/roles.js';
+import { isSendable, isEditable, isTools } from '../core/roles.js';
 import { ICON_CHECK } from '../ui/icons.js';
 
 /**
@@ -313,6 +313,7 @@ export const commands = {
     if (message.role === 'user') {
       const input = $('#chat-input');
       const text = message.content || '';
+      // A user message replaces itself and everything after it.
       await conversation.truncateMessages(index);
       if (input) input.value = '';
       try {
@@ -321,8 +322,9 @@ export const commands = {
         if (input) input.value = text;
         alert(error.message);
       }
-    } else {
-      await conversation.truncateMessages(index);
+    } else if (isTools(message)) {
+      // A tools message continues where it left off, so we keep it and truncate everything AFTER it.
+      await conversation.truncateMessages(index + 1);
       try {
         await conversation.regenerate();
       } catch (error) {
