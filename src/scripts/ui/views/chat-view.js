@@ -9,7 +9,7 @@ const JS_EXECUTION_BANNER = `
   <div class="msg system">
     <div class="msg-meta">
       <span>System</span>
-      <div class="msg-actions"><span class="readonly-tag">[Read-Only]</span></div>
+      <span class="readonly-tag">[Read-Only]</span>
     </div>
     <div class="msg-content">${renderMarkdown('**JavaScript execution enabled.** The model can run code in this page. Proceed with caution.')}</div>
   </div>`;
@@ -66,7 +66,7 @@ export function renderChatView({ preserveScroll = false } = {}) {
       <div class="msg system">
         <div class="msg-meta">
           <span>System</span>
-          <div class="msg-actions"><span class="readonly-tag">[Read-Only]</span></div>
+          <span class="readonly-tag">[Read-Only]</span>
         </div>
         <div class="msg-content">${renderMarkdown(`**File search (RAG) enabled.** The model can search the following attached files: ${names}.${warning}`)}</div>
       </div>`;
