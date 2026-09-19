@@ -107,16 +107,6 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  
-  /* Matches parent block to hide the scrolling text beneath the buttons */
-  background: var(--msg-bg);
-  padding: 4px;
-  border-radius: 6px;
-  border: 1px solid var(--border-soft);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-  
-  margin-top: -6px;
-  margin-right: -6px;
 }
 
 .msg-actions button {
@@ -136,15 +126,6 @@
 .readonly-tag {
   font-size: 0.8em;
   color: var(--text-faint);
-}
-
-.msg.system .msg-actions,
-.msg-actions:has(.readonly-tag) {
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
-  margin: 0;
 }
 
 /*
@@ -242,8 +223,51 @@
 
 .tool-call-status {
   flex-shrink: 0;
-  width: 1em;
-  text-align: center;
+  width: 1.2em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-call-status .icon {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.tool-call.status-pending .tool-call-status {
+  color: var(--text-faint);
+}
+
+.tool-call.status-running .tool-call-status {
+  color: var(--role-tool);
+}
+
+.tool-call.status-running .tool-call-status .icon {
+  animation: tool-call-spin 1s linear infinite;
+}
+
+.tool-call.status-done .tool-call-status {
+  color: var(--role-tool);
+}
+
+.tool-call.status-error .tool-call-status {
+  color: var(--role-error);
+}
+
+.tool-call.status-error .tool-call-time {
+  color: var(--role-error);
+}
+
+.tool-call.status-stopped .tool-call-status {
+  color: var(--text-faint);
+}
+
+.tool-call.status-skipped .tool-call-status {
+  color: var(--text-faint);
+}
+
+.tool-call.status-interrupted .tool-call-status {
+  color: var(--role-system);
 }
 
 .tool-call-text {
@@ -267,57 +291,12 @@
   white-space: nowrap;
 }
 
-.tool-call-header .icon {
+.tool-call-header > .icon {
   flex-shrink: 0;
   width: 1.2em;
   height: 1.2em;
   /* Sits on the first text line when a long query wraps. */
   margin-top: 0.15em;
-}
-
-/* One glyph per status, so a row's state reads without colour alone. */
-.tool-call-status::before {
-  display: inline-block;
-}
-
-.tool-call.status-pending .tool-call-status::before {
-  content: '○';
-  color: var(--text-faint);
-}
-
-.tool-call.status-running .tool-call-status::before {
-  content: '◐';
-  color: var(--role-tool);
-  animation: tool-call-spin 1s linear infinite;
-}
-
-.tool-call.status-done .tool-call-status::before {
-  content: '✓';
-  color: var(--role-tool);
-}
-
-.tool-call.status-error .tool-call-status::before {
-  content: '✕';
-  color: var(--role-error);
-}
-
-.tool-call.status-error .tool-call-time {
-  color: var(--role-error);
-}
-
-.tool-call.status-stopped .tool-call-status::before {
-  content: '■';
-  color: var(--text-faint);
-}
-
-.tool-call.status-skipped .tool-call-status::before {
-  content: '–';
-  color: var(--text-faint);
-}
-
-.tool-call.status-interrupted .tool-call-status::before {
-  content: '!';
-  color: var(--role-system);
 }
 
 @keyframes tool-call-spin {
@@ -327,7 +306,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tool-call.status-running .tool-call-status::before {
+  .tool-call.status-running .tool-call-status .icon {
     animation: none;
   }
 }

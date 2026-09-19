@@ -26,6 +26,12 @@ import {
   ICON_DELETE,
   ICON_CHEVRON_DOWN,
   ICON_CHEVRON_UP,
+  ICON_CHECK,
+  ICON_CIRCLE,
+  ICON_LOADER,
+  ICON_SQUARE,
+  ICON_MINUS,
+  ICON_ALERT,
 } from '../icons.js';
 
 /** A single message row: its markup and its in-place updates. */
@@ -200,6 +206,19 @@ function thinkingHTML(message, index, editing) {
  * Tools box
  * ------------------------------------------------------------------ */
 
+function toolCallStatusIcon(status) {
+  switch (status) {
+    case 'pending': return ICON_CIRCLE;
+    case 'running': return ICON_LOADER;
+    case 'done': return ICON_CHECK;
+    case 'error': return ICON_CANCEL;
+    case 'stopped': return ICON_SQUARE;
+    case 'skipped': return ICON_MINUS;
+    case 'interrupted': return ICON_ALERT;
+    default: return '';
+  }
+}
+
 /** The right-hand side of a call's header: a live counter, a duration, or its fate. */
 function callTimeHTML(call, status) {
   const took = Number.isFinite(call.seconds) ? elapsedHTML(call.seconds) : '';
@@ -251,7 +270,7 @@ function toolCallHTML(call, key) {
   const header = `
     <button class="tool-call-header" data-command="message.toggleCall"
             aria-expanded="${collapsed ? 'false' : 'true'}" title="${hint}">
-      <span class="tool-call-status" aria-hidden="true"></span>
+      <span class="tool-call-status" aria-hidden="true">${toolCallStatusIcon(status)}</span>
       <span class="tool-call-text"><span class="tool-call-verb">${escapeHTML(title)}</span>${
         detail ? ` <span class="tool-call-detail">${escapeHTML(detail)}</span>` : ''
       }</span>

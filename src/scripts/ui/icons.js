@@ -17,7 +17,6 @@ export const ICON_CONFIG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
 
 export const ICON_FORK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon" aria-hidden="true"><defs><mask id="fork-hole-mask"><rect width="24" height="24" fill="white" /><circle cx="6" cy="5" r="1.5" fill="black" /><circle cx="18" cy="5" r="1.5" fill="black" /><circle cx="12" cy="19" r="1.5" fill="black" /></mask></defs><g mask="url(#fork-hole-mask)"><circle cx="6" cy="5" r="3.25"></circle><circle cx="18" cy="5" r="3.25"></circle><circle cx="12" cy="19" r="3.25"></circle><rect x="4.75" y="5" width="2.5" height="7.5" rx="1.25"></rect><rect x="16.75" y="5" width="2.5" height="7.5" rx="1.25"></rect><rect x="4.75" y="10" width="14.5" height="2.5" rx="1.25"></rect><rect x="10.75" y="10" width="2.5" height="9" rx="1.25"></rect></g></svg>`;
 
-
 export const ICON_RETRY = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>`;
 
 export const ICON_SAVE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
@@ -28,8 +27,16 @@ export const ICON_WRAP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2
 
 export const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
-/** `\/` — shown on a collapsed thinking box. */
 export const ICON_CHEVRON_DOWN = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
 
-/** `/\` — shown on an expanded thinking box. */
 export const ICON_CHEVRON_UP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>`;
+
+export const ICON_CIRCLE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>`;
+
+export const ICON_LOADER = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="4.93" x2="19.07" y2="7.76"></line></svg>`;
+
+export const ICON_SQUARE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect></svg>`;
+
+export const ICON_MINUS = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+
+export const ICON_ALERT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`;
