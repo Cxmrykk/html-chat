@@ -205,7 +205,7 @@
 .tool-call-header {
   display: flex;
   width: 100%;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-start;
   gap: 8px;
   padding: 8px;
@@ -224,6 +224,7 @@
 .tool-call-status {
   flex-shrink: 0;
   width: 1.2em;
+  height: 1.5em; /* Aligns center with the 1.5 line-height of the text */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -301,6 +302,8 @@
   flex-shrink: 0;
   width: 1.2em;
   height: 1.2em;
+  /* Sits perfectly on the first text line when a long query wraps (1.5 - 1.2) / 2 */
+  margin-top: 0.15em;
 }
 
 @keyframes tool-call-spin {
