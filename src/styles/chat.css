@@ -89,21 +89,21 @@
 
 /* 
  * An absolute track for the sticky buttons. 
- * top/right exactly match the 10px padding of the message box.
- * bottom is large (30px) so the buttons stop before hitting the bottom border.
+ * top/right/bottom exactly match the 10px padding of the message box 
+ * so the buttons always rest exactly 10px away from the edges.
  */
 .msg-actions-container {
   position: absolute;
   top: 10px;
   right: 10px;
-  bottom: 30px;
+  bottom: 10px;
   z-index: 10;
   pointer-events: none;
 }
 
 .msg-actions {
   position: sticky;
-  top: 15px; /* Sticks exactly 15px from the top of the chat viewport (matches its padding) */
+  top: -5px; /* 10px desired gap minus 15px container padding */
   pointer-events: auto;
   display: flex;
   align-items: center;
