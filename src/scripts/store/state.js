@@ -32,6 +32,7 @@ export const state = {
     promptHeight: '',
     theme: 'light',
     editingMessageIndex: null,
+    editingThinking: false,
     /** Which setting the settings editor has open. */
     activeSettingKey: null,
     /** Which file 'file-settings' applies to. */

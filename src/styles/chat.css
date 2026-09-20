@@ -555,14 +555,16 @@
 body.ctrl-down pre,
 body.ctrl-down code,
 body.ctrl-down .katex,
-body.ctrl-down #settings-heading {
+body.ctrl-down #settings-heading,
+body.ctrl-down #model-select {
   cursor: pointer !important;
 }
 
 body.ctrl-down pre:hover,
 body.ctrl-down code:hover,
 body.ctrl-down .katex:hover,
-body.ctrl-down #settings-heading:hover {
+body.ctrl-down #settings-heading:hover,
+body.ctrl-down #model-select:hover {
   background: var(--bg-soft-hover);
 }
 

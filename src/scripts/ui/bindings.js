@@ -147,6 +147,7 @@ export function installBindings() {
   on(EVENTS.SESSION, () => {
     applyChromeState();
     renderMainView();
+    updateModelDropdown();
     renderInputArea();
   });
 

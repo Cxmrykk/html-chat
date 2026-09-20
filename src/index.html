@@ -109,15 +109,23 @@
           <!-- Composer: prompt entry and message editing. -->
           <div id="composer-bar">
             <div class="button-row">
-              <select id="model-select" data-command="settings.setModel"></select>
+              <select id="model-select" data-command="settings.setModel" title="Ctrl+Click to configure thinking levels"></select>
               <button id="send-btn" data-command="chat.send" title="Ctrl+Enter / Cmd+Enter">Send</button>
+              
+              <!-- Message edit buttons -->
               <button id="save-edit-btn" class="hidden" data-command="message.saveEdit"
                       title="Ctrl+Enter / Cmd+Enter">Save</button>
               <button id="retry-edit-btn" class="hidden" data-command="message.retryEdit"
                       title="Save this message and regenerate everything after it">Retry</button>
               <button id="cancel-edit-btn" class="hidden" data-command="message.cancelEdit">Cancel</button>
+
+              <!-- Thinking edit buttons -->
+              <button id="save-thinking-btn" class="hidden" data-command="thinking.save"
+                      title="Save thinking levels (Ctrl+Enter / Cmd+Enter)">Save</button>
+              <button id="cancel-thinking-btn" class="hidden" data-command="thinking.cancel">Cancel</button>
             </div>
             <textarea id="chat-input" placeholder="Type your prompt here..."></textarea>
+            <textarea id="thinking-input" class="hidden" placeholder="none&#10;low&#10;medium&#10;high"></textarea>
           </div>
 
           <!-- Settings editor: its own textarea, so the composer is never repurposed. -->

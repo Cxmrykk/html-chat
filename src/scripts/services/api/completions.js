@@ -19,6 +19,11 @@ function buildParameters(config) {
     const value = entry.integer ? Number.parseInt(raw, 10) : Number.parseFloat(raw);
     if (Number.isFinite(value)) params[entry.payloadKey] = value;
   }
+
+  if (config.reasoningEffort && config.reasoningEffort !== 'none') {
+    params.reasoning_effort = config.reasoningEffort;
+  }
+
   return params;
 }
 

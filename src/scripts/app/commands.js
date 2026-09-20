@@ -7,6 +7,7 @@ import {
   findFile,
   setSession,
   persistPrefs,
+  persistConfig,
   invalidateContext,
   isEmbedding,
   embeddingsEnabled,
@@ -43,6 +44,7 @@ function leaveSettings(patch = {}) {
     activeSettingKey: null,
     activeFileId: null,
     settingsDraft: null,
+    editingThinking: false,
     ...patch,
   });
 }
@@ -73,6 +75,7 @@ async function openSettingsScope(view, fileId = null) {
     activeFileId: fileId,
     activeSettingKey: null,
     settingsDraft: null,
+    editingThinking: false,
   });
 }
 
@@ -231,7 +234,7 @@ export const commands = {
     if (!message || !isEditable(message)) return;
 
     const previous = state.session.editingMessageIndex;
-    setSession({ editingMessageIndex: index }, { silent: true });
+    setSession({ editingMessageIndex: index, editingThinking: false }, { silent: true });
 
     if (previous !== null && previous !== index) emit(EVENTS.MESSAGE, { index: previous });
     emit(EVENTS.MESSAGE, { index });
@@ -474,7 +477,14 @@ export const commands = {
     await models.refreshModels();
   },
 
-  'settings.setModel': ({ element }) => settings.setActiveModel(element.value),
+  'settings.setModel': ({ element }) => {
+    if (state.session.editingThinking) {
+      state.data.config.reasoningEffort = element.value;
+      persistConfig();
+    } else {
+      settings.setActiveModel(element.value);
+    }
+  },
 
   'settings.toggle': async ({ event } = {}) => {
     if (event && !(event.ctrlKey || event.metaKey)) return;
@@ -524,6 +534,30 @@ export const commands = {
   },
 
   'settings.close': () => leaveSettings(),
+
+  /* ---- thinking levels ---- */
+
+  'thinking.edit': () => {
+    setSession({ editingThinking: true, editingMessageIndex: null });
+    const input = $('#thinking-input');
+    if (input) {
+      input.value = state.data.config.availableReasoningLevels || 'none\nlow\nmedium\nhigh';
+      input.focus();
+    }
+  },
+
+  'thinking.save': async () => {
+    const input = $('#thinking-input');
+    if (input) {
+      state.data.config.availableReasoningLevels = input.value.trim();
+      await persistConfig();
+    }
+    setSession({ editingThinking: false });
+  },
+
+  'thinking.cancel': () => {
+    setSession({ editingThinking: false });
+  },
 };
 
 export function runCommand(name, context = {}) {

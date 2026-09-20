@@ -33,6 +33,15 @@ function installCommandDelegation() {
     runCommand(target.dataset.command, contextFor(target, event));
   });
 
+  // Catch Ctrl+Click specifically on the model select so we don't open the native dropdown
+  document.addEventListener('mousedown', (event) => {
+    const select = event.target.closest('#model-select');
+    if (select && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      runCommand('thinking.edit', contextFor(select, event));
+    }
+  });
+
   document.addEventListener('change', (event) => {
     const cmdElement = event.target.closest('select[data-command], input[data-command]');
     if (cmdElement) {
@@ -94,22 +103,31 @@ function installModifierTracking() {
   });
 }
 
-/** Live-bind the two textareas so no value is ever read back out of the DOM. */
+/** Live-bind the textareas so no value is ever read back out of the DOM. */
 function installEditorBindings() {
   const chatInput = $('#chat-input');
+  const thinkInput = $('#thinking-input');
+
+  const observer = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const height = entry.target.style.height;
+      if (!height || height === state.session.promptHeight) continue;
+      setSession({ promptHeight: height }, { silent: true });
+      persistPrefs();
+      if (chatInput && chatInput !== entry.target) chatInput.style.height = height;
+      if (thinkInput && thinkInput !== entry.target) thinkInput.style.height = height;
+    }
+  });
+
   if (chatInput) {
     chatInput.style.height = state.session.promptHeight;
     chatInput.addEventListener('input', renderSendButton);
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const height = entry.target.style.height;
-        if (!height || height === state.session.promptHeight) continue;
-        setSession({ promptHeight: height }, { silent: true });
-        persistPrefs();
-      }
-    });
     observer.observe(chatInput);
+  }
+  
+  if (thinkInput) {
+    thinkInput.style.height = state.session.promptHeight;
+    observer.observe(thinkInput);
   }
 
   const settingsInput = $('#settings-input');

@@ -45,6 +45,10 @@ function installSubmitShortcuts() {
       runCommand('settings.save', { event });
       return true;
     }
+    if (element.id === 'thinking-input') {
+      runCommand('thinking.save', { event });
+      return true;
+    }
     if (state.session.editingMessageIndex !== null) {
       runCommand('message.saveEdit', { event });
       return true;
@@ -55,6 +59,7 @@ function installSubmitShortcuts() {
 
   $('#chat-input')?.addEventListener('keydown', (event) => submitFrom(event.target, event));
   $('#settings-input')?.addEventListener('keydown', (event) => submitFrom(event.target, event));
+  $('#thinking-input')?.addEventListener('keydown', (event) => submitFrom(event.target, event));
 }
 
 export function installShortcuts() {

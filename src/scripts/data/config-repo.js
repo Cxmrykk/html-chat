@@ -9,6 +9,8 @@ const BASE_CONFIG = {
   models: [],
   jsExecution: false,
   lastModel: '',
+  reasoningEffort: 'none',
+  availableReasoningLevels: 'none\nlow\nmedium\nhigh',
 };
 
 /**

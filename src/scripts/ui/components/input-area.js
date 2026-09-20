@@ -17,13 +17,32 @@ import { isRetryable } from './message.js';
 
 /**
  * The model dropdown, driven by whatever `services/models.js` last
- * discovered (plus any manually configured extras). This never mutates
- * `lastModel` itself — `ensureActiveModel` in the models service owns that
- * reconciliation, so a render can never silently change the user's selection.
+ * discovered (plus any manually configured extras). When editing thinking,
+ * the options flip to the reasoning levels.
  */
 export function updateModelDropdown() {
   const select = $('#model-select');
   if (!select) return;
+
+  if (state.session.editingThinking) {
+    const levels = (state.data.config.availableReasoningLevels || '')
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (levels.length) {
+      select.innerHTML = levels
+        .map((level) => `<option value="${escapeHTML(level)}">${escapeHTML(level)}</option>`)
+        .join('');
+      select.value = state.data.config.reasoningEffort || 'none';
+    } else {
+      select.innerHTML = `<option value="none">none</option>`;
+      select.value = 'none';
+    }
+    setDisabled(select, false);
+    select.title = 'Select reasoning effort';
+    return;
+  }
 
   const models = availableModels();
   const { loading, error } = state.runtime.models;
@@ -43,7 +62,7 @@ export function updateModelDropdown() {
   }
 
   setDisabled(select, !models.length);
-  select.title = error ? `Model discovery failed: ${error}` : '';
+  select.title = error ? `Model discovery failed: ${error}` : 'Ctrl+Click to configure thinking levels';
 }
 
 /**
@@ -110,17 +129,31 @@ export function renderInputArea() {
     return;
   }
 
-  const editing = editingMessage();
-  setHidden($('#model-select'), Boolean(editing));
-  setHidden($('#send-btn'), Boolean(editing));
-  setHidden($('#save-edit-btn'), !editing);
+  const editingMsg = editingMessage();
+  const editingThink = state.session.editingThinking;
+  const normalMode = !editingMsg && !editingThink;
+
+  // The model dropdown is repurposed to select thinking options during that mode
+  setHidden($('#model-select'), Boolean(editingMsg));
+  setHidden($('#send-btn'), !normalMode);
+  
+  setHidden($('#save-edit-btn'), !editingMsg);
   // Retry regenerates from this message, so it only applies to the role that
   // can start a turn — the same test the non-editing retry button uses.
-  setHidden($('#retry-edit-btn'), !editing || !isRetryable(editing));
-  setHidden($('#cancel-edit-btn'), !editing);
+  setHidden($('#retry-edit-btn'), !editingMsg || !isRetryable(editingMsg));
+  setHidden($('#cancel-edit-btn'), !editingMsg);
 
-  const input = $('#chat-input');
-  if (input) input.disabled = false;
+  setHidden($('#save-thinking-btn'), !editingThink);
+  setHidden($('#cancel-thinking-btn'), !editingThink);
+
+  const chatInput = $('#chat-input');
+  const thinkInput = $('#thinking-input');
+
+  setHidden(chatInput, editingThink);
+  setHidden(thinkInput, !editingThink);
+
+  if (chatInput && !editingThink) chatInput.disabled = false;
+  if (thinkInput && editingThink) thinkInput.disabled = false;
 
   renderSendButton();
 }
