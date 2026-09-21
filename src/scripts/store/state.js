@@ -32,6 +32,20 @@ export const state = {
     promptHeight: '',
     theme: 'light',
     editingMessageIndex: null,
+    /**
+     * The part of that message being edited: a range of its markdown blocks,
+     * `{ start, end }` inclusive (see `core/edit-range.js`), or null while
+     * nothing has been picked.
+     */
+    editingRange: null,
+    /**
+     * The message's content when the range was picked. Block indices only mean
+     * something against that exact text; if the message changes, the range is
+     * stale and is not applied.
+     */
+    editingSource: null,
+    /** What the composer was loaded with, to tell an untouched part from an edited one. */
+    editingLoaded: null,
     editingThinking: false,
     /** Which setting the settings editor has open. */
     activeSettingKey: null,

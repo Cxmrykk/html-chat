@@ -10,13 +10,19 @@ export const EVENTS = {
    * One message changed in place. Payload: { index, streaming?, anchored? }.
    * `streaming` marks a partial update that will be followed by more;
    * `anchored` asks the view to stay where it is instead of following the
-   * transcript down (used when a collapsible box is toggled).
+   * transcript down (used when a collapsible box is toggled, or an edit starts
+   * or stops).
    */
   MESSAGE: 'message',
   /** Messages were removed from the end of the chat. Payload: { length }. */
   MESSAGES_TRUNCATED: 'messages:truncated',
   /** One message was appended. Payload: { index }. */
   MESSAGE_APPENDED: 'message:appended',
+  /**
+   * A message edit started, stopped, or its selected part changed. Only the
+   * composer and the selection outline follow it; the transcript stays put.
+   */
+  EDIT: 'edit',
   /** File list membership changed. */
   FILES: 'files',
   /** Embedding progress for one file. Payload: { id }. */

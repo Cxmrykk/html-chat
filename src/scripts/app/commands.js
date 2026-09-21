@@ -22,7 +22,9 @@ import { pickFiles, readFileText, pickJSONText } from '../services/file-io.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { renderMainView } from '../ui/bindings.js';
-import { isSendable, isEditable, isTools } from '../core/roles.js';
+import { sourceBlocks } from '../ui/markdown.js';
+import { isSendable, isEditable, isThinking } from '../core/roles.js';
+import { nextRange, editSlice, applyEdit } from '../core/edit-range.js';
 import { ICON_CHECK } from '../ui/icons.js';
 
 /**
@@ -30,8 +32,9 @@ import { ICON_CHECK } from '../ui/icons.js';
  * `data-command`; nothing is bound to `window` and there are no inline
  * `onclick` attributes anywhere.
  *
- * Each command receives `{ event, element, id, index, key, call }`, where
- * `call` is the `"round.call"` position of a tool call inside a tools box.
+ * Each command receives `{ event, element, id, index, key, call, block }`,
+ * where `call` is the `"round.call"` position of a tool call inside a thinking
+ * message and `block` the index of a markdown block inside a message body.
  */
 
 /* ------------------------------------------------------------------ *
@@ -49,10 +52,17 @@ function leaveSettings(patch = {}) {
   });
 }
 
+/** The session fields of an edit's selected part, cleared. */
+const NO_EDIT_RANGE = { editingRange: null, editingSource: null, editingLoaded: null };
+
+/**
+ * End the edit in progress, if any, without saving. The row is repainted in
+ * place (`anchored`), so the transcript does not move.
+ */
 function stopEditing() {
   const index = state.session.editingMessageIndex;
   if (index === null) return;
-  setSession({ editingMessageIndex: null }, { silent: true });
+  setSession({ editingMessageIndex: null, ...NO_EDIT_RANGE }, { silent: true });
   const input = $('#chat-input');
   if (input) {
     input.value = '';
@@ -60,7 +70,58 @@ function stopEditing() {
     input.style.whiteSpace = '';
     input.style.overflowX = '';
   }
-  emit(EVENTS.MESSAGE, { index });
+  emit(EVENTS.MESSAGE, { index, anchored: true });
+  emit(EVENTS.EDIT);
+}
+
+/** Whether the composer holds text the edit has not saved. */
+function hasUnsavedEdit() {
+  const value = $('#chat-input')?.value ?? '';
+  const loaded = state.session.editingLoaded;
+  return loaded === null ? value !== '' : value !== loaded;
+}
+
+/** True when there is nothing to lose, or the user agrees to lose it. */
+function confirmDiscard() {
+  return !hasUnsavedEdit() || confirm('Discard your changes to the part being edited?');
+}
+
+/**
+ * Make `range` the part of `message` being edited: remember it against the
+ * content it was taken from, and load its source into the composer.
+ */
+function loadEditRange(message, range) {
+  const content = message.content || '';
+  const slice = editSlice(content, sourceBlocks(content), range);
+  if (!slice) return;
+
+  setSession(
+    { editingRange: range, editingSource: content, editingLoaded: slice.body },
+    { silent: true },
+  );
+
+  const input = $('#chat-input');
+  if (input) {
+    input.value = slice.body;
+    input.scrollTop = 0;
+  }
+  // Rendered first: the composer is read-only until a range exists.
+  emit(EVENTS.EDIT);
+  input?.focus({ preventScroll: true });
+}
+
+/**
+ * Nothing selected any more: the edit stays open, back where it was when it
+ * started, with an empty read-only composer waiting for a pick.
+ */
+function clearEditRange() {
+  setSession(NO_EDIT_RANGE, { silent: true });
+  const input = $('#chat-input');
+  if (input) {
+    input.value = '';
+    input.scrollTop = 0;
+  }
+  emit(EVENTS.EDIT);
 }
 
 async function openSettingsScope(view, fileId = null) {
@@ -142,10 +203,17 @@ export const commands = {
     if (!chat) return;
 
     // The transcript is the conversation as the model sees it: no errors and
-    // no thinking, but tool calls and their results included.
+    // no reasoning, but tool calls, their results and the text written
+    // alongside them included. A thinking message with none of those
+    // contributes nothing.
     const body = chat.messages
       .filter(isSendable)
-      .map((message) => `## ${message.role.toUpperCase()}\n${messageMarkdown(message)}\n\n`)
+      .map((message) => ({ message, text: messageMarkdown(message, { reasoning: false }) }))
+      .filter(({ message, text }) => text || !isThinking(message))
+      .map(({ message, text }) => {
+        const label = isThinking(message) ? 'TOOLS' : message.role.toUpperCase();
+        return `## ${label}\n${text}\n\n`;
+      })
       .join('');
 
     navigator.clipboard.writeText(`# ${chat.title}\n\n${body}`.trim()).then(() => {
@@ -227,35 +295,106 @@ export const commands = {
     });
   },
 
+  /**
+   * Enter edit mode. Nothing in the transcript moves; only the row's buttons
+   * change. The user then clicks the part of the message to edit (see
+   * `message.selectBlock`). A message with no blocks to click (an empty one)
+   * is loaded whole straight away.
+   */
   'message.edit': ({ index }) => {
     const chat = currentChat();
     const message = chat?.messages[index];
-    // A tools box is structured calls, not text the composer could hold.
+    // A thinking message is structured rounds, not text the composer could hold.
     if (!message || !isEditable(message)) return;
 
     const previous = state.session.editingMessageIndex;
-    setSession({ editingMessageIndex: index, editingThinking: false }, { silent: true });
-
-    if (previous !== null && previous !== index) emit(EVENTS.MESSAGE, { index: previous });
-    emit(EVENTS.MESSAGE, { index });
-
-    const input = $('#chat-input');
-    if (input) {
-      input.value = message.content || '';
-      input.focus();
-    }
-    emit(EVENTS.SESSION);
-  },
-
-  'message.saveEdit': async () => {
-    const index = state.session.editingMessageIndex;
-    if (index === null) return;
-    if (!currentChat()?.messages[index]) return;
-
-    await conversation.updateMessage(index, { content: $('#chat-input')?.value ?? '' });
+    if (previous === index) return;
+    if (previous !== null && !confirmDiscard()) return;
 
     stopEditing();
-    emit(EVENTS.SESSION);
+    setSession(
+      { editingMessageIndex: index, editingThinking: false, ...NO_EDIT_RANGE },
+      { silent: true },
+    );
+    emit(EVENTS.MESSAGE, { index, anchored: true });
+
+    const input = $('#chat-input');
+    if (input) input.value = '';
+
+    if (!sourceBlocks(message.content).length) {
+      loadEditRange(message, { start: 0, end: 0 });
+      return;
+    }
+    emit(EVENTS.EDIT);
+  },
+
+  /**
+   * A click on block `block` of the message being edited. Outside the
+   * selection it grows the selection to reach it. Inside a selection of one
+   * or two blocks it toggles that block. Inside a longer one it keeps only
+   * what lies below the clicked block (Shift: above it). See `nextRange`. A
+   * click that leaves nothing selected returns the edit to picking.
+   */
+  'message.selectBlock': ({ index, block, event }) => {
+    if (index !== state.session.editingMessageIndex || !Number.isInteger(block)) return;
+    const message = currentChat()?.messages[index];
+    if (!message) return;
+
+    const content = message.content || '';
+    const blocks = sourceBlocks(content);
+    if (block < 0 || block >= blocks.length) return;
+
+    // A range picked on different text says nothing about this one.
+    const current = state.session.editingSource === content ? state.session.editingRange : null;
+    const range = nextRange(current, block, { fromBottom: Boolean(event?.shiftKey) });
+    if (!range && !current) return;
+    if (range && current && range.start === current.start && range.end === current.end) return;
+
+    if (!confirmDiscard()) return;
+    if (range) loadEditRange(message, range);
+    else clearEditRange();
+  },
+
+  /**
+   * Splice the composer's text back in place of the selected part. With
+   * nothing selected there is nothing to save, and the edit just ends. If the
+   * message changed after the part was picked, the offsets no longer mean
+   * anything: nothing is written, the text stays in the composer, and the user
+   * picks again. Resolves with whether the edit ended.
+   */
+  'message.saveEdit': async () => {
+    const index = state.session.editingMessageIndex;
+    if (index === null) return false;
+    const message = currentChat()?.messages[index];
+    if (!message) return false;
+
+    const { editingRange: range, editingSource: source } = state.session;
+
+    if (!range) {
+      if (!confirmDiscard()) return false;
+      stopEditing();
+      return true;
+    }
+
+    const content = message.content || '';
+    if (content !== source) {
+      setSession(NO_EDIT_RANGE, { silent: true });
+      emit(EVENTS.EDIT);
+      alert(
+        'This message changed while you were editing it, so your edit was not saved. ' +
+          'Your text is still in the composer; select the part to edit again.',
+      );
+      return false;
+    }
+
+    const slice = editSlice(content, sourceBlocks(content), range);
+    if (!slice) return false;
+
+    const next = applyEdit(slice, $('#chat-input')?.value ?? '');
+    if (next !== content) await conversation.updateMessage(index, { content: next });
+
+    stopEditing();
+    return true;
   },
 
   /**
@@ -266,7 +405,8 @@ export const commands = {
     const index = state.session.editingMessageIndex;
     if (index === null) return;
 
-    await commands['message.saveEdit']();
+    const saved = await commands['message.saveEdit']();
+    if (!saved) return;
 
     // Roles that cannot start a turn just get the save.
     const message = currentChat()?.messages[index];
@@ -277,7 +417,6 @@ export const commands = {
 
   'message.cancelEdit': () => {
     stopEditing();
-    emit(EVENTS.SESSION);
   },
 
   'message.toggleWrap': () => {
@@ -288,14 +427,14 @@ export const commands = {
     input.style.overflowX = wrapped ? 'hidden' : 'auto';
   },
 
-  /** Expand or collapse a thinking box. */
+  /** Expand or collapse a thinking message. */
   'message.toggleCollapsed': async ({ index }) => {
     const message = currentChat()?.messages[index];
     if (!message) return;
     await conversation.setCollapsed(index, !isCollapsed(message));
   },
 
-  /** Expand or collapse one call inside a tools box. */
+  /** Expand or collapse one call inside a thinking message. */
   'message.toggleCall': async ({ index, call }) => {
     if (!Number.isInteger(index) || !call) return;
     await conversation.toggleCallCollapsed(index, call);
@@ -325,8 +464,9 @@ export const commands = {
         if (input) input.value = text;
         alert(error.message);
       }
-    } else if (isTools(message)) {
-      // A tools message continues where it left off, so we keep it and truncate everything AFTER it.
+    } else if (isThinking(message)) {
+      // A thinking message continues where it left off: it is kept, everything
+      // AFTER it is dropped, and the turn resumes it.
       await conversation.truncateMessages(index + 1);
       try {
         await conversation.regenerate();
@@ -538,7 +678,8 @@ export const commands = {
   /* ---- thinking levels ---- */
 
   'thinking.edit': () => {
-    setSession({ editingThinking: true, editingMessageIndex: null });
+    stopEditing();
+    setSession({ editingThinking: true });
     const input = $('#thinking-input');
     if (input) {
       input.value = state.data.config.availableReasoningLevels || 'none\nlow\nmedium\nhigh';

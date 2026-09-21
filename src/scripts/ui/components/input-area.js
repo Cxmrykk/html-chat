@@ -15,6 +15,13 @@ import { isRetryable } from './message.js';
 
 /** Input area components: composer and settings editor bars. */
 
+const PROMPT_PLACEHOLDER = 'Type your prompt here...';
+const PICK_PLACEHOLDER =
+  'Click the part of the message you want to edit. Click above or below the dotted outline to grow it; ' +
+  'click inside it to keep only what is below the clicked part (Shift+Click: only what is above). ' +
+  'With one or two parts selected, clicking a part toggles it.';
+const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
+
 /**
  * The model dropdown, driven by whatever `services/models.js` last
  * discovered (plus any manually configured extras). When editing thinking,
@@ -117,6 +124,19 @@ function editingMessage() {
   return chat.messages[index] || null;
 }
 
+/**
+ * The composer while a message is being edited. Until part of the message has
+ * been picked there is nothing to edit, so the composer is read-only and says
+ * how to pick; after that it holds the picked part's source.
+ */
+function renderComposerMode(chatInput, editingMsg) {
+  if (!chatInput) return;
+  const picking = Boolean(editingMsg) && !state.session.editingRange;
+  chatInput.readOnly = picking;
+  if (!editingMsg) chatInput.placeholder = PROMPT_PLACEHOLDER;
+  else chatInput.placeholder = picking ? PICK_PLACEHOLDER : EDIT_PLACEHOLDER;
+}
+
 /** Show the composer or the settings editor, and the right buttons within. */
 export function renderInputArea() {
   const settingsView = state.session.view !== 'chat';
@@ -155,6 +175,7 @@ export function renderInputArea() {
   if (chatInput && !editingThink) chatInput.disabled = false;
   if (thinkInput && editingThink) thinkInput.disabled = false;
 
+  renderComposerMode(chatInput, editingMsg);
   renderSendButton();
 }
 

@@ -1,5 +1,6 @@
-import { isBlank } from './values.js';
+import { isBlank, pickBoolean } from './values.js';
 import { DEFAULT_JS_TOOL_DESCRIPTION, DEFAULT_SEARCH_TOOL_DESCRIPTION } from './tools.js';
+import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
 
 /**
  * The single description of every configurable setting.
@@ -40,6 +41,15 @@ const showValueOrDefault = (value) => (isBlank(value) ? 'Default' : String(value
 const showCustomOrDefault = (value, entry) =>
   isBlank(value) || value === entry.default ? 'Default' : 'Custom';
 const showInheritedOrCustom = (value) => (isBlank(value) ? 'Default' : 'Custom');
+const showOnOff = (value, entry) =>
+  pickBoolean(pickBoolean(false, entry.default), value) ? 'On' : 'Off';
+
+/** An unknown field name is ignored when sending, so the list says so. */
+const showEchoField = (value) => {
+  if (isBlank(value)) return 'Off';
+  const name = String(value).trim();
+  return isReasoningField(name) ? name : `${name} (ignored)`;
+};
 
 export const GLOBAL_SETTINGS = {
   temperature: {
@@ -104,6 +114,16 @@ export const GLOBAL_SETTINGS = {
     default: '4000',
     tooltip: 'Estimated-token cap on a JavaScript result. Longer results are truncated. 0 disables the cap.',
     display: showValueOrDefault,
+  },
+  reasoningEchoField: {
+    label: 'Echo Reasoning Field',
+    category: 'Tools',
+    type: 'text',
+    default: '',
+    tooltip:
+      `During a tool loop, send the model's plain-text reasoning back under this field (${REASONING_FIELDS.join(' or ')}), for models that expect it. ` +
+      'Empty sends none. Signed thinking blocks (Claude via LiteLLM) are always sent back regardless.',
+    display: showEchoField,
   },
   jsToolDescription: {
     label: 'JavaScript Tool Description',
@@ -202,6 +222,15 @@ export const GLOBAL_SETTINGS = {
     default: '8192',
     tooltip: 'Max estimated tokens sent to Embeddings API per batch.',
     display: showValueOrDefault,
+  },
+  collapseThinking: {
+    label: 'Collapse Thinking',
+    category: 'UI & Display',
+    type: 'boolean',
+    default: 'true',
+    tooltip:
+      'Whether a new thinking box (reasoning, and the tool calls made while thinking) starts collapsed: true or false. Any box can still be opened or closed by clicking it.',
+    display: showOnOff,
   },
   maxVisibleChats: {
     label: 'Max Visible Chats',

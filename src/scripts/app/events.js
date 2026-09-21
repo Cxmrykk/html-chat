@@ -12,6 +12,7 @@ function contextFor(element, event) {
   const owner = element.closest('[data-id]');
   const message = element.closest('[data-index]');
   const call = element.closest('[data-call]');
+  const block = element.closest('[data-block]');
   return {
     event,
     element,
@@ -20,6 +21,8 @@ function contextFor(element, event) {
     key: element.dataset.key,
     // A tool call's `"round.call"` position inside its tools box.
     call: call?.dataset.call,
+    // A top-level markdown block's position inside a message body.
+    block: block ? Number.parseInt(block.dataset.block, 10) : undefined,
   };
 }
 
@@ -57,6 +60,30 @@ function installCommandDelegation() {
         index: Number.parseInt(message.dataset.index, 10),
       });
     }
+  });
+}
+
+/**
+ * While a message is being edited, a click on its rendered markdown picks the
+ * part to edit instead of doing what it normally would: a link inside does not
+ * navigate. Ctrl/Cmd+Click keeps its copy meaning. Only the message's own
+ * top-level blocks count, never something nested inside one.
+ */
+function installEditSelection() {
+  const container = $('#chat-container');
+  if (!container) return;
+
+  container.addEventListener('click', (event) => {
+    if (state.session.editingMessageIndex === null) return;
+    if (event.ctrlKey || event.metaKey) return;
+
+    const content = event.target.closest('.msg.editing > .msg-content');
+    if (!content) return;
+    event.preventDefault();
+
+    const block = event.target.closest('.md-block');
+    if (!block || block.parentElement !== content) return;
+    runCommand('message.selectBlock', contextFor(block, event));
   });
 }
 
@@ -140,6 +167,7 @@ function installEditorBindings() {
 
 export function installEventHandlers() {
   installCommandDelegation();
+  installEditSelection();
   installCopyAffordances();
   installModifierTracking();
   installEditorBindings();

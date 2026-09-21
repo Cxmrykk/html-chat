@@ -15,10 +15,12 @@ import * as chatsRepo from '../data/chats-repo.js';
 import { requestCompletion } from './api/completions.js';
 import { toolSchemasFor, runToolCall } from './tools/index.js';
 import { buildApiMessages } from '../core/tool-calls.js';
+import { normalizeRoundReasoning } from '../core/reasoning.js';
 import { normalizeChat } from '../core/chats.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
-import { isCollapsible, isTools, THINKING_ROLE, TOOLS_ROLE } from '../core/roles.js';
-import { pickInteger } from '../core/values.js';
+import { isThinking, THINKING_ROLE } from '../core/roles.js';
+import { roundsOf, roundHasOutput, hasOutput, isCollapsible } from '../core/thinking.js';
+import { pickInteger, pickBoolean } from '../core/values.js';
 import { truncate } from '../core/format.js';
 
 /** Chat lifecycle and the send / tool-call loop. */
@@ -71,7 +73,7 @@ export async function renameChat(id, title) {
 }
 
 /**
- * A fork taken mid-turn copies a thinking box that is still counting or a
+ * A fork taken mid-turn copies a thinking message that is still counting or a
  * call that is still running. Nothing will ever finish them in the copy, so
  * the copy goes through `normalizeChat`, which settles them as interrupted.
  */
@@ -145,9 +147,10 @@ export async function updateMessage(index, patch) {
 }
 
 /**
- * Expand or collapse a thinking box. Purely presentational: what is sent does
- * not depend on it, so the context estimate is untouched, and the repaint is
- * `anchored` so the view does not scroll away from the box just clicked.
+ * Expand or collapse a thinking message. Purely presentational: what is sent
+ * does not depend on it, so the context estimate is untouched, and the
+ * repaint is `anchored` so the view does not scroll away from the box just
+ * clicked.
  */
 export async function setCollapsed(index, collapsed) {
   const chat = currentChat();
@@ -158,18 +161,18 @@ export async function setCollapsed(index, collapsed) {
   await persistChat();
 }
 
-/** A call inside a tools message, by its `"round.call"` position key. */
+/** A call inside a thinking message, by its `"round.call"` position key. */
 function findCall(message, key) {
-  if (!isTools(message) || typeof key !== 'string') return null;
+  if (!isThinking(message) || typeof key !== 'string') return null;
   const [roundIndex, callIndex] = key.split('.').map((part) => Number.parseInt(part, 10));
   if (!Number.isInteger(roundIndex) || !Number.isInteger(callIndex)) return null;
-  return message.rounds?.[roundIndex]?.calls?.[callIndex] || null;
+  return roundsOf(message)[roundIndex]?.calls?.[callIndex] || null;
 }
 
 /**
- * Expand or collapse one call in a tools box. Calls are addressed by position
- * rather than id: some servers reuse ids like `call_0` in every request, so an
- * id is only unique within its round.
+ * Expand or collapse one call in a thinking message. Calls are addressed by
+ * position rather than id: some servers reuse ids like `call_0` in every
+ * request, so an id is only unique within its round.
  */
 export async function toggleCallCollapsed(index, key) {
   const chat = currentChat();
@@ -206,102 +209,110 @@ export async function truncateMessages(length) {
 /**
  * The transcript side of one submission, across all of its tool rounds.
  *
- * A thinking box is mounted the moment a round's request goes out, whether or 
- * not the model reasons, and counts how long the user has been waiting. It stops
- * at the first visible text of the reply — or, if none ever comes, when the
- * round ends. Reasoning from every round streams into its own box.
+ * Everything the model does before its answer lives in one thinking message:
+ * one round per request, each holding the reasoning streamed during it, the
+ * text written alongside its calls, and the calls themselves with their
+ * results. The message is mounted the moment the first request goes out, and
+ * its header counts how long the user has been waiting — across every round
+ * and every tool run — until the answer starts. A retried turn resumes the
+ * thinking message the transcript ends with: new rounds follow the old ones,
+ * and its clock continues from where it stopped.
  *
- * Tool calls go into a tools message that grows round by round, for as long
- * as the model writes nothing between rounds. Text between rounds (the model
- * announcing what it will do next, say) is an assistant message of its own,
- * and the calls after it start a new box, so the transcript stays in the
- * order things happened. Text that shares a round with calls always streams
- * in before them, so it naturally lands in front of its box.
+ * Text in a round cannot be told apart from the answer until the round either
+ * calls a tool or ends. It is shown as an assistant message straight away,
+ * because the answer is the common case; if calls follow, it moves into the
+ * round (`round.text`) and the clock resumes.
+ *
+ * A thinking message that never received anything — no reasoning, text or
+ * calls — only timed the wait, and is removed when the answer starts or the
+ * turn ends. So its buttons, which act on what the model produced, only ever
+ * appear on a box with something in it. While its turn runs the message is
+ * marked `active`, which keeps them hidden.
+ *
+ * When a round's request settles, the reasoning the provider may need back —
+ * signed thinking blocks, or the raw reasoning field — is attached to the
+ * round, tagged with the model that wrote it. Whether it is ever sent is
+ * decided by `core/tool-calls.js`.
  *
  * Messages are held by reference and their index is looked up when emitting,
  * so deleting or truncating mid-stream cannot redirect writes into whichever
  * message inherits the old index; a removed message simply stops repainting.
- * A removed box is not added to again: the next round starts a fresh one.
+ * If the user deletes the thinking message mid-turn, the next calls get a
+ * fresh one rather than vanishing.
  *
  * Renders read the message back out of the store by index, so a chat the user
  * has since navigated away from must stay silent: otherwise every delta
  * repaints whichever message happens to share that index in the chat now on
  * screen. Returning to the chat re-renders it in full anyway.
  */
-function createTurn(chat, chatId) {
+function createTurn(chat, chatId, { resume = null } = {}) {
   const isVisible = () => chatId === state.data.currentChatId;
-  const isMounted = (message) => chat.messages.includes(message);
+  const isMounted = (message) => Boolean(message) && chat.messages.includes(message);
+  const collapseByDefault = pickBoolean(
+    true,
+    state.data.config.collapseThinking,
+    GLOBAL_SETTINGS.collapseThinking.default,
+  );
 
-  /** The active thinking box for the current round, if any. */
-  let currentThinking = null;
-  let thinkingFinished = false;
-
-  /** The tools message new rounds join, and whether text has appeared since it. */
-  let box = null;
-  let textSinceBox = false;
-
-  /** Every round of calls this turn started, with the message holding it. */
-  const started = [];
+  /** The thinking message this turn's work goes into. */
+  let work = resume;
+  /** Set when the turn itself removed `work` (it was empty when the answer began). */
+  let detached = false;
+  /** Every round this turn started, for settling calls that never returned. */
+  const turnRounds = [];
 
   // Per-round state, reset by `startRound`.
-  let reasoningBefore = '';
-  let assistant = null;
   let round = null;
+  let assistant = null;
   let replying = false;
+  /** The model this round's request went to, and the reasoning it may need back. */
+  let roundModel = '';
+  let replay = null;
 
   const repaint = (message, streaming) => {
     const index = chat.messages.indexOf(message);
     if (index !== -1 && isVisible()) emit(EVENTS.MESSAGE, { index, streaming });
   };
 
-  const mount = (message) => {
-    let removedThinking = false;
-    
-    // If mounting a real message (assistant/tools) and the current round's 
-    // thinking box never received actual reasoning, erase the empty thinking box.
-    if (message.role !== THINKING_ROLE && currentThinking && !currentThinking.content) {
-      const tIndex = chat.messages.indexOf(currentThinking);
-      if (tIndex !== -1) {
-        chat.messages.splice(tIndex, 1);
-        thinkingFinished = true;
-        removedThinking = true;
-      }
-    }
-
-    chat.messages.push(message);
+  /** After a change that moves indices: re-render the transcript and save. */
+  const refresh = () => {
     invalidateContext();
-    if (isVisible()) {
-      if (removedThinking) {
-        // Splice changes preceding indices, so a full re-render is safest.
-        emit(EVENTS.MESSAGES);
-      } else {
-        emit(EVENTS.MESSAGE_APPENDED, { index: chat.messages.length - 1 });
-      }
-    }
+    if (isVisible()) emit(EVENTS.MESSAGES);
     persistChat(chatId);
   };
 
-  /**
-   * Stamp how long the wait lasted and give the box its final render.
-   * `outcome` is recorded only when the wait ended without a reply
-   * ('stopped' or 'failed'). Idempotent: the first call wins.
-   */
-  const finishThinking = (outcome = null) => {
-    if (thinkingFinished || !currentThinking) return;
-    thinkingFinished = true;
-    currentThinking.seconds = (Date.now() - currentThinking.startedAt) / 1000;
-    if (outcome) currentThinking.outcome = outcome;
+  const append = (message) => {
+    chat.messages.push(message);
+    invalidateContext();
+    if (isVisible()) emit(EVENTS.MESSAGE_APPENDED, { index: chat.messages.length - 1 });
+    persistChat(chatId);
+  };
 
-    // The 'Responded after xyz' should not be visible for completely empty boxes.
-    if (!currentThinking.content) {
-      const index = chat.messages.indexOf(currentThinking);
-      if (index !== -1) {
-        chat.messages.splice(index, 1);
-        if (isVisible()) emit(EVENTS.MESSAGES);
-      }
-    } else {
-      repaint(currentThinking, false);
-    }
+  const freshWork = (rounds = []) => ({
+    role: THINKING_ROLE,
+    rounds,
+    startedAt: Date.now(),
+    collapsed: collapseByDefault,
+    active: true,
+  });
+
+  const isWaiting = () => Boolean(work) && !Number.isFinite(work.seconds);
+
+  /** Stamp how long the wait lasted. Idempotent until the clock resumes. */
+  const stampWait = () => {
+    if (!work || Number.isFinite(work.seconds)) return;
+    const startedAt = Number.isFinite(work.startedAt) ? work.startedAt : Date.now();
+    work.seconds = (Date.now() - startedAt) / 1000;
+  };
+
+  /**
+   * Give the current round a mounted home again. The box the turn removed
+   * itself is reused (it holds only this round); one the user deleted is not,
+   * and the round starts a fresh one.
+   */
+  const reclaimWork = () => {
+    if (!detached) work = freshWork([round]);
+    detached = false;
   };
 
   /**
@@ -339,26 +350,67 @@ function createTurn(chat, chatId) {
   };
 
   const applyReasoning = (thought) => {
-    if (!thought || !currentThinking) return;
-    const combined = reasoningBefore ? `${reasoningBefore}\n\n${thought}` : thought;
-    if (currentThinking.content === combined) return;
-    const first = !currentThinking.content;
-    currentThinking.content = combined;
-    // The first reasoning turns a plain header into an expandable box, so the
-    // whole row is re-rendered; after that only the body changes.
-    repaint(currentThinking, !first);
+    if (!thought || round.thinking === thought) return;
+    // Going from empty to something turns a plain header into an expandable
+    // box, so the whole row is re-rendered; after that only the body changes.
+    const wasCollapsible = isCollapsible(work);
+    round.thinking = thought;
+    repaint(work, wasCollapsible);
+  };
+
+  /**
+   * The round's text turned out to belong with its calls: move it off the
+   * transcript and into the round, and start the clock again.
+   */
+  const moveAnswerIntoRound = () => {
+    round.text = assistant.content;
+    const answerIndex = chat.messages.indexOf(assistant);
+    const mounted = isMounted(work);
+    if (!mounted) reclaimWork();
+
+    if (answerIndex !== -1) {
+      if (mounted) chat.messages.splice(answerIndex, 1);
+      else chat.messages.splice(answerIndex, 1, work);
+    } else if (!mounted) {
+      chat.messages.push(work);
+    }
+
+    assistant = null;
+    delete work.seconds;
+    refresh();
   };
 
   const applyContent = (content) => {
     if (!content) return;
-    if (!assistant) {
-      // The first word of a reply ends the wait.
-      finishThinking();
-      assistant = { role: 'assistant', content };
-      mount(assistant);
-      textSinceBox = true;
+
+    // Text after this round's calls belongs with them.
+    if (round.calls.length) {
+      if (round.text !== content) {
+        const wasCollapsible = isCollapsible(work);
+        round.text = content;
+        repaint(work, wasCollapsible);
+      }
       return;
     }
+
+    if (!assistant) {
+      // The first word of a reply ends the wait.
+      stampWait();
+      assistant = { role: 'assistant', content };
+
+      const index = chat.messages.indexOf(work);
+      if (index !== -1 && !hasOutput(work)) {
+        // The box only timed the wait; the answer takes its place.
+        chat.messages.splice(index, 1);
+        detached = true;
+        chat.messages.push(assistant);
+        refresh();
+        return;
+      }
+      append(assistant);
+      return;
+    }
+
     if (assistant.content !== content) {
       assistant.content = content;
       repaint(assistant, true);
@@ -368,43 +420,59 @@ function createTurn(chat, chatId) {
   const applyToolCalls = (toolCalls) => {
     if (!toolCalls.length) return;
 
-    if (round) {
-      if (mergeCalls(toolCalls)) repaint(box, true);
+    if (round.calls.length) {
+      if (mergeCalls(toolCalls)) repaint(work, true);
       return;
     }
 
-    // The first tool call of the round ends the wait.
-    finishThinking();
-
-    round = { calls: [] };
     mergeCalls(toolCalls);
 
-    if (box && !textSinceBox && isMounted(box)) {
-      box.rounds.push(round);
-      started.push({ round, message: box });
-      repaint(box, true);
+    if (assistant) {
+      moveAnswerIntoRound();
       return;
     }
-
-    box = { role: TOOLS_ROLE, rounds: [round] };
-    textSinceBox = false;
-    started.push({ round, message: box });
-    mount(box);
+    if (!isMounted(work)) {
+      reclaimWork();
+      append(work);
+      return;
+    }
+    repaint(work, false);
   };
 
   return {
-    startRound() {
-      currentThinking = { role: THINKING_ROLE, content: '', collapsed: true, startedAt: Date.now() };
-      thinkingFinished = false;
-      reasoningBefore = '';
+    /**
+     * Start a round: the thinking message is mounted (or resumed) and a new
+     * round opened in it. `model` is where the round's request is going.
+     */
+    startRound(model = '') {
+      if (!isMounted(work)) {
+        work = freshWork();
+        detached = false;
+        append(work);
+      } else if (!work.active) {
+        // Resuming a message from an earlier run: its clock continues from
+        // where it stopped, and how that run ended no longer applies.
+        const elapsed = Number.isFinite(work.seconds) ? work.seconds : 0;
+        work.startedAt = Date.now() - elapsed * 1000;
+        delete work.seconds;
+        delete work.outcome;
+        work.active = true;
+        repaint(work, false);
+      }
+
+      round = { thinking: '', calls: [] };
+      work.rounds.push(round);
+      turnRounds.push(round);
+
       assistant = null;
-      round = null;
       replying = false;
-      mount(currentThinking);
+      roundModel = model;
+      replay = null;
     },
 
     /** Apply everything accumulated so far this round. Safe to call repeatedly with the same reply. */
-    apply({ thinking: thought = '', content = '', toolCalls = [] } = {}) {
+    apply({ thinking: thought = '', content = '', toolCalls = [], replay: latest = null } = {}) {
+      if (latest) replay = latest;
       applyReasoning(thought);
       if (!replying && (content || toolCalls.length)) {
         replying = true;
@@ -416,9 +484,20 @@ function createTurn(chat, chatId) {
 
     /** Final renders and a durable save for the round, however its request ended. */
     async settleRound() {
-      if (currentThinking && currentThinking.content !== reasoningBefore) repaint(currentThinking, false);
+      if (round.calls.length) {
+        const reasoning = normalizeRoundReasoning({ model: roundModel, ...(replay || {}) });
+        if (reasoning) round.reasoning = reasoning;
+        else delete round.reasoning;
+      }
+
+      // A request that produced nothing for the box leaves no round behind.
+      if (!roundHasOutput(round)) {
+        const at = work.rounds.indexOf(round);
+        if (at !== -1) work.rounds.splice(at, 1);
+      }
+
+      if (isMounted(work)) repaint(work, false);
       if (assistant) repaint(assistant, false);
-      if (round) repaint(box, false);
       invalidateContext();
       await persistChat(chatId);
     },
@@ -430,7 +509,7 @@ function createTurn(chat, chatId) {
 
     /** Whether the current round produced any text or calls. */
     roundHasOutput() {
-      return Boolean(assistant || round);
+      return Boolean(assistant || round?.calls.length);
     },
 
     /**
@@ -439,11 +518,15 @@ function createTurn(chat, chatId) {
      * the call running for `finish` to mark as stopped.
      */
     async runCall(call, execute) {
-      const holder = started.find((entry) => entry.round.calls.includes(call))?.message;
+      const holder = () =>
+        chat.messages.find((message) =>
+          roundsOf(message).some((entry) => Array.isArray(entry.calls) && entry.calls.includes(call)),
+        );
 
       call.status = 'running';
       call.startedAt = Date.now();
-      if (holder) repaint(holder, false);
+      const before = holder();
+      if (before) repaint(before, false);
 
       const outcome = await execute();
 
@@ -451,32 +534,47 @@ function createTurn(chat, chatId) {
       call.status = outcome.failed ? 'error' : 'done';
       call.seconds = (Date.now() - call.startedAt) / 1000;
       invalidateContext();
-      if (holder) repaint(holder, false);
+      const after = holder();
+      if (after) repaint(after, false);
       await persistChat(chatId);
     },
 
     /**
      * Close the turn: calls that never returned are marked stopped (the user
-     * stopped the turn) or skipped (it ended any other way), and the wait is
-     * stamped if no reply ever started.
+     * stopped the turn) or skipped (it ended any other way). If the turn ended
+     * before an answer started, the wait is stamped with how it ended, and so
+     * is the round it ended in. The message stops being active, which shows
+     * its buttons — or, if it never received anything, it is removed.
      */
     async finish(outcome = null) {
       const now = Date.now();
-      const touched = new Set();
 
-      for (const { round: entry, message } of started) {
+      for (const entry of turnRounds) {
         for (const call of entry.calls) {
           if (call.status !== 'pending' && call.status !== 'running') continue;
           if (call.status === 'running' && Number.isFinite(call.startedAt)) {
             call.seconds = (now - call.startedAt) / 1000;
           }
           call.status = outcome === 'stopped' ? 'stopped' : 'skipped';
-          touched.add(message);
         }
       }
-      for (const message of touched) repaint(message, false);
 
-      finishThinking(outcome);
+      if (work) {
+        const endedWaiting = isWaiting();
+        if (outcome && endedWaiting && roundHasOutput(round)) round.outcome = outcome;
+        stampWait();
+        if (outcome && endedWaiting) work.outcome = outcome;
+        delete work.active;
+
+        const index = chat.messages.indexOf(work);
+        if (index !== -1 && !hasOutput(work)) {
+          chat.messages.splice(index, 1);
+          if (isVisible()) emit(EVENTS.MESSAGES);
+        } else {
+          repaint(work, false);
+        }
+      }
+
       invalidateContext();
       await persistChat(chatId);
     },
@@ -500,22 +598,37 @@ function appendStopped(chatId) {
 }
 
 /**
+ * The wire messages for a request to `model`: reasoning from the turn in
+ * progress is replayed to the model that wrote it, plain text only under the
+ * configured field.
+ */
+function apiMessagesFor(chat, model) {
+  return buildApiMessages(chat.messages, {
+    model,
+    echoField: String(state.data.config.reasoningEchoField ?? '').trim(),
+  });
+}
+
+/**
  * One request to the API, streamed into the turn. Resolves with whether the
  * user stopped it; the round is given its final render and saved before any
  * failure is rethrown.
  */
 async function requestRound({ turn, chat, chatId, signal, forceAnswer }) {
-  turn.startRound();
+  // Read once: the same model receives the request, the replayed reasoning,
+  // and the tag on whatever reasoning comes back.
+  const model = state.data.config.lastModel;
+  turn.startRound(model);
 
-  let reply = { thinking: '', content: '', toolCalls: [] };
+  let reply = { thinking: '', content: '', toolCalls: [], replay: null };
   let aborted = false;
   let failure = null;
 
   try {
     reply = await requestCompletion({
       config: state.data.config,
-      model: state.data.config.lastModel,
-      messages: buildApiMessages(chat.messages),
+      model,
+      messages: apiMessagesFor(chat, model),
       tools: toolSchemasFor(chat),
       forceAnswer,
       signal,
@@ -547,8 +660,12 @@ async function requestRound({ turn, chat, chatId, signal, forceAnswer }) {
  * Each round is one request. If the reply carries tool calls they are run in
  * order — never in parallel, since JavaScript calls share `window` and may
  * depend on each other — each result is stored on its call, and the
- * transcript is sent again. After `maxToolRounds` of that the model is asked
- * to answer without tools; if it still calls one, the turn ends with an error.
+ * transcript is sent again, with each earlier round's reasoning replayed as
+ * the provider requires. After `maxToolRounds` of that the model is asked to
+ * answer without tools; if it still calls one, the turn ends with an error.
+ *
+ * If the transcript ends with a thinking message (a retried turn), that
+ * message is resumed rather than a new one started.
  *
  * This is a loop, not recursion, so there is exactly one abort controller and
  * one cleanup for the whole turn. The turn is pinned to `chatId`, so switching
@@ -570,7 +687,8 @@ async function runTurns(chatId) {
     pickInteger(10, state.data.config.maxToolRounds, GLOBAL_SETTINGS.maxToolRounds.default),
   );
 
-  const turn = createTurn(chat, chatId);
+  const last = chat.messages[chat.messages.length - 1];
+  const turn = createTurn(chat, chatId, { resume: isThinking(last) ? last : null });
   /** How the turn ended when it ended without a reply: 'stopped' or 'failed'. */
   let outcome = null;
 
@@ -683,6 +801,10 @@ export async function sendMessage({ text = '', skipApi = false } = {}) {
   await runTurns(state.data.currentChatId);
 }
 
+/**
+ * Run the model's turn again from the end of the transcript. If that end is a
+ * thinking message, the turn picks up where it left off.
+ */
 export async function regenerate() {
   if (!state.data.config.key) {
     throw new Error('Please enter your API key in the settings first.');

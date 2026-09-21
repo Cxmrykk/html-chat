@@ -1,5 +1,8 @@
 /** Setting inheritance, coercion, and fallback resolution. */
 
+const TRUE_WORDS = ['true', 'yes', 'on', '1'];
+const FALSE_WORDS = ['false', 'no', 'off', '0'];
+
 export function isBlank(value) {
   if (value === null || value === undefined) return true;
   if (typeof value === 'string') return value.trim() === '';
@@ -33,14 +36,48 @@ export function pickInteger(fallback, ...values) {
 }
 
 /**
+ * A boolean from a boolean, 0 or 1, or a word such as "true" or "off".
+ * Undefined for anything else, so a typo is never read as a choice.
+ */
+export function parseBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+    return undefined;
+  }
+  if (typeof value !== 'string') return undefined;
+  const word = value.trim().toLowerCase();
+  if (TRUE_WORDS.includes(word)) return true;
+  if (FALSE_WORDS.includes(word)) return false;
+  return undefined;
+}
+
+/** First value that reads as a boolean, else `fallback`. */
+export function pickBoolean(fallback, ...values) {
+  for (const value of values) {
+    if (isBlank(value)) continue;
+    const parsed = parseBoolean(value);
+    if (parsed !== undefined) return parsed;
+  }
+  return fallback;
+}
+
+/**
  * Normalise a raw editor string for storage according to a schema entry type.
- * Numeric fields store "" (meaning "inherit") when blank or unparseable.
+ * Numeric and boolean fields store "" (meaning "inherit") when blank or
+ * unparseable.
  */
 export function coerceForStorage(rawValue, type) {
   if (type === 'number') {
     if (isBlank(rawValue)) return '';
     const parsed = Number.parseFloat(rawValue);
     return Number.isNaN(parsed) ? '' : parsed;
+  }
+  if (type === 'boolean') {
+    if (isBlank(rawValue)) return '';
+    const parsed = parseBoolean(rawValue);
+    return parsed === undefined ? '' : parsed;
   }
   return rawValue;
 }

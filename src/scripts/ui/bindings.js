@@ -19,6 +19,7 @@ import {
   applyChromeState,
   updateModelDropdown,
 } from './components/input-area.js';
+import { syncEditSelection } from './components/edit-selection.js';
 import {
   renderChatView,
   appendMessageToView,
@@ -31,12 +32,17 @@ import { syncTicker } from './ticker.js';
 
 /** Declarative event bindings mapping store events to UI renders. */
 
+/**
+ * Every render that can rebuild a message row ends here: the outline around
+ * the part being edited lives inside the row, so a new row needs it redrawn.
+ */
 export function renderMainView({ preserveScroll = false } = {}) {
   if (state.session.view === 'chat') {
     renderChatView({ preserveScroll });
   } else {
     renderSettingsView();
   }
+  syncEditSelection();
 }
 
 export function renderAll() {
@@ -63,10 +69,12 @@ export function installBindings() {
   on(EVENTS.CHAT_FILES, () => {
     renderChatFiles();
     if (state.session.view === 'chat') renderChatView({ preserveScroll: true });
+    syncEditSelection();
   });
 
   on(EVENTS.MESSAGES, () => {
     if (state.session.view === 'chat') renderChatView();
+    syncEditSelection();
     renderInputArea();
   });
 
@@ -82,6 +90,7 @@ export function installBindings() {
         messages[i].remove();
       }
     }
+    syncEditSelection();
     renderInputArea();
   });
 
@@ -96,7 +105,10 @@ export function installBindings() {
     // A closed box shows nothing that a delta could change. Skipping the
     // render is also what keeps a long reasoning trace cheap to stream.
     if (streaming && isCollapsed(message, { editing })) {
-      if (!hasMessageElement(index)) renderChatView({ preserveScroll: true });
+      if (!hasMessageElement(index)) {
+        renderChatView({ preserveScroll: true });
+        syncEditSelection();
+      }
       return;
     }
 
@@ -115,8 +127,11 @@ export function installBindings() {
       replaceMessage(message, index, { editing });
     }
 
+    syncEditSelection();
+
     // Follow the reply down unless the user has deliberately scrolled away —
-    // or has just toggled a box or a call, which must stay under the cursor.
+    // or has just toggled a box or a call, or started or stopped an edit,
+    // which must stay under the cursor.
     if (pinned && !anchored) scrollToBottom();
   });
 
@@ -132,6 +147,13 @@ export function installBindings() {
       appendMessageToView(message, index, { follow });
     }
     renderSendButton();
+  });
+
+  on(EVENTS.EDIT, () => {
+    // Deliberately no transcript render: picking part of a message moves the
+    // outline and nothing else.
+    renderInputArea();
+    syncEditSelection();
   });
 
   on(EVENTS.FILES, () => {

@@ -1,13 +1,20 @@
 import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
 import { isBlank } from '../../core/values.js';
-import { reasoningOf, resolveReply } from '../../core/reasoning.js';
+import {
+  reasoningOf,
+  resolveReply,
+  thinkingBlocksOf,
+  createThinkingBlockAccumulator,
+} from '../../core/reasoning.js';
 import { createToolCallAccumulator, toolCallsOf } from '../../core/tool-calls.js';
 
 /**
  * Chat completions client. Responses are always streamed: `onDelta` fires with
- * `{ thinking, content, toolCalls }` — the full reasoning, the full answer and
- * every tool call accumulated so far — and the promise resolves with the
- * complete triple.
+ * `{ thinking, content, toolCalls, replay }` — the full reasoning to display,
+ * the full answer, every tool call accumulated so far, and the reasoning as
+ * the provider may need it back (`{ text, blocks }`: the raw reasoning field
+ * and the thinking blocks, signed or still arriving) — and the promise
+ * resolves with the complete set.
  */
 
 /** Build the sampling parameters from whichever schema entries are set. */
@@ -31,6 +38,7 @@ function buildParameters(config) {
  * The tool fields of the request. `tools` is left out entirely when empty,
  * because some servers reject an empty array. `forceAnswer` keeps the
  * definitions (the history may still refer to them) but forbids another call.
+ * `none` is also one of the two choices Anthropic allows while thinking.
  */
 function buildToolFields(tools, forceAnswer) {
   if (!tools?.length) return {};
@@ -47,25 +55,38 @@ function isEventStream(response) {
   return !(response.headers.get('content-type') || '').includes('application/json');
 }
 
+/** The reply shape every caller sees, from whatever has been accumulated. */
+function replyOf({ reasoning, content, blocks, toolCalls }, options) {
+  return {
+    ...resolveReply({ reasoning, content, blocks }, options),
+    toolCalls,
+    replay: { text: reasoning, blocks },
+  };
+}
+
 /**
- * Consume an SSE body, accumulating reasoning, content and tool-call deltas
- * separately.
+ * Consume an SSE body, accumulating reasoning, content, thinking-block and
+ * tool-call deltas separately.
  *
  * `onDelta` fires at most once per network read, and only when something
- * actually grew, so keepalive frames cannot trigger pointless re-renders.
+ * actually grew, so keepalive frames cannot trigger pointless re-renders. A
+ * signature arriving counts as growth: it changes what the round replays even
+ * though nothing on screen moves.
  */
 async function parseStream(response, onDelta, idPrefix) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder('utf-8');
   const toolCalls = createToolCallAccumulator({ idPrefix });
+  const thinkingBlocks = createThinkingBlockAccumulator();
   let buffer = '';
   let reasoning = '';
   let content = '';
 
-  const snapshot = (options) => ({
-    ...resolveReply({ reasoning, content }, options),
-    toolCalls: toolCalls.list(),
-  });
+  const snapshot = (options) =>
+    replyOf(
+      { reasoning, content, blocks: thinkingBlocks.list(), toolCalls: toolCalls.list() },
+      options,
+    );
 
   const consume = (rawLine) => {
     const line = rawLine.trim();
@@ -79,13 +100,15 @@ async function parseStream(response, onDelta, idPrefix) {
       reasoning += reasoningOf(delta);
       // Servers send `content: null` alongside reasoning and tool-call deltas.
       if (typeof delta.content === 'string') content += delta.content;
+      thinkingBlocks.add(thinkingBlocksOf(delta));
       toolCalls.add(delta.tool_calls);
     } catch {
       /* partial or non-JSON keepalive frame */
     }
   };
 
-  const received = () => reasoning.length + content.length + toolCalls.size();
+  const received = () =>
+    reasoning.length + content.length + thinkingBlocks.size() + toolCalls.size();
 
   const flush = (lines) => {
     const before = received();
@@ -149,16 +172,18 @@ export async function requestCompletion({
   if (!isEventStream(response)) {
     const payload = await response.json();
     const message = payload.choices?.[0]?.message;
-    const reply = {
-      ...resolveReply(
-        {
-          reasoning: reasoningOf(message),
-          content: typeof message?.content === 'string' ? message.content : '',
-        },
-        { final: true },
-      ),
-      toolCalls: toolCallsOf(message, { idPrefix }),
-    };
+    const thinkingBlocks = createThinkingBlockAccumulator();
+    thinkingBlocks.add(thinkingBlocksOf(message));
+
+    const reply = replyOf(
+      {
+        reasoning: reasoningOf(message),
+        content: typeof message?.content === 'string' ? message.content : '',
+        blocks: thinkingBlocks.list(),
+        toolCalls: toolCallsOf(message, { idPrefix }),
+      },
+      { final: true },
+    );
     onDelta?.(reply);
     return reply;
   }

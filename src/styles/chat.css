@@ -59,12 +59,6 @@
   --msg-bg: var(--role-error-bg);
 }
 
-.msg.tools {
-  border-color: var(--role-tool);
-  background: var(--role-tool-bg);
-  --msg-bg: var(--role-tool-bg);
-}
-
 .msg.thinking {
   border-color: var(--role-thinking);
   background: var(--role-thinking-bg);
@@ -139,12 +133,43 @@
 }
 
 /* ------------------------------------------------------------------ *
- * Thinking box
+ * Editing part of a message
  *
- * With reasoning in it, the box folds to a header row: a label and a
+ * While a message is being edited, each top-level markdown block is a click
+ * target. Nothing here may take up space: the transcript must not move when
+ * an edit starts or its selection changes. The hover hint is an outline, and
+ * the selection itself is an absolutely positioned overlay
+ * (`ui/components/edit-selection.js`). Text is not selectable, so a drag can
+ * never be mistaken for a click; the same text is selectable in the composer.
+ * ------------------------------------------------------------------ */
+
+.msg.editing > .msg-content {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.msg.editing > .msg-content > .md-block:hover {
+  outline: 1px dotted var(--text-faint);
+  outline-offset: 2px;
+}
+
+.edit-selection {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px dotted var(--accent);
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ------------------------------------------------------------------ *
+ * Thinking message
+ *
+ * With anything in it, the message folds to a header row: a label and a
  * chevron. The whole row is the click target (it carries the toggle command);
  * the button inside exists so the box is also reachable from the keyboard.
- * Without reasoning (`.static`) the header is plain text with nothing to open.
+ * With nothing in it (`.static`) the header is plain text with nothing to open.
  * ------------------------------------------------------------------ */
 
 .msg.collapsible .msg-meta {
@@ -177,16 +202,41 @@
   color: var(--text);
 }
 
-.msg.thinking .msg-content {
+/*
+ * One section per round: its reasoning (muted), the text written alongside
+ * its calls (ordinary text), its calls, and a note if the turn ended there.
+ * Rounds are separated by a dashed rule so a long turn reads as steps.
+ */
+.thinking-round + .thinking-round {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.thinking-reasoning {
   color: var(--text-muted);
 }
 
+.thinking-text {
+  color: var(--text);
+}
+
+.round-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.thinking-round > * + * {
+  margin-top: 8px;
+}
+
 /* ------------------------------------------------------------------ *
- * Tools box
+ * Tool calls
  *
- * One green message per run of tool rounds. Each call is a row whose header
- * reads what it did; the header is a button, so rows open from the keyboard
- * too. A closed row renders no details at all.
+ * Each call is a row whose header reads what it did; the header is a button,
+ * so rows open from the keyboard too. A closed row renders no details at all.
  * ------------------------------------------------------------------ */
 
 .tool-call {
@@ -348,11 +398,21 @@
   overflow-wrap: anywhere;
 }
 
-.msg-content p:first-child {
+/*
+ * Message bodies render one `.md-block` wrapper per top-level markdown block.
+ * The wrappers are plain blocks with no padding or border, so margins collapse
+ * through them exactly as if they were not there. The one thing they change is
+ * which paragraph is a `:first-child` or `:last-child`: inside a wrapper, every
+ * paragraph is both. So a paragraph directly in a wrapper only loses its outer
+ * margin at the very start or end of the message, as it would unwrapped.
+ */
+.msg-content p:first-child:not(.md-block > p),
+.msg-content > .md-block:first-child > p:first-child {
   margin-top: 0;
 }
 
-.msg-content p:last-child {
+.msg-content p:last-child:not(.md-block > p),
+.msg-content > .md-block:last-child > p:last-child {
   margin-bottom: 0;
 }
 

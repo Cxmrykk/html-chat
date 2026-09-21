@@ -1,20 +1,24 @@
 import { estimateTokens } from './tokens.js';
-import { isSendable, isTools } from './roles.js';
+import { isSendable, isThinking } from './roles.js';
+import { roundsOf } from './thinking.js';
+import { REASONING_FIELDS, isReasoningField, replayableBlocks } from './reasoning.js';
 
 /**
  * Tool calls on the wire: assembling them from streamed fragments, parsing
  * their arguments, and turning a transcript into a request the API will accept.
  *
- * In the transcript, the calls of one or more consecutive rounds share a
- * single `tools` message:
+ * In the transcript, every call a turn makes lives in its thinking message,
+ * grouped by round — one round per request (see `core/thinking.js`):
  *
- *   { role: 'tools', rounds: [{ calls: [{ id, name, arguments, result?, status,
- *                                         startedAt?, seconds?, collapsed }] }] }
+ *   { role: 'thinking', rounds: [{ thinking, text?, reasoning?,
+ *       calls: [{ id, name, arguments, result?, status, startedAt?, seconds?, collapsed }] }] }
  *
  * `arguments` is the raw JSON string the model wrote and `result` the text
- * that was sent back. `status` is described in `core/tools.js`. On the wire,
- * each round is one assistant message carrying its calls, followed by one
- * `tool` message per answered call.
+ * that was sent back. `status` is described in `core/tools.js`, `reasoning` in
+ * `core/reasoning.js`. On the wire, each round with an answered call is one
+ * assistant message carrying the round's `text` as its content, its answered
+ * calls, and (within the current turn) its reasoning, followed by one `tool`
+ * message per answered call. A round's `thinking` is display only.
  */
 
 /**
@@ -110,12 +114,6 @@ export function parseToolArguments(raw) {
   }
 }
 
-/** Every call in a tools message, across its rounds, in order. */
-export function callsOf(message) {
-  if (!isTools(message) || !Array.isArray(message.rounds)) return [];
-  return message.rounds.flatMap((round) => (Array.isArray(round?.calls) ? round.calls : []));
-}
-
 function hasResult(call) {
   return typeof call?.result === 'string' && Boolean(call.name);
 }
@@ -129,27 +127,65 @@ function toWireCall(call) {
 }
 
 /**
- * The wire messages for one tools message. `preamble` is the text the model
- * wrote alongside its first round; it rides on the first round actually sent,
- * or goes out alone if no call was answered.
+ * The reasoning fields for one round's wire assistant message.
+ *
+ * `replay` is null outside the current turn, where nothing is sent back.
+ * Inside it, reasoning goes only to the model that wrote it: a signature is
+ * meaningless to any other, and a different provider may reject the field.
+ * Signed thinking blocks are always sent, because Anthropic refuses a
+ * continuation without them. Plain text goes back only under a field the user
+ * named, and only if that is a known reasoning field, so no setting can ever
+ * overwrite `content` or `tool_calls`.
  */
-function wireRounds(message, preamble) {
-  const payload = [];
-  let pending = preamble || '';
+function reasoningFields(reasoning, replay) {
+  if (!replay || !reasoning || !reasoning.model || reasoning.model !== replay.model) return {};
 
-  for (const round of Array.isArray(message.rounds) ? message.rounds : []) {
+  const fields = {};
+  const blocks = replayableBlocks(reasoning.blocks);
+  if (blocks.length) fields.thinking_blocks = blocks;
+  if (isReasoningField(replay.echoField) && typeof reasoning.text === 'string' && reasoning.text) {
+    fields[replay.echoField] = reasoning.text;
+  }
+  return fields;
+}
+
+/**
+ * The wire messages for one thinking message: per round, the text and the
+ * answered calls with their reasoning, then the results. A round whose calls
+ * were never answered sends its text alone, if it wrote any; its reasoning is
+ * dropped with the calls it belonged to.
+ */
+function wireRounds(message, replay) {
+  const payload = [];
+
+  for (const round of roundsOf(message)) {
+    const text = typeof round?.text === 'string' ? round.text : '';
     const answered = (Array.isArray(round?.calls) ? round.calls : []).filter(hasResult);
-    if (!answered.length) continue;
+
+    if (!answered.length) {
+      if (text) payload.push({ role: 'assistant', content: text });
+      continue;
+    }
 
     payload.push(
-      { role: 'assistant', content: pending || null, tool_calls: answered.map(toWireCall) },
+      {
+        role: 'assistant',
+        content: text || null,
+        tool_calls: answered.map(toWireCall),
+        ...reasoningFields(round.reasoning, replay),
+      },
       ...answered.map((call) => ({ role: 'tool', tool_call_id: call.id, content: call.result })),
     );
-    pending = '';
   }
 
-  if (pending) payload.push({ role: 'assistant', content: pending });
   return payload;
+}
+
+function lastUserIndex(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') return i;
+  }
+  return -1;
 }
 
 /**
@@ -160,30 +196,29 @@ function wireRounds(message, preamble) {
  * mid-execution all leave calls without results, so the rules are applied
  * here, once:
  *
- *   - transcript-only rows (errors, thinking) are dropped;
- *   - each round of a tools message becomes an assistant message carrying the
- *     calls that have a result, followed by those results;
- *   - a call with no result is left out, and a round left with none is dropped;
- *   - assistant text directly before a tools message is what the model wrote
- *     alongside that box's first round, so it travels on that round's message.
+ *   - transcript-only rows (errors) are dropped, and so is every thinking
+ *     message's reasoning text;
+ *   - each round of a thinking message becomes an assistant message carrying
+ *     the calls that have a result, followed by those results;
+ *   - a call with no result is left out, and a round left with none is
+ *     reduced to its text, or dropped if it has none;
+ *   - reasoning is replayed only for rounds after the latest user message —
+ *     the turn in progress, which is all any provider requires — and only to
+ *     `model`. With no `model`, nothing is replayed.
  *
  * Everything is reduced to wire fields, so presentational ones never leave.
  */
-export function buildApiMessages(messages) {
+export function buildApiMessages(messages, { model = '', echoField = '' } = {}) {
   const sendable = (messages || []).filter(isSendable);
+  const turnStart = lastUserIndex(sendable) + 1;
   const payload = [];
 
   for (let i = 0; i < sendable.length; i++) {
     const message = sendable[i];
 
-    if (isTools(message)) {
-      payload.push(...wireRounds(message, ''));
-      continue;
-    }
-
-    if (message.role === 'assistant' && isTools(sendable[i + 1])) {
-      payload.push(...wireRounds(sendable[i + 1], message.content || ''));
-      i++;
+    if (isThinking(message)) {
+      const replay = model && i >= turnStart ? { model, echoField } : null;
+      payload.push(...wireRounds(message, replay));
       continue;
     }
 
@@ -200,6 +235,12 @@ export function payloadChars(payload) {
     total += (message.content || '').length;
     for (const call of message.tool_calls || []) {
       total += call.function.name.length + call.function.arguments.length;
+    }
+    for (const block of message.thinking_blocks || []) {
+      total += (block.thinking || '').length + (block.data || '').length;
+    }
+    for (const field of REASONING_FIELDS) {
+      if (typeof message[field] === 'string') total += message[field].length;
     }
   }
   return total;
