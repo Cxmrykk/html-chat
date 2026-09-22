@@ -11,6 +11,10 @@ const BASE_CONFIG = {
   lastModel: '',
   reasoningEffort: 'none',
   availableReasoningLevels: 'none\nlow\nmedium\nhigh',
+  autoCollapseCode: true,
+  codeCollapseThreshold: 20,
+  codeCollapsePreviewLines: 5,
+  showCodeCollapseHint: true,
 };
 
 /**

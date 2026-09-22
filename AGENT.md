@@ -14,5 +14,12 @@ The rule is:
 
 ## 2. Dependency direction
 
-Imports flow one way only:
+Imports flow one way only. Never import "upwards". If a lower layer needs to notify a higher one, emit an
+event. Circular imports are a bug, not a style issue.
 
+## 3. No inline event handlers
+
+There are no `onclick="..."` attributes and no `window.foo = foo` bindings.
+All interaction goes through `data-command` attributes dispatched by
+`app/events.js` against the registry in `app/commands.js`. To add an action,
+add a command and reference its name from markup.

@@ -68,22 +68,51 @@ function installCommandDelegation() {
  * part to edit instead of doing what it normally would: a link inside does not
  * navigate. Ctrl/Cmd+Click keeps its copy meaning. Only the message's own
  * top-level blocks count, never something nested inside one.
+ *
+ * The native default is cancelled on `mousedown`, not just on `click`: that is
+ * where the browser starts a text selection, extends it (Shift+Click, which
+ * here means "keep what is above"), or grows it on a double or triple click.
+ * `user-select: none` does not stop a selection anchored elsewhere from being
+ * stretched across the message, so without this, picking a part could
+ * highlight the whole transcript. It also keeps focus in the composer.
  */
 function installEditSelection() {
   const container = $('#chat-container');
   if (!container) return;
 
-  container.addEventListener('click', (event) => {
-    if (state.session.editingMessageIndex === null) return;
-    if (event.ctrlKey || event.metaKey) return;
+  const inEditedContent = (event) =>
+    state.session.editingMessageIndex !== null &&
+    !(event.ctrlKey || event.metaKey) &&
+    event.target.closest('.msg.editing > .msg-content');
 
-    const content = event.target.closest('.msg.editing > .msg-content');
+  container.addEventListener('mousedown', (event) => {
+    if (event.button !== 0 || !inEditedContent(event)) return;
+    event.preventDefault();
+  });
+
+  container.addEventListener('click', (event) => {
+    const content = inEditedContent(event);
     if (!content) return;
     event.preventDefault();
 
     const block = event.target.closest('.md-block');
     if (!block || block.parentElement !== content) return;
     runCommand('message.selectBlock', contextFor(block, event));
+  });
+}
+
+function installCodeCollapseDelegation() {
+  document.addEventListener('click', (event) => {
+    if (event.ctrlKey || event.metaKey) return;
+    
+    // Ignore if user is selecting text
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim() !== '') return;
+
+    const pre = event.target.closest('pre.collapsible-code');
+    if (!pre) return;
+    
+    pre.classList.toggle('collapsed');
   });
 }
 
@@ -168,6 +197,7 @@ function installEditorBindings() {
 export function installEventHandlers() {
   installCommandDelegation();
   installEditSelection();
+  installCodeCollapseDelegation();
   installCopyAffordances();
   installModifierTracking();
   installEditorBindings();

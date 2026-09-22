@@ -316,6 +316,9 @@ export const commands = {
       { editingMessageIndex: index, editingThinking: false, ...NO_EDIT_RANGE },
       { silent: true },
     );
+    // A text selection left over from before the edit would otherwise stay
+    // highlighted across the transcript while parts are being picked.
+    window.getSelection()?.removeAllRanges();
     emit(EVENTS.MESSAGE, { index, anchored: true });
 
     const input = $('#chat-input');

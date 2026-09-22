@@ -1,6 +1,10 @@
 import { marked, Prism, renderMathInElement } from '../vendor/index.js';
 import { escapeHTML } from '../core/format.js';
 import { fenceFor } from '../core/tools.js';
+import { state } from '../store/state.js';
+import { pickBoolean, pickInteger } from '../core/values.js';
+import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
+import { ICON_CHEVRON_DOWN } from './icons.js';
 
 /**
  * Markdown rendering plus the KaTeX/Prism post-pass.
@@ -22,7 +26,6 @@ const MATH_DELIMITERS = [
  * `innerHTML` as an unknown element and collapse into one unreadable line.
  */
 const LEGACY_RUN_BLOCK = /<run>([\s\S]*?)<\/run>/g;
-const LEGACY_RUN_OPEN = '<run>';
 
 // Claim `$...$` spans before marked can mangle them; auto-render handles the
 // actual typesetting once the HTML is in the document.
@@ -115,9 +118,14 @@ function lexerView(source) {
  *
  * The spans are only trusted when the tokens account for every character of
  * the source. The lexer drops some text (reference-link definitions) and a few
- * of its merges invent some, and legacy `<run>` content is rewritten before
- * display; whenever the check fails, the whole message is one block with no
- * token. Selection gets coarser, but an edit can never land in the wrong place.
+ * of its merges invent some; whenever the check fails, the whole message is
+ * one block with no token. Selection gets coarser, but an edit can never land
+ * in the wrong place.
+ *
+ * The same goes for legacy `<run>` blocks, which are rewritten before display
+ * and so no longer line up with the source — but only when the rewrite
+ * actually changes something. The mere text `<run>` (in a code block quoting
+ * this very file, say) is ordinary content and splits into blocks as usual.
  *
  * Empty or whitespace-only content has no blocks.
  */
@@ -126,7 +134,7 @@ export function sourceBlocks(content) {
   if (!source.trim()) return [];
 
   const whole = [{ start: 0, end: source.length, token: null }];
-  if (source.includes(LEGACY_RUN_OPEN)) return whole;
+  if (displayContentOf(source) !== source) return whole;
 
   let tokens;
   try {
@@ -186,7 +194,53 @@ export function enhance(element) {
       throwOnError: false,
     });
     Prism.highlightAllUnder(element);
+
+    const config = state.data.config;
+    const autoCollapse = pickBoolean(true, config.autoCollapseCode, GLOBAL_SETTINGS.autoCollapseCode.default);
+    const collapseThreshold = pickInteger(20, config.codeCollapseThreshold, GLOBAL_SETTINGS.codeCollapseThreshold.default);
+    const previewLines = pickInteger(5, config.codeCollapsePreviewLines, GLOBAL_SETTINGS.codeCollapsePreviewLines.default);
+    const showHint = pickBoolean(true, config.showCodeCollapseHint, GLOBAL_SETTINGS.showCodeCollapseHint.default);
+
+    const pres = element.querySelectorAll('pre');
+    for (const pre of pres) {
+      if (pre.closest('.msg.editing')) continue;
+      
+      const lines = (pre.textContent || '').replace(/\s+$/, '').split('\n').length;
+      if (lines > collapseThreshold) {
+        pre.classList.add('collapsible-code');
+        pre.style.setProperty('--preview-lines', previewLines);
+        
+        // Let the user's manual toggling persist until the DOM node is physically recreated
+        if (!pre.hasAttribute('data-collapsible')) {
+          pre.setAttribute('data-collapsible', 'true');
+          if (autoCollapse) pre.classList.add('collapsed');
+        }
+
+        // Overlay that acts as both the gradient fade and the hint text
+        let overlay = pre.querySelector('.code-collapse-overlay');
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.className = 'code-collapse-overlay';
+          pre.appendChild(overlay);
+        }
+
+        if (showHint) {
+          if (!overlay.innerHTML) {
+            overlay.innerHTML = `${ICON_CHEVRON_DOWN}`;
+          }
+        } else {
+          if (overlay.innerHTML) {
+            overlay.innerHTML = '';
+          }
+        }
+      } else {
+        pre.classList.remove('collapsible-code', 'collapsed');
+        pre.removeAttribute('data-collapsible');
+        const overlay = pre.querySelector('.code-collapse-overlay');
+        if (overlay) overlay.remove();
+      }
+    }
   } catch (error) {
-    console.warn('Failed to enhance markdown (math/highlighting):', error);
+    console.warn('Failed to enhance markdown (math/highlighting/collapsible):', error);
   }
 }

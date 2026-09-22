@@ -458,6 +458,47 @@
   max-height: none;
 }
 
+.msg-content pre.collapsible-code {
+  position: relative;
+  cursor: pointer;
+}
+
+.msg-content pre.collapsible-code.collapsed {
+  /* Line-height (1.6) * lines + top padding (10px) + bottom padding (10px) */
+  max-height: calc(var(--preview-lines, 5) * 1.6em + 20px);
+  overflow: hidden;
+}
+
+.code-collapse-overlay {
+  display: none;
+}
+
+.msg-content pre.collapsible-code.collapsed .code-collapse-overlay {
+  display: flex;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 5em;
+  background: linear-gradient(to bottom, transparent, var(--bg-code) 85%);
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 8px;
+  gap: 6px;
+  color: var(--text-muted);
+  font-family: sans-serif;
+  font-size: 0.85em;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
+.code-collapse-overlay .icon {
+  width: 1em;
+  height: 1em;
+  margin-bottom: 0.05em; /* Tweak to vertically center against text */
+}
+
 .msg-content code {
   background: var(--bg-code);
   color: var(--text);
