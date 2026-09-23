@@ -59,12 +59,11 @@ Hover a message to see its buttons:
 
 ### Editing part of a message
 
-After clicking **Edit**, click the block (paragraph, list, code block, etc.) you want to change. Its source loads into the composer.
+After clicking **Edit**, click the block (paragraph, list, code block, etc.) you want to change. Its source loads into the composer, and a dotted outline marks it. Only one block is selected at a time.
 
-- Clicking above or below the dotted outline grows the selection.
-- Clicking inside a larger selection keeps only what is below the clicked block. Shift+Click keeps only what is above.
-- With one or two blocks selected, clicking a block toggles it.
-- **Save** (`Ctrl+Enter`) writes the edit back. An empty composer deletes the selected part.
+- Clicking another block switches the selection to it.
+- Clicking the selected block again deselects it.
+- **Save** (`Ctrl+Enter`) writes the edit back. An empty composer deletes the selected block.
 - **Retry** saves the edit and regenerates from the message.
 
 ### Thinking boxes

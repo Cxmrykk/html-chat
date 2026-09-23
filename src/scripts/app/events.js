@@ -64,17 +64,17 @@ function installCommandDelegation() {
 }
 
 /**
- * While a message is being edited, a click on its rendered markdown picks the
- * part to edit instead of doing what it normally would: a link inside does not
- * navigate. Ctrl/Cmd+Click keeps its copy meaning. Only the message's own
- * top-level blocks count, never something nested inside one.
+ * While a message is being edited, a click on its rendered markdown selects
+ * the block to edit instead of doing what it normally would: a link inside
+ * does not navigate. Ctrl/Cmd+Click keeps its copy meaning. Only the message's
+ * own top-level blocks count, never something nested inside one.
  *
  * The native default is cancelled on `mousedown`, not just on `click`: that is
- * where the browser starts a text selection, extends it (Shift+Click, which
- * here means "keep what is above"), or grows it on a double or triple click.
- * `user-select: none` does not stop a selection anchored elsewhere from being
- * stretched across the message, so without this, picking a part could
- * highlight the whole transcript. It also keeps focus in the composer.
+ * where the browser starts a text selection, extends it (Shift+Click), or grows
+ * it on a double or triple click. `user-select: none` does not stop a
+ * selection anchored elsewhere from being stretched across the message, so
+ * without this, picking a block could highlight the whole transcript. It also
+ * keeps focus in the composer.
  */
 function installEditSelection() {
   const container = $('#chat-container');

@@ -3,8 +3,10 @@
  *
  * A message renders as a run of top-level markdown blocks, each a span of its
  * source: `{ start, end }` character offsets, end exclusive (see
- * `sourceBlocks` in `ui/markdown.js`). An edit covers a contiguous run of
- * them, held as a range of block indices, `{ start, end }`, both inclusive.
+ * `sourceBlocks` in `ui/markdown.js`). An edit covers exactly one of them,
+ * held as a range of block indices, `{ start, end }`, both inclusive and
+ * always equal. The range shape is kept so the slicing below, the stale-edit
+ * check and the selection outline need no special case for a single block.
  *
  * A message with no blocks at all (empty, or only whitespace) is edited whole,
  * as the range `{ start: 0, end: 0 }`.
@@ -14,39 +16,20 @@
  * The range after a click on block `clicked`, or null when the click leaves
  * nothing selected.
  *
- *   - Nothing picked yet: the clicked block alone.
- *   - Outside the range: the range grows to reach it.
- *   - Inside a range of one or two blocks: the click toggles the clicked
- *     block. One block clicked off leaves nothing; either of two clicked off
- *     leaves the other.
- *   - Inside a longer range: only what lies strictly below the clicked block
- *     is kept, or with `fromBottom`, strictly above it. The clicked block
- *     itself is always dropped, so clicking the last block (or with
- *     `fromBottom`, the first) leaves nothing.
+ *   - Clicking the selected block deselects it.
+ *   - Clicking any other block (or any block while nothing is selected)
+ *     selects that block alone.
  */
-export function nextRange(range, clicked, { fromBottom = false } = {}) {
-  if (!range) return { start: clicked, end: clicked };
-  if (clicked < range.start) return { start: clicked, end: range.end };
-  if (clicked > range.end) return { start: range.start, end: clicked };
-
-  const size = range.end - range.start + 1;
-  if (size === 1) return null;
-  if (size === 2) {
-    const other = clicked === range.start ? range.end : range.start;
-    return { start: other, end: other };
-  }
-
-  const kept = fromBottom
-    ? { start: range.start, end: clicked - 1 }
-    : { start: clicked + 1, end: range.end };
-  return kept.start <= kept.end ? kept : null;
+export function nextRange(range, clicked) {
+  if (range && range.start === clicked && range.end === clicked) return null;
+  return { start: clicked, end: clicked };
 }
 
-/** Whether `range` addresses blocks that exist. */
+/** Whether `range` addresses a single block that exists. */
 export function isValidRange(range, blockCount) {
   if (!range || !Number.isInteger(range.start) || !Number.isInteger(range.end)) return false;
-  if (range.start < 0 || range.start > range.end) return false;
-  if (blockCount === 0) return range.start === 0 && range.end === 0;
+  if (range.start < 0 || range.start !== range.end) return false;
+  if (blockCount === 0) return range.start === 0;
   return range.end < blockCount;
 }
 
