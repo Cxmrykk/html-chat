@@ -14,7 +14,13 @@ import {
   callStatusOf,
   callStatusNote,
 } from '../../core/tools.js';
-import { renderMarkdown, renderMarkdownBlocks, enhance } from '../markdown.js';
+import {
+  renderMarkdown,
+  renderMarkdownBlocks,
+  enhance,
+  codeCollapseState,
+  restoreCodeCollapseState,
+} from '../markdown.js';
 import {
   ICON_COPY,
   ICON_EDIT,
@@ -401,15 +407,22 @@ export function updateMessageContent(index, message, { final = true } = {}) {
   return element;
 }
 
-/** Replace a whole message element (role change, entering/leaving edit mode). */
+/**
+ * Replace a whole message element (role change, entering/leaving edit mode).
+ * Code blocks the user opened or closed keep that state in the new row, so
+ * starting or ending an edit leaves the transcript looking exactly as it was.
+ */
 export function replaceMessage(message, index, options) {
   const existing = document.querySelector(`.msg[data-index="${index}"]`);
   if (!existing) return null;
+
+  const codeState = codeCollapseState(existing);
 
   const template = document.createElement('template');
   template.innerHTML = messageHTML(message, index, options).trim();
   existing.replaceWith(template.content.firstElementChild);
   const newElement = document.querySelector(`.msg[data-index="${index}"]`);
   enhance(newElement);
+  restoreCodeCollapseState(newElement, codeState);
   return newElement;
 }

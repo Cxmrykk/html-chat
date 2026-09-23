@@ -101,9 +101,15 @@ function installEditSelection() {
   });
 }
 
+/**
+ * A click on a collapsible code block opens or closes it. Not inside the
+ * message being edited: there a click picks the block to edit, and the view
+ * must stay exactly as it was.
+ */
 function installCodeCollapseDelegation() {
   document.addEventListener('click', (event) => {
     if (event.ctrlKey || event.metaKey) return;
+    if (event.target.closest('.msg.editing > .msg-content')) return;
     
     // Ignore if user is selecting text
     const selection = window.getSelection();
