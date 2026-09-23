@@ -1,105 +1,194 @@
 # HTML Chat
 
-A lightweight, zero-runtime-dependency web chat client for OpenAI-compatible APIs that builds into a single self-contained `index.html` file. Includes local IndexedDB storage, client-side RAG exposed to the model as a file search tool, customizable JavaScript pipeline hooks, and in-browser JavaScript execution as a tool.
+A browser chat client for any OpenAI-compatible API, built into a single `index.html` file. It has no backend and no account. Everything, including your API key, is stored in your browser's IndexedDB.
 
----
+Features:
 
-## Features
+- Streaming chat with reasoning display (`reasoning_content` / `reasoning` fields, inline `<think>` tags, LiteLLM `thinking_blocks`)
+- Tool calling: JavaScript execution in the page, and semantic search over your own files (RAG)
+- Editing, retrying, forking and deleting any message, and changing its role
+- Markdown, syntax highlighting and KaTeX math
+- Import and export of chats and embedding vectors
+- Light and dark themes, with keyboard-driven navigation
 
-- **Single-File Build**: Compiles entire app (JS, CSS, Prism highlighting, KaTeX math fonts) into one portable `index.html`.
-- **API Compatible**: Works with OpenAI, LiteLLM, Ollama, OpenRouter, LocalAI, vLLM, LM Studio, and any OpenAI-compatible endpoint. Models are discovered from the server's `/models` endpoint.
-- **Thinking Box**: Everything the model does before its answer lives in one grey box at the top of the reply: its reasoning, the text it writes alongside tool calls, and the tool calls themselves. The header counts how long you have been waiting, across every reasoning step and tool run, until the answer starts. Models that expose their reasoning — through a `reasoning_content` / `reasoning` field, LiteLLM `thinking_blocks`, or inline `<think>...</think>` tags — stream it into the box; click it to expand. Boxes start collapsed by default (**Collapse Thinking** in Super Secret Settings). Once the turn is over the box gets its own Retry, Copy, Fork and Delete buttons, so a turn cut short by an error can be resumed from where it stopped.
-- **Tool Calling**: JavaScript execution and file search are offered to the model as standard function-calling tools. Each call is a one-line row inside the thinking box, with its status and duration; click it to see the code it ran, its output, or the passages a search returned.
-- **Reasoning With Tool Use**: When a model reasons between tool calls, that reasoning is kept across the whole tool loop. Signed Anthropic thinking blocks (Claude via LiteLLM) are sent back automatically, as Anthropic requires; plain-text reasoning can be echoed for models that expect it (**Echo Reasoning Field**). Reasoning is only ever sent back to the model that wrote it, and only within the turn in progress.
-- **Client-Side RAG**:
-  - File upload with background vector embedding and batch processing.
-  - Attach files to a chat to let the model search them; cosine-similarity retrieval with customizable token limits and similarity thresholds.
-  - Custom JavaScript hooks for chunking, context retrieval, deduplication, and chunk merging.
-  - Import/export of chunk and vector datasets.
-- **JavaScript Execution**: When enabled, the model can run code in the page and read back the return value, console output and errors, calling again as often as it needs within the tool round limit.
-- **Rich Rendering**: Markdown, KaTeX math typesetting (`$inline$`, `$$display$$`), and Prism.js syntax highlighting.
-- **IndexedDB Storage**: Conversations, messages, files, vector embeddings, and preferences persist locally in your browser. Chats saved by earlier versions are upgraded to the current format when they load.
+## Getting started
 
----
+### Use the prebuilt file
 
-## Quick Start
+Open `index.html` in a browser. That's it.
 
-### Running the pre-built file
-Open `index.html` in any modern web browser. No server required.
+### Build from source
 
-### Development
-
-```bash
-# Install dependencies
+```sh
 npm install
-
-# Start development server
-npm run dev
-
-# Build single-file production bundle to ./index.html
-npm run build
-
-# Preview build
-npm run preview
+npm run dev      # dev server with hot reload
+npm run build    # writes a self-contained index.html to the repo root
 ```
 
----
+### Connect
 
-## Configuration
+1. In the sidebar, set **Base URL** (e.g. `https://api.openai.com/v1`, `http://localhost:11434/v1`) and **API Key**.
+2. Models are fetched from `{Base URL}/models`. If your server doesn't implement that endpoint, add model ids under **Extra Models** (see [Advanced settings](#advanced-settings)).
+3. Pick a model and type your prompt. `Ctrl+Enter` sends.
 
-1. In the sidebar **Settings** box, provide your **Base URL** (default: `https://api.openai.com/v1`) and **API Key**, then click **Save**. Available models load from the server and appear in the dropdown beside **Send**.
-2. For servers that do not implement `/models`, add model names under **Extra Models** in Super Secret Settings (comma-separated, e.g. `gpt-4o, llama3`).
-3. (Optional) Ctrl+Click the model dropdown to choose a reasoning effort, sent as `reasoning_effort`.
-4. (Optional) Set an **Embeddings Model** (e.g., `text-embedding-3-small`) in Super Secret Settings to enable file search, then click a file in **Your Files** to attach it to the current chat.
-5. (Optional) Tick **Execute JavaScript** to offer the model the JavaScript tool.
+> The API server must allow cross-origin requests from the browser (CORS). Local servers often need this enabled explicitly.
 
----
+## Chatting
 
-## Shortcuts & Actions
+| Action                                | How                                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Send                                  | `Ctrl/Cmd+Enter` or **Send**                                                                                                    |
+| Add a message without calling the API | `Ctrl+Shift+Enter`, or Shift+Click **Send**                                                                                     |
+| Stop generation                       | Click the send button while it's running                                                                                        |
+| Set reasoning effort                  | Ctrl+Click the model dropdown, then pick a level. The level list is editable, one per line. `none` sends no `reasoning_effort`. |
 
-### Keyboard Shortcuts
+The **Send** button shows an estimate of the context size, at about 4 characters per token. It covers the full request, including tool definitions.
 
-| Shortcut | Action |
-| :--- | :--- |
-| `Ctrl + Enter` / `Cmd + Enter` | Send message / Save edits |
-| `Alt + T` | New chat |
-| `Alt + W` | Delete current chat |
-| `Alt + R` | Rename current chat |
-| `Alt + P` | Toggle sidebar visibility |
-| `Alt + O` | Toggle header visibility |
-| `Alt + D` | Toggle dark mode |
-| `Alt + I` | Open Super Secret Settings |
-| `Alt + Up` / `Alt + Down` | Switch active chat up / down |
-| `Shift + Up` / `Shift + Down` | Scroll between message blocks |
-| `Shift + Enter` (on Send) | Append user message without making an API call |
+### Message actions
 
-### Clicks
+Hover a message to see its buttons:
 
-- **Click on a Thinking box**: Expand or collapse the model's reasoning and tool calls (boxes with nothing in them have nothing to open).
-- **Click on a tool call**: Expand or collapse its code and result.
-- **Retry on a Thinking box**: Resume the turn from where it stopped, keeping everything the box already holds.
-- **Click on a file**: Attach it to, or detach it from, the current chat.
-- **Ctrl / Cmd + Click on Code / Math**: Copy raw content directly to clipboard.
-- **Ctrl / Cmd + Click on Chat Title**: Copy full chat transcript as Markdown (reasoning excluded, tool calls included).
-- **Ctrl / Cmd + Click on File Item**: Open Advanced RAG Settings for that file.
-- **Ctrl / Cmd + Click on Settings Header**: Open Super Secret Settings.
-- **Ctrl / Cmd + Click on the Model Dropdown**: Configure reasoning effort levels.
-- **Alt + Click on File Item**: Replace file contents via file picker.
-- **Alt + Click on Chat Item**: Export specific chat as JSON.
-- **Alt + Click on "+ New"**: Import chats from JSON.
+- **Retry**
+  - On a user message: resends it and discards everything after it.
+  - On a thinking box: resumes the turn from that point.
+- **Copy**: copies the message as markdown.
+- **Edit**: edits part of the message (see below).
+- **Fork**: creates a new chat containing everything up to and including this message.
+- **Delete**: removes the message.
+- **Role dropdown**: switches a message between `user`, `assistant` and `system`.
 
----
+### Editing part of a message
 
-## Architecture
+After clicking **Edit**, click the block (paragraph, list, code block, etc.) you want to change. Its source loads into the composer.
 
-The codebase contains no external runtime frameworks and enforces unidirectional dependencies:
+- Clicking above or below the dotted outline grows the selection.
+- Clicking inside a larger selection keeps only what is below the clicked block. Shift+Click keeps only what is above.
+- With one or two blocks selected, clicking a block toggles it.
+- **Save** (`Ctrl+Enter`) writes the edit back. An empty composer deletes the selected part.
+- **Retry** saves the edit and regenerates from the message.
 
-```
-src/scripts/
-├── core/       # Pure functions: formatting, tokens, roles, thinking, reasoning, tool calls, pipeline, progress, vector math
-├── data/       # IndexedDB repositories and storage keys
-├── store/      # In-memory application state and event emitter
-├── services/   # API clients, conversation loops, RAG, and tool execution
-├── ui/         # DOM manipulation, components, views, live timers, and markdown rendering
-└── app/        # Command registry, event delegation, shortcuts, and bootstrap
-```
+### Thinking boxes
+
+Everything the model does before its answer is grouped into one collapsible box per turn: reasoning, text written alongside tool calls, and the tool calls with their results. The header shows how long you waited. Click any tool call to see its code or query and its result.
+
+## Tools
+
+### JavaScript execution
+
+Tick **Execute JavaScript** to offer the model the `run_javascript` tool. The code runs **inside this page**, with full access to `window`, `document`, `fetch` and the app's own storage, which includes your API key. Only enable it with models and prompts you trust.
+
+Calls run one at a time. Results are capped by **Max Tool Result Tokens**.
+
+### File search (RAG)
+
+1. Set **Embeddings Model** in Advanced settings. File search is disabled without one.
+2. Click **Upload** to add files. Indexing starts automatically in the background, with a progress bar and ETA.
+3. Click a file's name to attach it to the current chat. Attached files are bold.
+
+When a chat has files attached, the model gets a `search_files` tool:
+
+- Your query is embedded and scored against every attached file's chunks by cosine similarity.
+- The best matches from all files compete for one **Max RAG Tokens** budget.
+- Each file's selected passages are put back in document order, merged and wrapped before being returned to the model.
+- The model is told when a file isn't fully indexed yet.
+
+File actions:
+
+| Action                | How                 |
+| --------------------- | ------------------- |
+| Attach or detach      | Click the name      |
+| Replace contents      | Alt+Click the name  |
+| Per-file RAG settings | Ctrl+Click the file |
+
+> Changing the embeddings model deletes **all** stored vectors, and every file must be re-indexed.
+
+### Per-file RAG settings
+
+Ctrl+Click a file to open its settings. The toolbar has:
+
+- **Attempt Chunking**: runs the chunker and writes its output into _Custom Chunks_ so you can hand-edit it.
+- **Start / Pause Embedding**
+- **Export / Import Vectors**: a JSON file of chunks plus base64 vectors. Import requires the same embeddings model.
+
+The per-file settings are:
+
+| Setting                  | Purpose                                                                  |
+| ------------------------ | ------------------------------------------------------------------------ |
+| File Content Text        | Edit the stored file text directly                                       |
+| File Wrapper Function    | Overrides the global wrapper for this file                               |
+| Max RAG Tokens           | Cap on what this file can contribute to one search                       |
+| RAG Match Threshold      | Minimum similarity, from 0 to 1                                          |
+| Max Tokens Per Chunk     | Chunks larger than this are skipped when embedding                       |
+| Custom Chunks (JSON)     | An array of strings or objects that bypasses the chunker entirely        |
+| Custom Chunking Function | Default: 1000-character chunks with 200-character overlap                |
+| Retrieval Function       | Step 1: process or expand each retrieved chunk. Return `null` to drop it |
+| Deduplication Function   | Step 2: return `true` if `currentData` duplicates `existingData`         |
+| Merge Chunks Function    | Step 3: combine the final chunks into one string                         |
+
+All the functions above are bodies of async JavaScript functions. They must `return` a value. Available variables:
+
+| Function      | Variables                     |
+| ------------- | ----------------------------- |
+| Chunker       | `fileContents`, `config`      |
+| Retrieval     | `chunk`, `fileContents`       |
+| Deduplication | `currentData`, `existingData` |
+| Merge         | `finalChunks`                 |
+| Wrapper       | `fileContent`, `fileName`     |
+
+Chunks can be objects. Objects are JSON-stringified for embedding, and the original object is passed to your retrieval and merge functions.
+
+## Advanced settings
+
+Open them with Ctrl+Click on the **Settings** heading, or `Alt+I`.
+
+To change a setting, select it, edit the value in the bottom textarea, and save with **Save** or `Ctrl+Enter`. **Reset** restores one setting's default, and **Reset All** restores every default. Leaving a value blank uses the default.
+
+| Setting                                                        | Default                 | Notes                                                                                                                                                        |
+| -------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Temperature, Top P, Max Tokens, Frequency and Presence Penalty | API default             | Sent only when set                                                                                                                                           |
+| Max Tool Rounds                                                | 10                      | After this many rounds, the model must answer without tools                                                                                                  |
+| Max Tool Result Tokens                                         | 4000                    | Truncates JavaScript results. `0` disables the cap                                                                                                           |
+| Echo Reasoning Field                                           | off                     | `reasoning_content` or `reasoning`. Sends plain-text reasoning back during a tool loop, for models that need it. Signed thinking blocks are always sent back |
+| JavaScript and File Search Tool Descriptions                   | built-in                | What the model is told about each tool                                                                                                                       |
+| Embeddings Base URL / API Key                                  | chat URL / key          | For a separate embeddings provider                                                                                                                           |
+| Embeddings Model                                               | —                       | Required for file search                                                                                                                                     |
+| Extra Models                                                   | —                       | Comma-separated. Always added to the model dropdown                                                                                                          |
+| File Wrapper Function                                          | filename + fenced block | How each file's passages are presented to the model                                                                                                          |
+| Max RAG Tokens                                                 | 5000                    | Total budget per search, across all files                                                                                                                    |
+| RAG Match Threshold                                            | 0.0                     | Minimum similarity                                                                                                                                           |
+| Max Tokens Per Chunk                                           | 1024                    |                                                                                                                                                              |
+| Chunk Batch Size / Batch Max Tokens                            | 100 / 8192              | Per embeddings request                                                                                                                                       |
+| Collapse Thinking                                              | true                    | Whether new thinking boxes start closed                                                                                                                      |
+| Auto-Collapse Code, Threshold, Preview Lines, Hint             | true, 20, 5, true       | Long code blocks fold. Click to toggle                                                                                                                       |
+| Max Visible Chats / Files                                      | unlimited               | Limits sidebar list height                                                                                                                                   |
+
+## Keyboard and mouse
+
+| Shortcut                             | Action                                              |
+| ------------------------------------ | --------------------------------------------------- |
+| `Alt+T`                              | New chat                                            |
+| `Alt+W`                              | Delete current chat                                 |
+| `Alt+R`                              | Rename current chat                                 |
+| `Alt+↑` / `Alt+↓`                    | Previous / next chat                                |
+| `Alt+P`                              | Toggle sidebar                                      |
+| `Alt+O`                              | Toggle title                                        |
+| `Alt+D`                              | Toggle dark mode                                    |
+| `Alt+I`                              | Advanced settings                                   |
+| `Shift+↑` / `Shift+↓`                | Jump between messages                               |
+| `↑` / `↓`                            | Scroll the chat (outside text fields)               |
+| Ctrl+Click code, inline code or math | Copy it. Math copies as LaTeX source                |
+| Ctrl+Click a chat                    | Copy its transcript as markdown (without reasoning) |
+| Alt+Click a chat                     | Export that chat as JSON                            |
+| Alt+Click **New**                    | Import chats                                        |
+
+**Import** and **Export** in the sidebar handle all chats as a single JSON file. Import skips chats whose id already exists.
+
+## Notes
+
+- Markdown output is **not sanitised**. HTML in model output renders as HTML.
+- All data lives in this browser's IndexedDB. Clearing site data deletes your chats, files, vectors and key. Use Export to back up.
+- Token counts are estimates, at 4 characters per token.
+
+## License
+
+See [LICENSE](LICENSE).
