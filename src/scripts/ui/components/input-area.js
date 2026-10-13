@@ -13,7 +13,8 @@ import { isRetryable } from './message.js';
 /** Input area components: composer, settings editor and configurator bars. */
 
 const PROMPT_PLACEHOLDER = 'Type your prompt here...';
-const PICK_PLACEHOLDER = 'Click the part of the message you want to edit.';
+const PICK_PLACEHOLDER =
+  'Click the part of the message you want to edit. Shift+Click another part to select everything in between.';
 const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
 
 /**
@@ -121,7 +122,7 @@ function editingMessage() {
 /**
  * The composer while a message is being edited. Until a block of the message
  * has been selected there is nothing to edit, so the composer is read-only and
- * says how to pick one; after that it holds the selected block's source.
+ * says how to pick one; after that it holds the selected blocks' source.
  */
 function renderComposerMode(chatInput, editingMsg) {
   if (!chatInput) return;

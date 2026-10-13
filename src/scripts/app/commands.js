@@ -25,7 +25,7 @@ import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/mess
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { sourceBlocks } from '../ui/markdown.js';
 import { isSendable, isEditable, isThinking } from '../core/roles.js';
-import { nextRange, editSlice, applyEdit } from '../core/edit-range.js';
+import { nextRange, sameRange, editSlice, applyEdit } from '../core/edit-range.js';
 import { ICON_CHECK } from '../ui/icons.js';
 
 /**
@@ -54,7 +54,7 @@ function leaveSettings(patch = {}) {
   });
 }
 
-/** The session fields of an edit's selected block, cleared. */
+/** The session fields of an edit's selected blocks, cleared. */
 const NO_EDIT_RANGE = { editingRange: null, editingSource: null, editingLoaded: null };
 
 /**
@@ -89,7 +89,7 @@ function confirmDiscard() {
 }
 
 /**
- * Make `range` (a single block) the part of `message` being edited: remember
+ * Make `range` (a run of blocks) the part of `message` being edited: remember
  * it against the content it was taken from, and load its source into the
  * composer.
  */
@@ -306,7 +306,8 @@ export const commands = {
 
   /**
    * Enter edit mode. Nothing in the transcript moves; only the row's buttons
-   * change. The user then clicks the block of the message to edit (see
+   * change. The user then clicks the block of the message to edit, and may
+   * Shift+Click another to extend the selection to it (see
    * `message.selectBlock`). A message with no blocks to click (an empty one)
    * is loaded whole straight away.
    */
@@ -334,19 +335,25 @@ export const commands = {
     if (input) input.value = '';
 
     if (!sourceBlocks(message.content).length) {
-      loadEditRange(message, { start: 0, end: 0 });
+      loadEditRange(message, { start: 0, end: 0, anchor: 0 });
       return;
     }
     emit(EVENTS.EDIT);
   },
 
   /**
-   * A click on block `block` of the message being edited. Only one block is
-   * ever selected: clicking a block selects it (replacing any other), and
-   * clicking the selected block again deselects it, returning the edit to
-   * picking. See `nextRange`.
+   * A click on block `block` of the message being edited.
+   *
+   *   - A plain click selects that block alone (replacing any selection), or
+   *     deselects it if it was the only one selected, returning the edit to
+   *     picking.
+   *   - A Shift+Click while something is selected selects every block from
+   *     the one first clicked to this one, both included.
+   *
+   * See `nextRange`. A click that leaves the selection as it was does nothing,
+   * so it cannot throw away text typed into the composer.
    */
-  'message.selectBlock': ({ index, block }) => {
+  'message.selectBlock': ({ event, index, block }) => {
     if (index !== state.session.editingMessageIndex || !Number.isInteger(block)) return;
     const message = currentChat()?.messages[index];
     if (!message) return;
@@ -355,9 +362,10 @@ export const commands = {
     const blocks = sourceBlocks(content);
     if (block < 0 || block >= blocks.length) return;
 
-    // A block picked on different text says nothing about this one.
+    // A selection made on different text says nothing about this one.
     const current = state.session.editingSource === content ? state.session.editingRange : null;
-    const range = nextRange(current, block);
+    const range = nextRange(current, block, { extend: Boolean(event?.shiftKey) });
+    if (range && sameRange(current, range)) return;
 
     if (!confirmDiscard()) return;
     if (range) loadEditRange(message, range);
@@ -365,9 +373,9 @@ export const commands = {
   },
 
   /**
-   * Splice the composer's text back in place of the selected block. With
+   * Splice the composer's text back in place of the selected blocks. With
    * nothing selected there is nothing to save, and the edit just ends. If the
-   * message changed after the block was picked, the offsets no longer mean
+   * message changed after the blocks were picked, the offsets no longer mean
    * anything: nothing is written, the text stays in the composer, and the user
    * picks again. Resolves with whether the edit ended.
    */

@@ -3,33 +3,59 @@
  *
  * A message renders as a run of top-level markdown blocks, each a span of its
  * source: `{ start, end }` character offsets, end exclusive (see
- * `sourceBlocks` in `ui/markdown.js`). An edit covers exactly one of them,
- * held as a range of block indices, `{ start, end }`, both inclusive and
- * always equal. The range shape is kept so the slicing below, the stale-edit
- * check and the selection outline need no special case for a single block.
+ * `sourceBlocks` in `ui/markdown.js`). An edit covers a contiguous run of
+ * them, held as a range of block indices:
+ *
+ *   { start, end, anchor }
+ *
+ * `start` and `end` are both inclusive, `start <= end`. `anchor` is the block
+ * the selection was started from (the last plain click); Shift+Click extends
+ * the selection from it to the clicked block, whichever side that is on. The
+ * text covered is everything from the first selected block's start to the
+ * last one's end, blank lines between them included.
  *
  * A message with no blocks at all (empty, or only whitespace) is edited whole,
- * as the range `{ start: 0, end: 0 }`.
+ * as the range `{ start: 0, end: 0, anchor: 0 }`.
  */
+
+/** The block a range extends from: its anchor if it has a valid one, else its start. */
+function anchorOf(range) {
+  const { anchor, start, end } = range;
+  return Number.isInteger(anchor) && anchor >= start && anchor <= end ? anchor : start;
+}
 
 /**
  * The range after a click on block `clicked`, or null when the click leaves
  * nothing selected.
  *
- *   - Clicking the selected block deselects it.
- *   - Clicking any other block (or any block while nothing is selected)
- *     selects that block alone.
+ *   - A plain click on the only selected block deselects it.
+ *   - A plain click on any other block (or any block while nothing is
+ *     selected) selects that block alone, and makes it the anchor.
+ *   - A Shift+Click (`extend`) while something is selected selects every
+ *     block from the anchor to the clicked one, both included. The anchor
+ *     stays put, so further Shift+Clicks re-span from it.
+ *   - A Shift+Click while nothing is selected is a plain click.
  */
-export function nextRange(range, clicked) {
+export function nextRange(range, clicked, { extend = false } = {}) {
+  if (extend && range) {
+    const anchor = anchorOf(range);
+    return { start: Math.min(anchor, clicked), end: Math.max(anchor, clicked), anchor };
+  }
   if (range && range.start === clicked && range.end === clicked) return null;
-  return { start: clicked, end: clicked };
+  return { start: clicked, end: clicked, anchor: clicked };
 }
 
-/** Whether `range` addresses a single block that exists. */
+/** Whether two ranges (or two nulls) select the same blocks from the same anchor. */
+export function sameRange(a, b) {
+  if (!a || !b) return a === b;
+  return a.start === b.start && a.end === b.end && anchorOf(a) === anchorOf(b);
+}
+
+/** Whether `range` addresses a run of blocks that exists. */
 export function isValidRange(range, blockCount) {
   if (!range || !Number.isInteger(range.start) || !Number.isInteger(range.end)) return false;
-  if (range.start < 0 || range.start !== range.end) return false;
-  if (blockCount === 0) return range.start === 0;
+  if (range.start < 0 || range.end < range.start) return false;
+  if (blockCount === 0) return range.start === 0 && range.end === 0;
   return range.end < blockCount;
 }
 
