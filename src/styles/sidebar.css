@@ -62,6 +62,12 @@
   font-weight: bold;
 }
 
+/* A file without a search profile: it cannot be attached until configured. */
+.file-item.unconfigured .chat-item-title {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .chat-item-title {
   cursor: pointer;
   flex-grow: 1;
@@ -86,6 +92,15 @@
 .chat-item-actions button .icon {
   width: 1em;
   height: 1em;
+}
+
+.chat-item-actions button.caution {
+  color: var(--role-system);
+  border-color: var(--role-system);
+}
+
+.chat-item-actions button.caution:hover {
+  background: var(--role-system-bg);
 }
 
 .file-progress-stats {

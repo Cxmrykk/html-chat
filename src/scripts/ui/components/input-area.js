@@ -1,19 +1,16 @@
 import { $, setHidden, setText, setDisabled } from '../dom.js';
-import {
-  state,
-  currentChat,
-  isEmbedding,
-} from '../../store/state.js';
+import { state, currentChat } from '../../store/state.js';
 import { estimateTokens } from '../../core/tokens.js';
 import { formatCompactCount, escapeHTML } from '../../core/format.js';
 import { buildApiMessages, payloadChars } from '../../core/tool-calls.js';
 import { toolSchemaChars, toolActivityLabel } from '../../core/tools.js';
-import { schemaFor } from '../../services/settings.js';
+import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
 import { availableModels } from '../../services/models.js';
 import { toolSchemasFor } from '../../services/tools/index.js';
+import { wizardSteps, ASSISTANT_STEPS } from '../../services/wizard.js';
 import { isRetryable } from './message.js';
 
-/** Input area components: composer and settings editor bars. */
+/** Input area components: composer, settings editor and configurator bars. */
 
 const PROMPT_PLACEHOLDER = 'Type your prompt here...';
 const PICK_PLACEHOLDER = 'Click the part of the message you want to edit.';
@@ -134,15 +131,39 @@ function renderComposerMode(chatInput, editingMsg) {
   else chatInput.placeholder = picking ? PICK_PLACEHOLDER : EDIT_PLACEHOLDER;
 }
 
-/** Show the composer or the settings editor, and the right buttons within. */
+/**
+ * The configurator's bar: step navigation, and the assistant's prompt on the
+ * steps where the assistant is shown. Ask turns into Stop while it works.
+ */
+export function renderWizardBar() {
+  const wizard = state.session.wizard;
+  const steps = wizard ? wizardSteps(wizard) : [];
+  const index = wizard ? steps.indexOf(wizard.step) : -1;
+  const assisting = Boolean(wizard) && ASSISTANT_STEPS.includes(wizard.step);
+
+  setDisabled($('#wizard-back-btn'), index <= 0);
+  setHidden($('#wizard-next-btn'), index === -1 || index >= steps.length - 1);
+
+  const ask = $('#wizard-ask-btn');
+  setHidden(ask, !assisting);
+  setText(ask, wizard?.assistant.busy ? 'Stop' : 'Ask');
+  setHidden($('#wizard-input'), !assisting);
+}
+
+/** Show the bar that belongs to the current view, and the right buttons within. */
 export function renderInputArea() {
-  const settingsView = state.session.view !== 'chat';
+  const view = state.session.view;
 
-  setHidden($('#composer-bar'), settingsView);
-  setHidden($('#settings-bar'), !settingsView);
+  setHidden($('#composer-bar'), view !== 'chat');
+  setHidden($('#settings-bar'), view !== 'settings');
+  setHidden($('#wizard-bar'), view !== 'wizard');
 
-  if (settingsView) {
+  if (view === 'settings') {
     renderSettingsEditor();
+    return;
+  }
+  if (view === 'wizard') {
+    renderWizardBar();
     return;
   }
 
@@ -153,7 +174,7 @@ export function renderInputArea() {
   // The model dropdown is repurposed to select thinking options during that mode
   setHidden($('#model-select'), Boolean(editingMsg));
   setHidden($('#send-btn'), !normalMode);
-  
+
   setHidden($('#save-edit-btn'), !editingMsg);
   // Retry regenerates from this message, so it only applies to the role that
   // can start a turn — the same test the non-editing retry button uses.
@@ -178,7 +199,7 @@ export function renderInputArea() {
 
 /** Enable/disable the settings editor according to whether a key is selected. */
 export function renderSettingsEditor() {
-  const { activeSettingKey, view } = state.session;
+  const { activeSettingKey } = state.session;
   const editor = $('#settings-input');
   if (!editor) return;
 
@@ -194,8 +215,7 @@ export function renderSettingsEditor() {
     return;
   }
 
-  const schema = schemaFor(view === 'file-settings' ? 'file' : 'global');
-  editor.placeholder = schema[activeSettingKey]?.tooltip || '';
+  editor.placeholder = GLOBAL_SETTINGS[activeSettingKey]?.tooltip || '';
 }
 
 /** Push the stored draft into the editor without clobbering an active edit. */
@@ -215,13 +235,4 @@ export function applyChromeState() {
   root.classList.toggle('sidebar-hidden', state.session.sidebarHidden);
   root.classList.toggle('title-hidden', state.session.titleHidden);
   root.classList.toggle('dark-theme', state.session.theme === 'dark');
-}
-
-/** Reflect embedding state on the per-file settings toolbar. */
-export function renderEmbeddingToggle(fileId) {
-  if (state.session.view !== 'file-settings' || state.session.activeFileId !== fileId) return;
-  const button = $('[data-command="file.toggleEmbed"]');
-  if (button) {
-    button.textContent = isEmbedding(fileId) ? '⏸ Pause Embedding' : '▶ Start Embedding';
-  }
 }

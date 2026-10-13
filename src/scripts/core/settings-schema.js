@@ -1,46 +1,23 @@
 import { isBlank, pickBoolean } from './values.js';
-import { DEFAULT_JS_TOOL_DESCRIPTION, DEFAULT_SEARCH_TOOL_DESCRIPTION } from './tools.js';
+import { DEFAULT_JS_TOOL_DESCRIPTION, DEFAULT_SEARCH_DESCRIPTIONS } from './tools.js';
 import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
 
 /**
- * The single description of every configurable setting.
+ * The single description of every configurable global setting.
  *
  * Each entry carries everything the rest of the app needs to know about it:
- * how to store it (`type`), what to call it (`label`), what to show in the
- * list (`display`), and what has to happen when it changes
- * (`requiresReembed` / `resetsEmbeddings`). Nothing else should maintain
- * parallel lists of keys.
+ * how to store it (`type`), what to call it (`label`) and what to show in the
+ * list (`display`). Nothing else should maintain parallel lists of keys.
+ *
+ * How individual files are searched is not configured here: that lives in
+ * search profiles (`core/rag-profile.js`), edited in the configurator.
  */
-
-const DEFAULT_FILE_WRAPPER = [
-  'const extMatch = (fileName || "").match(/\\.([^.]+)$/);',
-  'const ext = extMatch ? extMatch[1] : "txt";',
-  'const fence = (fileContent || "").includes("```") ? "````" : "```";',
-  'return "`" + fileName + "`:\\n\\n" + fence + ext + "\\n" + fileContent + "\\n" + fence;',
-].join('\n');
-
-const DEFAULT_CHUNKER = [
-  "// Variables: 'fileContents' (full file string)",
-  'const chunkSize = 1000;',
-  'const chunkOverlap = 200;',
-  'const chunks = [];',
-  'let start = 0;',
-  'while (start < fileContents.length) {',
-  '  let end = start + chunkSize;',
-  '  if (end > fileContents.length) end = fileContents.length;',
-  '  chunks.push(fileContents.substring(start, end));',
-  '  if (end >= fileContents.length) break;',
-  '  start = end - chunkOverlap;',
-  '}',
-  'return chunks;',
-].join('\n');
 
 /** Display helpers shared by several entries. */
 const showApiDefault = (value) => (isBlank(value) ? 'API Default' : String(value));
 const showValueOrDefault = (value) => (isBlank(value) ? 'Default' : String(value));
 const showCustomOrDefault = (value, entry) =>
   isBlank(value) || value === entry.default ? 'Default' : 'Custom';
-const showInheritedOrCustom = (value) => (isBlank(value) ? 'Default' : 'Custom');
 const showOnOff = (value, entry) =>
   pickBoolean(pickBoolean(false, entry.default), value) ? 'On' : 'Off';
 
@@ -133,12 +110,31 @@ export const GLOBAL_SETTINGS = {
     tooltip: 'What the model is told about the JavaScript execution tool.',
     display: showCustomOrDefault,
   },
-  searchToolDescription: {
-    label: 'File Search Tool Description',
+  textSearchToolDescription: {
+    label: 'Text Search Tool Description',
     category: 'Tools',
     type: 'code',
-    default: DEFAULT_SEARCH_TOOL_DESCRIPTION,
-    tooltip: 'What the model is told about the file search tool. The attached file names are appended.',
+    default: DEFAULT_SEARCH_DESCRIPTIONS.text,
+    tooltip:
+      'What the model is told about search_text. The result format, hints about the other search tools and the files (with their profile notes) are appended.',
+    display: showCustomOrDefault,
+  },
+  regexSearchToolDescription: {
+    label: 'Regex Search Tool Description',
+    category: 'Tools',
+    type: 'code',
+    default: DEFAULT_SEARCH_DESCRIPTIONS.regex,
+    tooltip:
+      'What the model is told about search_regex. The result format, hints about the other search tools and the files (with their profile notes) are appended.',
+    display: showCustomOrDefault,
+  },
+  semanticSearchToolDescription: {
+    label: 'Semantic Search Tool Description',
+    category: 'Tools',
+    type: 'code',
+    default: DEFAULT_SEARCH_DESCRIPTIONS.embeddings,
+    tooltip:
+      'What the model is told about search_semantic. The result format, hints about the other search tools and the files (with their profile notes) are appended.',
     display: showCustomOrDefault,
   },
   embeddingsUrl: {
@@ -162,8 +158,8 @@ export const GLOBAL_SETTINGS = {
     category: 'API & Connections',
     type: 'text',
     default: '',
-    tooltip: 'Model used to index files and search them. Empty disables file search.',
-    resetsEmbeddings: true,
+    tooltip:
+      'Model used for semantic file search. Empty disables that method. Changing it discards every stored vector and re-indexes.',
     display: (value) => (isBlank(value) ? 'Disabled' : String(value)),
   },
   extraModels: {
@@ -174,53 +170,28 @@ export const GLOBAL_SETTINGS = {
     tooltip: 'Comma-separated models to always offer, for servers that do not implement /models.',
     display: (value) => (isBlank(value) ? 'None' : String(value)),
   },
-  fileWrapperFunc: {
-    label: 'File Wrapper Function (JS)',
-    category: 'RAG & Document Processing',
-    type: 'code',
-    default: DEFAULT_FILE_WRAPPER,
-    tooltip:
-      "JS Function [Vars: fileContent, fileName]: Wrap one file's retrieved passages before they are returned to the model.",
-    display: showCustomOrDefault,
-  },
   maxRagTokens: {
     label: 'Max RAG Tokens',
-    category: 'RAG & Document Processing',
+    category: 'File Search',
     type: 'number',
     default: '5000',
     tooltip: 'Maximum estimated tokens returned by one file search, across all files searched.',
     display: showValueOrDefault,
   },
-  ragThreshold: {
-    label: 'RAG Match Threshold',
-    category: 'RAG & Document Processing',
-    type: 'number',
-    default: '0.0',
-    tooltip: 'Min similarity threshold (0.0 to 1.0). 0.0 allows anything.',
-    display: showValueOrDefault,
-  },
-  chunkMaxTokens: {
-    label: 'Max Tokens Per Chunk',
-    category: 'RAG & Document Processing',
-    type: 'number',
-    default: '1024',
-    tooltip: 'Maximum tokens allowed per single chunk.',
-    display: showValueOrDefault,
-  },
   chunkBatchSize: {
-    label: 'Chunk Batch Size',
-    category: 'RAG & Document Processing',
+    label: 'Embedding Batch Size',
+    category: 'File Search',
     type: 'number',
     default: '100',
-    tooltip: 'Max chunks sent to Embeddings API at once.',
+    tooltip: 'Max pieces sent to the Embeddings API at once.',
     display: showValueOrDefault,
   },
   chunkBatchMaxTokens: {
-    label: 'Chunk Batch Max Tokens',
-    category: 'RAG & Document Processing',
+    label: 'Embedding Batch Max Tokens',
+    category: 'File Search',
     type: 'number',
     default: '8192',
-    tooltip: 'Max estimated tokens sent to Embeddings API per batch.',
+    tooltip: 'Max estimated tokens sent to the Embeddings API per request. A single piece larger than this is skipped.',
     display: showValueOrDefault,
   },
   collapseThinking: {
@@ -282,94 +253,6 @@ export const GLOBAL_SETTINGS = {
   },
 };
 
-export const FILE_SETTINGS = {
-  fileText: {
-    label: 'File Content Text',
-    category: 'Overrides',
-    type: 'text',
-    default: '',
-    tooltip: 'The full textual content of the file. Edit and save to update.',
-    virtual: true,
-    display: () => 'Custom',
-  },
-  fileWrapperFunc: {
-    label: 'File Wrapper Function (JS)',
-    category: 'Overrides',
-    type: 'code',
-    default: '',
-    tooltip:
-      'Override global File Wrapper Function for this file. [Vars: fileContent, fileName]',
-    display: showInheritedOrCustom,
-  },
-  maxRagTokens: {
-    label: 'Max RAG Tokens',
-    category: 'Overrides',
-    type: 'number',
-    default: '',
-    tooltip: 'Cap on the estimated tokens this file may contribute to a single search. Empty for no cap.',
-    display: (value) => (isBlank(value) ? 'No cap' : String(value)),
-  },
-  ragThreshold: {
-    label: 'RAG Match Threshold',
-    category: 'Overrides',
-    type: 'number',
-    default: '',
-    tooltip: 'Override global match threshold for this file. (0.0 to 1.0)',
-    display: showInheritedOrCustom,
-  },
-  chunkMaxTokens: {
-    label: 'Max Tokens Per Chunk',
-    category: 'Overrides',
-    type: 'number',
-    default: '',
-    tooltip: 'Override global max tokens per chunk for this file.',
-    display: showInheritedOrCustom,
-  },
-  customChunks: {
-    label: 'Custom Chunks (JSON)',
-    category: 'Chunk Generation',
-    type: 'code',
-    default: '',
-    tooltip: 'A JSON array to bypass all chunking logic.',
-    requiresReembed: true,
-    display: showInheritedOrCustom,
-  },
-  customChunker: {
-    label: 'Custom Chunking Function (JS)',
-    category: 'Chunk Generation',
-    type: 'code',
-    default: DEFAULT_CHUNKER,
-    tooltip:
-      'JS Function [Vars: fileContents]: Create an array of chunks (strings or objects). Default splits by 1000 chars with a 200 char overlap.',
-    requiresReembed: true,
-    display: showCustomOrDefault,
-  },
-  retrievalFunc: {
-    label: '1. Retrieval Function (JS)',
-    category: 'Post-Retrieval Processing',
-    type: 'code',
-    default: 'return chunk;',
-    tooltip: 'JS Function [Vars: chunk, fileContents]: Step 1. Process or expand context.',
-    display: showCustomOrDefault,
-  },
-  dedupFunc: {
-    label: '2. Deduplication Function (JS)',
-    category: 'Post-Retrieval Processing',
-    type: 'code',
-    default: 'return currentData === existingData;',
-    tooltip: 'JS Function [Vars: currentData, existingData]: Step 2. Dup check.',
-    display: showCustomOrDefault,
-  },
-  mergeChunksFunc: {
-    label: '3. Merge Chunks Function (JS)',
-    category: 'Post-Retrieval Processing',
-    type: 'code',
-    default: `return finalChunks.map(c => typeof c === 'string' ? c : JSON.stringify(c)).join("...");`,
-    tooltip: 'JS Function [Vars: finalChunks]: Step 3. Combine.',
-    display: showCustomOrDefault,
-  },
-};
-
 /** Group schema keys by category, preserving declaration order. */
 export function groupByCategory(schema) {
   const groups = new Map();
@@ -387,14 +270,4 @@ export function describeSetting(schema, key, value) {
   if (!entry) return '';
   const display = entry.display || showApiDefault;
   return display(value, entry);
-}
-
-/** Keys whose change should wipe every stored vector. */
-export function resetsEmbeddings(schema, key) {
-  return Boolean(schema[key]?.resetsEmbeddings);
-}
-
-/** Keys whose change invalidates the current chunk set. */
-export function requiresReembed(schema, key) {
-  return Boolean(schema[key]?.requiresReembed);
 }

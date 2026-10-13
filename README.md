@@ -5,10 +5,11 @@ A browser chat client for any OpenAI-compatible API, built into a single `index.
 Features:
 
 - Streaming chat with reasoning display (`reasoning_content` / `reasoning` fields, inline `<think>` tags, LiteLLM `thinking_blocks`)
-- Tool calling: JavaScript execution in the page, and semantic search over your own files (RAG)
+- Tool calling: JavaScript execution in the page, and search over your own files by text, regular expression and embeddings
+- A file search configurator, with an optional LLM assistant that sets it up from a sample of the file
 - Editing, retrying, forking and deleting any message, and changing its role
 - Markdown, syntax highlighting and KaTeX math
-- Import and export of chats and embedding vectors
+- Import and export of chats
 - Light and dark themes, with keyboard-driven navigation
 
 ## Getting started
@@ -78,63 +79,67 @@ Tick **Execute JavaScript** to offer the model the `run_javascript` tool. The co
 
 Calls run one at a time. Results are capped by **Max Tool Result Tokens**.
 
-### File search (RAG)
+### File search
 
-1. Set **Embeddings Model** in Advanced settings. File search is disabled without one.
-2. Click **Upload** to add files. Indexing starts automatically in the background, with a progress bar and ETA.
-3. Click a file's name to attach it to the current chat. Attached files are bold.
+Uploaded files are searched according to a **search profile**: a named, reusable description of how one kind of document is searched. A file without a profile shows a caution sign, cannot be attached to a chat, and is not indexed.
 
-When a chat has files attached, the model gets a `search_files` tool:
+1. Click **Upload**. The configurator opens for the new file (files uploaded together are configured one after another).
+2. Pick an existing profile, or create one, and save it.
+3. Click the file's name to attach it to the current chat. Attached files are bold.
 
-- Your query is embedded and scored against every attached file's chunks by cosine similarity.
-- The best matches from all files compete for one **Max RAG Tokens** budget.
-- Each file's selected passages are put back in document order, merged and wrapped before being returned to the model.
-- The model is told when a file isn't fully indexed yet.
+Each search method a profile enables becomes a tool for the model:
 
-File actions:
+| Method     | Tool              | Finds                                                                     |
+| ---------- | ----------------- | ------------------------------------------------------------------------- |
+| Text       | `search_text`     | Sections containing a phrase, literally and case-insensitively            |
+| Regex      | `search_regex`    | Sections matching a JavaScript regular expression                         |
+| Embeddings | `search_semantic` | Sections similar in meaning to a query (needs an **Embeddings Model**)    |
 
-| Action                | How                 |
-| --------------------- | ------------------- |
-| Attach or detach      | Click the name      |
-| Replace contents      | Alt+Click the name  |
-| Per-file RAG settings | Ctrl+Click the file |
+A tool is offered only when at least one attached file enables its method, and it lists only those files, with the notes of their profile. Each tool's description also points the model at the other search tools available in the chat.
 
-> Changing the embeddings model deletes **all** stored vectors, and every file must be re-indexed.
+#### How results are built
 
-### Per-file RAG settings
+A profile's **parser** splits the document into **sections**, each with a **path**: its place in the document hierarchy, such as `Installation › Linux`. Search results are whole sections, labelled with their path and line numbers. A section longer than the profile's maximum size is shown as an excerpt around the match, and is embedded in pieces.
 
-Ctrl+Click a file to open its settings. The toolbar has:
+- Text and regex rank sections by how many matches they hold. Embeddings rank them by similarity.
+- The best candidates from all files compete for one **Max RAG Tokens** budget.
+- A profile can add neighbouring sections, and the first lines of the file (a CSV header row, say), to every result.
+- Each file's results are put back in document order and merged where they touch.
+- The model is told when a file isn't fully indexed yet, or when its parser failed.
 
-- **Attempt Chunking**: runs the chunker and writes its output into _Custom Chunks_ so you can hand-edit it.
-- **Start / Pause Embedding**
-- **Export / Import Vectors**: a JSON file of chunks plus base64 vectors. Import requires the same embeddings model.
+#### The configurator
 
-The per-file settings are:
+Open it by clicking a file with a caution sign (its name or the sign), or by Ctrl+Clicking any file.
 
-| Setting                  | Purpose                                                                  |
-| ------------------------ | ------------------------------------------------------------------------ |
-| File Content Text        | Edit the stored file text directly                                       |
-| File Wrapper Function    | Overrides the global wrapper for this file                               |
-| Max RAG Tokens           | Cap on what this file can contribute to one search                       |
-| RAG Match Threshold      | Minimum similarity, from 0 to 1                                          |
-| Max Tokens Per Chunk     | Chunks larger than this are skipped when embedding                       |
-| Custom Chunks (JSON)     | An array of strings or objects that bypasses the chunker entirely        |
-| Custom Chunking Function | Default: 1000-character chunks with 200-character overlap                |
-| Retrieval Function       | Step 1: process or expand each retrieved chunk. Return `null` to drop it |
-| Deduplication Function   | Step 2: return `true` if `currentData` duplicates `existingData`         |
-| Merge Chunks Function    | Step 3: combine the final chunks into one string                         |
+1. **Profile**: use an existing profile as it is, start from one, or create a new one. Profiles claiming the file's extension are listed first.
+2. **Methods**: tick the search methods. At least one is required.
+3. **Structure**: choose a parser and its options. A live outline of the file shows every section, its size, and warnings such as oversized sections or a file that did not split at all.
+4. **Output**: breadcrumbs, neighbouring sections, header lines, the similarity threshold, and **notes for the chat model**, which are added to the tool description. A test box runs a text or regex search on the file and shows exactly what the model would receive.
+5. **Save**: name the profile and list the extensions it suits. Saving can also apply it to the other unconfigured files with those extensions. When editing an existing profile, **Update** changes it for every file that uses it (they are re-indexed), and **Save as a new profile** leaves them alone.
 
-All the functions above are bodies of async JavaScript functions. They must `return` a value. Available variables:
+Parser presets:
 
-| Function      | Variables                     |
-| ------------- | ----------------------------- |
-| Chunker       | `fileContents`, `config`      |
-| Retrieval     | `chunk`, `fileContents`       |
-| Deduplication | `currentData`, `existingData` |
-| Merge         | `finalChunks`                 |
-| Wrapper       | `fileContent`, `fileName`     |
+| Preset              | Sections                                                                       |
+| ------------------- | ------------------------------------------------------------------------------ |
+| Markdown headings   | One per heading; the path is the chain of headings above it                    |
+| XML / HTML elements | One per element (named ones, or all down to a depth); labelled by id/name/title |
+| Paragraphs          | Paragraphs after blank lines, grouped up to a minimum size                     |
+| Lines               | Runs of N lines: records in CSV, TSV, logs, JSON Lines                         |
+| Fixed size          | Roughly equal lengths, cut at line breaks                                      |
+| Custom code         | Your own JavaScript (see below)                                                |
 
-Chunks can be objects. Objects are JSON-stringified for embedding, and the original object is passed to your retrieval and merge functions.
+A custom parser is the body of an async JavaScript function. It receives `text` (the whole file) and `fileName`, and returns an array of boundaries, `{ start, path }`. `start` is the character offset at which a section begins, and `path` is an array of strings. A section runs until the next boundary, and text before the first boundary becomes an untitled preamble. The code runs in this page.
+
+#### The assistant
+
+From the Structure step on, an assistant can configure the profile for you. It uses the model selected for chatting, with a hard-coded prompt, statistics about the whole file, and a sample of it (the whole file if it is small; otherwise its start, middle and end).
+
+- **Generate configuration** asks it to fill in everything except the search methods, which stay as you chose them.
+- The box under the configurator (`Ctrl+Enter`) asks it for changes, in conversation.
+- Before showing you a configuration, the app runs its parser on the whole file. If the configuration fails to parse or splits the file badly, the problems are sent back to the model automatically, up to three attempts in all.
+- Its changes go into the draft and the outline. Nothing is saved until you save.
+
+> Changing the embeddings model deletes **all** stored vectors, and every file that uses embeddings is re-indexed.
 
 ## Advanced settings
 
@@ -142,24 +147,21 @@ Open them with Ctrl+Click on the **Settings** heading, or `Alt+I`.
 
 To change a setting, select it, edit the value in the bottom textarea, and save with **Save** or `Ctrl+Enter`. **Reset** restores one setting's default, and **Reset All** restores every default. Leaving a value blank uses the default.
 
-| Setting                                                        | Default                 | Notes                                                                                                                                                        |
-| -------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Temperature, Top P, Max Tokens, Frequency and Presence Penalty | API default             | Sent only when set                                                                                                                                           |
-| Max Tool Rounds                                                | 10                      | After this many rounds, the model must answer without tools                                                                                                  |
-| Max Tool Result Tokens                                         | 4000                    | Truncates JavaScript results. `0` disables the cap                                                                                                           |
-| Echo Reasoning Field                                           | off                     | `reasoning_content` or `reasoning`. Sends plain-text reasoning back during a tool loop, for models that need it. Signed thinking blocks are always sent back |
-| JavaScript and File Search Tool Descriptions                   | built-in                | What the model is told about each tool                                                                                                                       |
-| Embeddings Base URL / API Key                                  | chat URL / key          | For a separate embeddings provider                                                                                                                           |
-| Embeddings Model                                               | —                       | Required for file search                                                                                                                                     |
-| Extra Models                                                   | —                       | Comma-separated. Always added to the model dropdown                                                                                                          |
-| File Wrapper Function                                          | filename + fenced block | How each file's passages are presented to the model                                                                                                          |
-| Max RAG Tokens                                                 | 5000                    | Total budget per search, across all files                                                                                                                    |
-| RAG Match Threshold                                            | 0.0                     | Minimum similarity                                                                                                                                           |
-| Max Tokens Per Chunk                                           | 1024                    |                                                                                                                                                              |
-| Chunk Batch Size / Batch Max Tokens                            | 100 / 8192              | Per embeddings request                                                                                                                                       |
-| Collapse Thinking                                              | true                    | Whether new thinking boxes start closed                                                                                                                      |
-| Auto-Collapse Code, Threshold, Preview Lines, Hint             | true, 20, 5, true       | Long code blocks fold. Click to toggle                                                                                                                       |
-| Max Visible Chats / Files                                      | unlimited               | Limits sidebar list height                                                                                                                                   |
+| Setting                                                        | Default           | Notes                                                                                                                                                        |
+| -------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Temperature, Top P, Max Tokens, Frequency and Presence Penalty | API default       | Sent only when set                                                                                                                                           |
+| Max Tool Rounds                                                | 10                | After this many rounds, the model must answer without tools                                                                                                  |
+| Max Tool Result Tokens                                         | 4000              | Truncates JavaScript results. `0` disables the cap                                                                                                           |
+| Echo Reasoning Field                                           | off               | `reasoning_content` or `reasoning`. Sends plain-text reasoning back during a tool loop, for models that need it. Signed thinking blocks are always sent back |
+| JavaScript, Text, Regex and Semantic Search Tool Descriptions  | built-in          | What the model is told about each tool. For search tools, the result format, hints and file list are appended                                               |
+| Embeddings Base URL / API Key                                  | chat URL / key    | For a separate embeddings provider                                                                                                                           |
+| Embeddings Model                                               | —                 | Required for semantic search                                                                                                                                 |
+| Extra Models                                                   | —                 | Comma-separated. Always added to the model dropdown                                                                                                          |
+| Max RAG Tokens                                                 | 5000              | Total budget per search, across all files                                                                                                                    |
+| Embedding Batch Size / Batch Max Tokens                        | 100 / 8192        | Per embeddings request                                                                                                                                       |
+| Collapse Thinking                                              | true              | Whether new thinking boxes start closed                                                                                                                      |
+| Auto-Collapse Code, Threshold, Preview Lines, Hint             | true, 20, 5, true | Long code blocks fold. Click to toggle                                                                                                                       |
+| Max Visible Chats / Files                                      | unlimited         | Limits sidebar list height                                                                                                                                   |
 
 ## Keyboard and mouse
 
@@ -179,14 +181,18 @@ To change a setting, select it, edit the value in the bottom textarea, and save 
 | Ctrl+Click a chat                    | Copy its transcript as markdown (without reasoning) |
 | Alt+Click a chat                     | Export that chat as JSON                            |
 | Alt+Click **New**                    | Import chats                                        |
+| Click a file                         | Attach or detach it (configure it first if needed)  |
+| Ctrl+Click a file                    | Change how it is searched                           |
+| Alt+Click a file                     | Replace its contents                                |
 
 **Import** and **Export** in the sidebar handle all chats as a single JSON file. Import skips chats whose id already exists.
 
 ## Notes
 
 - Markdown output is **not sanitised**. HTML in model output renders as HTML.
-- All data lives in this browser's IndexedDB. Clearing site data deletes your chats, files, vectors and key. Use Export to back up.
+- All data lives in this browser's IndexedDB. Clearing site data deletes your chats, files, profiles, vectors and key. Use Export to back up chats.
 - Token counts are estimates, at 4 characters per token.
+- Files uploaded before search profiles existed come up unconfigured: their old chunks overlapped, which sections cannot, so they are set up again like new uploads.
 
 ## License
 

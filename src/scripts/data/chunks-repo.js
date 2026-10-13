@@ -3,7 +3,15 @@ import { KEYS } from './keys.js';
 import { cosineSimilarity } from '../core/vector.js';
 import { estimateTokensOf } from '../core/tokens.js';
 
-/** Chunk records: one IndexedDB entry per chunk, keyed by zero-padded index. */
+/**
+ * Embedding units (`core/embedding-units.js`): one IndexedDB entry per unit,
+ * keyed by zero-padded index,
+ *
+ *   { index, sectionIndex, start, end, text, vector }
+ *
+ * where `start` and `end` are the unit's span of the file text and `text` is
+ * what was embedded (breadcrumb plus span).
+ */
 
 export async function listChunks(fileId) {
   const chunks = await idb.getByPrefix(KEYS.chunkPrefix(fileId));
@@ -25,10 +33,12 @@ export function deleteChunks(fileId) {
 }
 
 /**
- * Collect the next batch of chunks to embed while counting the whole set in a
+ * Collect the next batch of units to embed while counting the whole set in a
  * single cursor pass, so the caller gets batch + totals without a second scan.
+ * A unit larger than one request's token limit can never be embedded and is
+ * counted as ignored.
  */
-export async function nextEmbeddingBatch(fileId, { maxBatch, maxTokens, chunkLimit }) {
+export async function nextEmbeddingBatch(fileId, { maxBatch, maxTokens }) {
   const batch = [];
   let batchTokens = 0;
   let ignoredCount = 0;
@@ -42,7 +52,7 @@ export async function nextEmbeddingBatch(fileId, { maxBatch, maxTokens, chunkLim
       return true;
     }
     const tokens = estimateTokensOf(chunk.text);
-    if (tokens > chunkLimit || tokens > maxTokens) {
+    if (tokens > maxTokens) {
       ignoredCount++;
       return true;
     }
@@ -57,16 +67,16 @@ export async function nextEmbeddingBatch(fileId, { maxBatch, maxTokens, chunkLim
 }
 
 /**
- * Score a file's embedded chunks against a query vector and keep the best
+ * Score a file's embedded units against a query vector and keep the best
  * `limit` of those at or above `threshold`.
  *
  * Vectors are compared during the cursor walk and then dropped, and the
  * survivors are trimmed back to `limit` whenever they reach twice that, so
- * neither the embeddings nor the text of a large file is ever resident all at
- * once — only the lightweight `{ fileId, index, score, text, raw }` records of
+ * the embeddings of a large file are never resident all at once — only the
+ * lightweight `{ fileId, index, sectionIndex, start, end, score }` records of
  * the current leaders.
  *
- * `vectorCount` is how many chunks were searchable at all; zero means the file
+ * `vectorCount` is how many units were searchable at all; zero means the file
  * has not been indexed.
  */
 export async function scoreChunks(fileId, queryVector, { threshold = 0, limit = Infinity } = {}) {
@@ -79,7 +89,7 @@ export async function scoreChunks(fileId, queryVector, { threshold = 0, limit = 
   };
 
   await idb.scanByPrefix(KEYS.chunkPrefix(fileId), (chunk) => {
-    if (!chunk.vector) return true;
+    if (!chunk.vector || !Number.isInteger(chunk.start) || !Number.isInteger(chunk.end)) return true;
     vectorCount++;
 
     const score = cosineSimilarity(queryVector, chunk.vector);
@@ -88,9 +98,10 @@ export async function scoreChunks(fileId, queryVector, { threshold = 0, limit = 
     scored.push({
       fileId,
       index: chunk.index,
+      sectionIndex: chunk.sectionIndex,
+      start: chunk.start,
+      end: chunk.end,
       score,
-      text: chunk.text,
-      raw: chunk.raw !== undefined ? chunk.raw : chunk.text,
     });
     if (scored.length >= limit * 2) trim();
     return true;

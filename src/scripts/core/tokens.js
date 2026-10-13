@@ -3,7 +3,7 @@
  * close enough for budgeting and needs no tokenizer dependency.
  */
 
-const CHARS_PER_TOKEN = 4;
+export const CHARS_PER_TOKEN = 4;
 
 /** Stringify a chunk value the same way everywhere. */
 export function textOf(value) {
@@ -22,4 +22,9 @@ export function estimateTokens(text) {
 
 export function estimateTokensOf(value) {
   return estimateTokens(textOf(value));
+}
+
+/** Estimated tokens in a span of `length` characters, without slicing it out. */
+export function tokensForLength(length) {
+  return Math.ceil(Math.max(0, length) / CHARS_PER_TOKEN);
 }

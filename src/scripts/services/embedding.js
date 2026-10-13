@@ -1,97 +1,46 @@
 import { EVENTS } from '../store/events.js';
-import {
-  state,
-  emit,
-  findFile,
-  persistFiles,
-  embeddingsEnabled,
-  reportHookError,
-} from '../store/state.js';
+import { state, emit, findFile, profileOf, persistFiles, embeddingsEnabled } from '../store/state.js';
 import * as chunksRepo from '../data/chunks-repo.js';
-import * as filesRepo from '../data/files-repo.js';
 import { fetchEmbeddings } from './api/embeddings.js';
-import { chunkerHook } from './user-hooks.js';
-import { buildChunks, reconcileChunks, countUnembeddable } from '../core/pipeline.js';
 import { computeProgress, computeEta } from '../core/progress.js';
 import { pickInteger } from '../core/values.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 
-/** Chunking and background embedding loop orchestration. */
+/**
+ * The background loop that embeds a file's units, one batch at a time. What
+ * the units are is `services/indexing.js`; this only fills in their vectors.
+ */
 
-function limitsFor(meta, config) {
+export function embeddingLimits(config) {
   return {
-    chunkLimit: pickInteger(
-      1024,
-      meta?.chunkMaxTokens,
-      config.chunkMaxTokens,
-      GLOBAL_SETTINGS.chunkMaxTokens.default,
-    ),
     batchMaxTokens: pickInteger(
       8192,
       config.chunkBatchMaxTokens,
       GLOBAL_SETTINGS.chunkBatchMaxTokens.default,
     ),
-    batchSize: pickInteger(100, config.chunkBatchSize, GLOBAL_SETTINGS.chunkBatchSize.default),
+    batchSize: Math.max(
+      1,
+      pickInteger(100, config.chunkBatchSize, GLOBAL_SETTINGS.chunkBatchSize.default),
+    ),
   };
 }
 
-function applyProgress(meta, { chunkCount, embeddedCount, ignoredCount }) {
-  const { exactProgress, progress, processed } = computeProgress({
-    chunkCount,
-    embeddedCount,
-    ignoredCount,
-  });
+/** Write progress counters onto a file's metadata. Returns the computed progress. */
+export function applyProgress(meta, { chunkCount, embeddedCount, ignoredCount = 0 }) {
+  const result = computeProgress({ chunkCount, embeddedCount, ignoredCount });
   meta.chunkCount = chunkCount;
   meta.embeddedCount = embeddedCount;
-  meta.exactProgress = exactProgress;
-  meta.progress = progress;
-  return processed;
+  meta.exactProgress = result.exactProgress;
+  meta.progress = result.progress;
+  return result;
 }
 
-/**
- * Rebuild a file's chunk set, preserving vectors for chunks whose text is
- * unchanged. Writes nothing when the chunk set is identical.
- */
-export async function refreshFileChunks(fileId) {
-  const meta = findFile(fileId);
-  if (!meta) return;
-
-  const data = await filesRepo.loadFileData(fileId);
-  if (!data) return;
-
-  const rawChunks = await buildChunks({
-    fileText: data.text || '',
-    customChunks: meta.customChunks,
-    chunkerFn: chunkerHook(meta),
-    config: state.data.config,
-    onError: reportHookError,
-  });
-
-  const previous = await chunksRepo.listChunks(fileId);
-  const { chunks, changed } = await reconcileChunks(rawChunks, previous);
-  if (!changed) return;
-
-  await chunksRepo.replaceChunks(fileId, chunks);
-
-  const limits = limitsFor(meta, state.data.config);
-  const ignoredCount = await countUnembeddable(chunks, limits);
-  const embeddedCount = chunks.filter((chunk) => chunk.vector).length;
-
-  applyProgress(meta, { chunkCount: chunks.length, embeddedCount, ignoredCount });
-  if (meta.progress >= 100) stopEmbedding(fileId);
-
-  await persistFiles();
-  emit(EVENTS.FILE_PROGRESS, { id: fileId });
-}
-
-/** One pass of the embedding loop for a single file. */
 async function runEmbeddingLoop(fileId, signal) {
   const config = state.data.config;
   const meta = findFile(fileId);
   if (!meta) return;
 
-  const { chunkLimit, batchMaxTokens, batchSize } = limitsFor(meta, config);
-
+  const { batchMaxTokens, batchSize } = embeddingLimits(config);
   const startedAt = Date.now();
   let baselineEmbedded = null;
 
@@ -100,25 +49,14 @@ async function runEmbeddingLoop(fileId, signal) {
       const current = findFile(fileId);
       if (!current) break;
 
-      let stats = await chunksRepo.nextEmbeddingBatch(fileId, {
+      const stats = await chunksRepo.nextEmbeddingBatch(fileId, {
         maxBatch: batchSize,
         maxTokens: batchMaxTokens,
-        chunkLimit,
       });
-
-      // No chunk records at all: build them, then look again.
-      if (stats.chunkCount === 0) {
-        await refreshFileChunks(fileId);
-        if (signal.aborted) break;
-        stats = await chunksRepo.nextEmbeddingBatch(fileId, {
-          maxBatch: batchSize,
-          maxTokens: batchMaxTokens,
-          chunkLimit,
-        });
-      }
 
       // Nothing left that can be embedded.
       if (stats.batch.length === 0) {
+        applyProgress(current, stats);
         current.exactProgress = 100;
         current.progress = 100;
         current.embeddingSpeed = null;
@@ -133,14 +71,15 @@ async function runEmbeddingLoop(fileId, signal) {
         stats.batch.map((chunk) => chunk.text),
         signal,
       );
+      if (signal.aborted) break;
 
       stats.batch.forEach((chunk, i) => {
-        chunk.vector = new Float32Array(vectors[i]);
+        chunk.vector = new Float32Array(vectors[i] || []);
       });
       await chunksRepo.putChunks(fileId, stats.batch);
 
       const embeddedCount = stats.embeddedCount + stats.batch.length;
-      const processed = applyProgress(current, {
+      const { processed } = applyProgress(current, {
         chunkCount: stats.chunkCount,
         embeddedCount,
         ignoredCount: stats.ignoredCount,
@@ -184,10 +123,14 @@ async function runEmbeddingLoop(fileId, signal) {
 
 /**
  * Start embedding a file. Idempotent: returns the in-flight promise if the
- * loop is already running.
+ * loop is already running. A no-op without an embeddings model, or when the
+ * file's profile does not search by embeddings.
  */
 export function startEmbedding(fileId) {
-  if (!embeddingsEnabled()) return Promise.resolve();
+  const meta = findFile(fileId);
+  if (!meta || !embeddingsEnabled() || !profileOf(meta)?.methods.embeddings) {
+    return Promise.resolve();
+  }
 
   const existing = state.runtime.embedding.get(fileId);
   if (existing) return existing.promise;
@@ -195,12 +138,10 @@ export function startEmbedding(fileId) {
   const controller = new AbortController();
   const entry = { controller, promise: null };
   state.runtime.embedding.set(fileId, entry);
-
-  const meta = findFile(fileId);
-  if (meta) meta.isEmbedding = true;
+  meta.isEmbedding = true;
 
   entry.promise = runEmbeddingLoop(fileId, controller.signal).finally(() => {
-    state.runtime.embedding.delete(fileId);
+    if (state.runtime.embedding.get(fileId) === entry) state.runtime.embedding.delete(fileId);
     const current = findFile(fileId);
     if (current) current.isEmbedding = false;
     persistFiles();
@@ -218,44 +159,12 @@ export function stopEmbedding(fileId) {
   if (meta) meta.isEmbedding = false;
 }
 
-export async function toggleEmbedding(fileId) {
-  if (state.runtime.embedding.has(fileId)) {
-    stopEmbedding(fileId);
-    return;
-  }
-  await startEmbedding(fileId);
-}
-
-/** Wipe every vector — used when the embeddings model changes. */
-export async function resetAllEmbeddings() {
-  for (const meta of state.data.files) {
-    stopEmbedding(meta.id);
-    meta.progress = 0;
-    meta.exactProgress = 0;
-    meta.embeddedCount = 0;
-    meta.chunkCount = 0;
-    meta.isEmbedding = false;
-    meta.embeddingSpeed = null;
-    meta.embeddingEta = null;
-    await chunksRepo.deleteChunks(meta.id);
-  }
-  await persistFiles();
-  emit(EVENTS.FILES);
-}
-
-/** Regenerate `customChunks` from the chunker. Throws so callers can report. */
-export async function generateCustomChunks(fileId) {
-  const meta = findFile(fileId);
-  const data = await filesRepo.loadFileData(fileId);
-  if (!meta || !data) return;
-
-  const chunker = chunkerHook(meta);
-  const result = await chunker(data.text || '', state.data.config);
-  const chunks = Array.isArray(result)
-    ? result.filter((chunk) => chunk !== null && chunk !== undefined)
-    : [];
-
-  meta.customChunks = JSON.stringify(chunks, null, 2);
-  await persistFiles();
-  await refreshFileChunks(fileId);
+/**
+ * Stop embedding a file and wait until the loop has fully exited, so its units
+ * can be replaced without a late batch writing stale vectors into them.
+ */
+export async function stopEmbeddingAndWait(fileId) {
+  const entry = state.runtime.embedding.get(fileId);
+  stopEmbedding(fileId);
+  if (entry) await entry.promise.catch(() => {});
 }

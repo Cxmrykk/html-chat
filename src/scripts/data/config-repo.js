@@ -18,6 +18,19 @@ const BASE_CONFIG = {
 };
 
 /**
+ * Global settings that no longer exist: file search is configured per
+ * profile now, so the single search description, the wrapper function and
+ * the global per-chunk settings have no successor here.
+ */
+const RETIRED_FIELDS = [
+  'godModePrompt',
+  'searchToolDescription',
+  'fileWrapperFunc',
+  'ragThreshold',
+  'chunkMaxTokens',
+];
+
+/**
  * Fields from before JavaScript execution became a tool: the switch carries
  * over under its new name, and the system prompt that used to drive the
  * feature has no successor (the tool's description does that job now).
@@ -28,7 +41,7 @@ function migrateLegacyFields(stored) {
     config.jsExecution = Boolean(config.godMode);
   }
   delete config.godMode;
-  delete config.godModePrompt;
+  for (const field of RETIRED_FIELDS) delete config[field];
   return config;
 }
 

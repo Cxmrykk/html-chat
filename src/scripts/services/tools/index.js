@@ -1,16 +1,19 @@
-import { state, chatFiles, embeddingsEnabled } from '../../store/state.js';
+import { state, searchableFiles, profileOf } from '../../store/state.js';
 import {
   TOOL_NAMES,
+  SEARCH_TOOLS,
   DEFAULT_JS_TOOL_DESCRIPTION,
-  DEFAULT_SEARCH_TOOL_DESCRIPTION,
+  DEFAULT_SEARCH_DESCRIPTIONS,
   javascriptToolSchema,
   searchToolSchema,
+  isSearchTool,
 } from '../../core/tools.js';
+import { SEARCH_METHODS } from '../../core/rag-profile.js';
 import { parseToolArguments, clampToolResult } from '../../core/tool-calls.js';
 import { pick, pickNumber } from '../../core/values.js';
 import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
 import { runJavaScript } from './javascript.js';
-import { runFileSearch } from './file-search.js';
+import { runTextSearch, runRegexSearch, runSemanticSearch } from './file-search.js';
 
 /** Which tools a chat's requests offer, and the running of the calls that come back. */
 
@@ -21,15 +24,24 @@ import { runFileSearch } from './file-search.js';
  */
 const EXECUTORS = {
   [TOOL_NAMES.javascript]: runJavaScript,
-  [TOOL_NAMES.search]: runFileSearch,
+  [SEARCH_TOOLS.text]: runTextSearch,
+  [SEARCH_TOOLS.regex]: runRegexSearch,
+  [SEARCH_TOOLS.embeddings]: runSemanticSearch,
+};
+
+/** The advanced setting holding each search tool's description. */
+const DESCRIPTION_SETTINGS = {
+  text: 'textSearchToolDescription',
+  regex: 'regexSearchToolDescription',
+  embeddings: 'semanticSearchToolDescription',
 };
 
 const failure = (content) => ({ content, failed: true });
 
 /**
- * JavaScript execution is one global switch. File search needs no switch of its
- * own: it is offered exactly when the chat has files attached (and there is an
- * embeddings model to search them with).
+ * JavaScript execution is one global switch. Each search method is offered
+ * exactly when at least one attached file's profile enables it (and, for
+ * embeddings, there is a model to search with), listing only those files.
  */
 export function toolSchemasFor(chat) {
   const config = state.data.config;
@@ -39,13 +51,18 @@ export function toolSchemasFor(chat) {
     tools.push(javascriptToolSchema(pick(config.jsToolDescription, DEFAULT_JS_TOOL_DESCRIPTION)));
   }
 
-  const files = chatFiles(chat);
-  if (files.length && embeddingsEnabled()) {
+  const offered = SEARCH_METHODS.map((method) => ({ method, files: searchableFiles(chat, method) })).filter(
+    (entry) => entry.files.length,
+  );
+  const methods = offered.map((entry) => entry.method);
+
+  for (const { method, files } of offered) {
     tools.push(
-      searchToolSchema(
-        pick(config.searchToolDescription, DEFAULT_SEARCH_TOOL_DESCRIPTION),
-        files.map((file) => file.name),
-      ),
+      searchToolSchema(method, {
+        description: pick(config[DESCRIPTION_SETTINGS[method]], DEFAULT_SEARCH_DESCRIPTIONS[method]),
+        files: files.map((file) => ({ name: file.name, notes: profileOf(file)?.notes || '' })),
+        methods,
+      }),
     );
   }
 
@@ -80,7 +97,7 @@ export async function runToolCall(call, { chat, signal }) {
   const failed = Boolean(outcome?.failed);
 
   // File search budgets itself (Max RAG Tokens); everything else is capped here.
-  if (call.name === TOOL_NAMES.search) return { content, failed };
+  if (isSearchTool(call.name)) return { content, failed };
   const cap = pickNumber(
     4000,
     state.data.config.toolResultMaxTokens,

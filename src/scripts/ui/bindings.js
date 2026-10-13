@@ -15,7 +15,7 @@ import {
   renderInputArea,
   renderSendButton,
   renderSettingsEditor,
-  renderEmbeddingToggle,
+  renderWizardBar,
   applyChromeState,
   updateModelDropdown,
 } from './components/input-area.js';
@@ -28,6 +28,12 @@ import {
   scrollToBottom,
 } from './views/chat-view.js';
 import { renderSettingsView } from './views/settings-view.js';
+import {
+  renderWizardView,
+  renderWizardPreview,
+  renderWizardTest,
+  renderWizardAssistant,
+} from './views/wizard-view.js';
 import { syncTicker } from './ticker.js';
 
 /** Declarative event bindings mapping store events to UI renders. */
@@ -39,6 +45,8 @@ import { syncTicker } from './ticker.js';
 export function renderMainView({ preserveScroll = false } = {}) {
   if (state.session.view === 'chat') {
     renderChatView({ preserveScroll });
+  } else if (state.session.view === 'wizard') {
+    renderWizardView();
   } else {
     renderSettingsView();
   }
@@ -158,12 +166,31 @@ export function installBindings() {
 
   on(EVENTS.FILES, () => {
     renderChatFiles();
-    if (state.session.view === 'file-settings') renderSettingsView();
   });
 
   on(EVENTS.FILE_PROGRESS, ({ id }) => {
     updateFileProgress(id);
-    renderEmbeddingToggle(id);
+  });
+
+  on(EVENTS.PROFILES, () => {
+    renderFileList();
+    if (state.session.view === 'chat') renderChatView({ preserveScroll: true });
+    else if (state.session.view === 'wizard') renderWizardView();
+  });
+
+  on(EVENTS.WIZARD, ({ part = 'all', resetScroll = false } = {}) => {
+    if (state.session.view !== 'wizard') return;
+    if (part === 'preview') {
+      renderWizardPreview();
+    } else if (part === 'test') {
+      renderWizardTest();
+    } else if (part === 'assistant') {
+      renderWizardAssistant();
+      renderWizardBar();
+    } else {
+      renderWizardView({ resetScroll });
+      renderInputArea();
+    }
   });
 
   on(EVENTS.SESSION, () => {

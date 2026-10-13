@@ -4,7 +4,9 @@ import * as configRepo from '../data/config-repo.js';
 import * as chatsRepo from '../data/chats-repo.js';
 import * as filesRepo from '../data/files-repo.js';
 import * as prefsRepo from '../data/prefs-repo.js';
+import * as profilesRepo from '../data/profiles-repo.js';
 import { startEmbedding } from '../services/embedding.js';
+import { migrateLegacyFiles } from '../services/file-library.js';
 import { ensureActiveModel, refreshModels } from '../services/models.js';
 import { installBindings, renderAll } from '../ui/bindings.js';
 import { installEventHandlers } from './events.js';
@@ -31,15 +33,17 @@ function resumeEmbeddings() {
 }
 
 async function init() {
-  const [config, chats, files, prefs] = await Promise.all([
+  const [config, chats, files, prefs, profiles] = await Promise.all([
     configRepo.loadConfig(),
     chatsRepo.loadChats(),
     filesRepo.loadFileMetas(),
     prefsRepo.loadPrefs(),
+    profilesRepo.loadProfiles(),
   ]);
 
   state.data.config = config;
   state.data.files = files;
+  state.data.profiles = profiles;
   state.data.chats = chats.sort((a, b) => Number(b.id) - Number(a.id));
   state.data.currentChatId =
     prefs.currentChatId || (state.data.chats.length ? state.data.chats[0].id : null);
@@ -53,6 +57,9 @@ async function init() {
     },
     { silent: true },
   );
+
+  // Files from before search profiles come up unconfigured.
+  await migrateLegacyFiles();
 
   hydrateConnectionForm();
   // The cached list (or legacy migration) may already point somewhere stale.

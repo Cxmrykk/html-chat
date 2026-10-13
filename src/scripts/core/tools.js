@@ -9,8 +9,26 @@ import { truncate } from './format.js';
 
 export const TOOL_NAMES = {
   javascript: 'run_javascript',
-  search: 'search_files',
+  text: 'search_text',
+  regex: 'search_regex',
+  semantic: 'search_semantic',
 };
+
+/** The single search tool of older chats, still read when they are shown. */
+const LEGACY_SEARCH_TOOL = 'search_files';
+
+/** Each search method's tool. Keys are the methods of `core/rag-profile.js`. */
+export const SEARCH_TOOLS = {
+  text: TOOL_NAMES.text,
+  regex: TOOL_NAMES.regex,
+  embeddings: TOOL_NAMES.semantic,
+};
+
+const SEARCH_TOOL_NAMES = [...Object.values(SEARCH_TOOLS), LEGACY_SEARCH_TOOL];
+
+export function isSearchTool(name) {
+  return SEARCH_TOOL_NAMES.includes(name);
+}
 
 export const DEFAULT_JS_TOOL_DESCRIPTION = [
   "Execute JavaScript in the user's web browser, inside the page that is running this chat, and get the result back.",
@@ -20,12 +38,39 @@ export const DEFAULT_JS_TOOL_DESCRIPTION = [
   'Use this tool for any arithmetic, logic or data processing instead of working it out yourself, write real logic rather than hardcoded answers, and if a call throws, fix the code and call again.',
 ].join(' ');
 
-export const DEFAULT_SEARCH_TOOL_DESCRIPTION = [
-  'Search the files the user has attached to this chat and get back the most relevant passages.',
-  'Matching is by semantic similarity, so phrase the query as a natural-language description of the information you need rather than as keywords.',
-  'Results are excerpts, not whole files: search again with a different query if the first passages do not answer the question.',
-  'Base your answer on the returned passages, and say so when they do not contain the answer.',
-].join(' ');
+/** What the model is told about each search method; editable in the advanced settings. */
+export const DEFAULT_SEARCH_DESCRIPTIONS = {
+  text: [
+    'Search the files attached to this chat for sections that contain a phrase.',
+    'Matching is literal and case-insensitive: the query must appear in the file exactly as written (apart from case),',
+    'so use it for names, identifiers, error codes, numbers and exact wording, and keep queries short.',
+  ].join(' '),
+  regex: [
+    'Search the files attached to this chat for sections matching a JavaScript regular expression.',
+    'Use it for variants and structured tokens, for example `v\\d+\\.\\d+` or `(?:GET|POST) /users`.',
+    'Give the expression source without slashes in `pattern`; `flags` may contain i, m, s and u.',
+  ].join(' '),
+  embeddings: [
+    'Search the files attached to this chat by meaning.',
+    'Matching is by semantic similarity, so phrase the query as a natural-language description of the information you need rather than as keywords.',
+  ].join(' '),
+};
+
+/** Appended to every search description: the result format is the app's, not the user's. */
+const RESULTS_NOTE =
+  'Results are sections of the files, each labelled with its place in the document and its line numbers; long sections are shown as an excerpt around the match. ' +
+  'Base your answer on the returned passages, and say so when they do not contain the answer.';
+
+const SWITCH_HINTS = {
+  text: '`search_text` for exact wording',
+  regex: '`search_regex` for patterns and variants',
+  embeddings: '`search_semantic` for the same idea in other words',
+};
+
+function joinOr(items) {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`;
+}
 
 export function javascriptToolSchema(description) {
   return {
@@ -48,29 +93,61 @@ export function javascriptToolSchema(description) {
 }
 
 /**
- * `fileNames` are the files attached to the chat. Listing them as an enum both
- * tells the model what exists and stops it inventing names.
+ * One search method's tool. `files` are the attached files this method may
+ * search, `[{ name, notes }]`: listed in the description with their profile's
+ * notes, and as an enum, which both tells the model what exists and stops it
+ * inventing names. `methods` are all the search methods this chat offers, so
+ * the description can point at the others.
  */
-export function searchToolSchema(description, fileNames) {
+export function searchToolSchema(method, { description, files, methods }) {
+  const others = methods.filter((entry) => entry !== method && SWITCH_HINTS[entry]).map((entry) => SWITCH_HINTS[entry]);
+  const hint = others.length ? ` If this finds nothing useful, try ${joinOr(others)}.` : '';
+  const list = files
+    .map((file) => {
+      const notes = (file.notes || '').replace(/\s+/g, ' ').trim();
+      return `- ${file.name}${notes ? `: ${notes}` : ''}`;
+    })
+    .join('\n');
+
+  const filesParameter = {
+    type: 'array',
+    items: { type: 'string', enum: files.map((file) => file.name) },
+    description: 'Restrict the search to these files. Omit to search every file listed above.',
+  };
+
+  const properties =
+    method === 'regex'
+      ? {
+          pattern: {
+            type: 'string',
+            description: 'A JavaScript regular expression source, without surrounding slashes.',
+          },
+          flags: {
+            type: 'string',
+            description: 'Any of i (ignore case), m (^ and $ match at line breaks), s (. matches newlines), u (unicode). Optional.',
+          },
+          files: filesParameter,
+        }
+      : {
+          query: {
+            type: 'string',
+            description:
+              method === 'text'
+                ? 'The phrase to look for, exactly as it appears in the file (case does not matter).'
+                : 'What to look for, described in natural language.',
+          },
+          files: filesParameter,
+        };
+
   return {
     type: 'function',
     function: {
-      name: TOOL_NAMES.search,
-      description: `${description}\n\nAttached files:\n${fileNames.map((name) => `- ${name}`).join('\n')}`,
+      name: SEARCH_TOOLS[method],
+      description: `${description} ${RESULTS_NOTE}${hint}\n\nFiles:\n${list}`,
       parameters: {
         type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'What to look for, described in natural language.',
-          },
-          files: {
-            type: 'array',
-            items: { type: 'string', enum: fileNames },
-            description: 'Restrict the search to these files. Omit to search every attached file.',
-          },
-        },
-        required: ['query'],
+        properties,
+        required: [method === 'regex' ? 'pattern' : 'query'],
       },
     },
   };
@@ -84,7 +161,7 @@ export function toolSchemaChars(tools) {
 /** Send-button wording while a tool runs. */
 export function toolActivityLabel(name) {
   if (name === TOOL_NAMES.javascript) return 'Running JavaScript';
-  if (name === TOOL_NAMES.search) return 'Searching files';
+  if (isSearchTool(name)) return 'Searching files';
   return 'Running tool';
 }
 
@@ -209,13 +286,30 @@ function tenseOf(call) {
 
 const VERBS = {
   [TOOL_NAMES.javascript]: { active: 'Running JavaScript', past: 'Ran JavaScript', none: 'JavaScript' },
-  [TOOL_NAMES.search]: { active: 'Searching files', past: 'Searched files', none: 'File search' },
+  [TOOL_NAMES.text]: { active: 'Searching text', past: 'Searched text', none: 'Text search' },
+  [TOOL_NAMES.regex]: { active: 'Matching pattern', past: 'Matched pattern', none: 'Regex search' },
+  [TOOL_NAMES.semantic]: {
+    active: 'Searching by meaning',
+    past: 'Searched by meaning',
+    none: 'Semantic search',
+  },
+  [LEGACY_SEARCH_TOOL]: { active: 'Searching files', past: 'Searched files', none: 'File search' },
 };
+
+/** What a search looked for: the query, or `/pattern/flags`. */
+function searchDetail(call) {
+  if (call?.name === TOOL_NAMES.regex) {
+    const pattern = stringArgument(call, 'pattern');
+    const flags = argumentsOf(call).flags;
+    return pattern ? `/${pattern}/${typeof flags === 'string' ? flags : ''}` : '';
+  }
+  return stringArgument(call, 'query').trim();
+}
 
 /**
  * The one-line header of a call: what it does, in the tense of its status
  * (`verb`), what it was given (`detail`: the first line of the code, or the
- * whole search query), and which files a search was limited to (`scope`).
+ * search query or pattern), and which files a search was limited to (`scope`).
  */
 export function toolCallHeadline(call) {
   const tense = tenseOf(call);
@@ -237,7 +331,7 @@ export function toolCallHeadline(call) {
 
   return {
     verb: known[tense],
-    detail: stringArgument(call, 'query').trim(),
+    detail: searchDetail(call),
     scope: filesOf(call).join(', '),
   };
 }
@@ -262,7 +356,7 @@ export function toolCallRequestMarkdown(call) {
   if (call?.name === TOOL_NAMES.javascript) {
     return fenced(stringArgument(call, 'code').trim(), 'javascript');
   }
-  if (call?.name === TOOL_NAMES.search) return '';
+  if (isSearchTool(call?.name)) return '';
   return fenced(call?.arguments || '{}', 'json');
 }
 
@@ -270,10 +364,7 @@ export function toolCallRequestMarkdown(call) {
 export function toolCallMarkdown(call) {
   const { verb, scope } = toolCallHeadline(call);
   const title = `**${verb}${scope ? ` in ${scope}` : ''}:**`;
-  const request =
-    call?.name === TOOL_NAMES.search
-      ? fenced(stringArgument(call, 'query').trim())
-      : toolCallRequestMarkdown(call);
+  const request = isSearchTool(call?.name) ? fenced(searchDetail(call)) : toolCallRequestMarkdown(call);
   const outcome =
     typeof call?.result === 'string'
       ? `**Result:**\n${call.result || '*(empty)*'}`

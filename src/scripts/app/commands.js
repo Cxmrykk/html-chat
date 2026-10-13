@@ -5,23 +5,24 @@ import {
   emit,
   currentChat,
   findFile,
+  findProfile,
+  profileOf,
+  usableMethods,
   setSession,
   persistPrefs,
   persistConfig,
   invalidateContext,
-  isEmbedding,
-  embeddingsEnabled,
 } from '../store/state.js';
 import * as conversation from '../services/conversation.js';
 import * as library from '../services/file-library.js';
 import * as settings from '../services/settings.js';
 import * as transfer from '../services/transfer.js';
-import * as embedding from '../services/embedding.js';
 import * as models from '../services/models.js';
+import * as wizard from '../services/wizard.js';
+import * as profiles from '../services/profiles.js';
 import { pickFiles, readFileText, pickJSONText } from '../services/file-io.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
-import { renderMainView } from '../ui/bindings.js';
 import { sourceBlocks } from '../ui/markdown.js';
 import { isSendable, isEditable, isThinking } from '../core/roles.js';
 import { nextRange, editSlice, applyEdit } from '../core/edit-range.js';
@@ -41,11 +42,12 @@ import { ICON_CHECK } from '../ui/icons.js';
  * Helpers
  * ------------------------------------------------------------------ */
 
+/** Back to the transcript from any other view. An open configurator is abandoned. */
 function leaveSettings(patch = {}) {
+  wizard.closeWizard({ silent: true });
   setSession({
     view: 'chat',
     activeSettingKey: null,
-    activeFileId: null,
     settingsDraft: null,
     editingThinking: false,
     ...patch,
@@ -125,20 +127,26 @@ function clearEditRange() {
   emit(EVENTS.EDIT);
 }
 
-async function openSettingsScope(view, fileId = null) {
-  const sameTarget = state.session.view === view && state.session.activeFileId === fileId;
-  if (sameTarget) {
+/** Open the advanced settings, or close them if they are open. */
+function toggleSettings() {
+  if (state.session.view === 'settings') {
     leaveSettings();
     return;
   }
   stopEditing();
+  wizard.closeWizard({ silent: true });
   setSession({
-    view,
-    activeFileId: fileId,
+    view: 'settings',
     activeSettingKey: null,
     settingsDraft: null,
     editingThinking: false,
   });
+}
+
+/** Open the file search configurator for a file. */
+async function configureFile(id, options = {}) {
+  stopEditing();
+  await wizard.openWizard(id, options);
 }
 
 function collapseSidebarOnMobile() {
@@ -495,21 +503,28 @@ export const commands = {
 
   /* ---- files ---- */
 
+  /** Upload files, then configure them one after another in the configurator. */
   'file.upload': async () => {
     const files = await pickFiles({ multiple: true });
+    const ids = [];
     for (const file of files) {
-      await library.addFile(file.name, await readFileText(file));
+      ids.push(await library.addFile(file.name, await readFileText(file)));
     }
+    if (!ids.length) return;
+    stopEditing();
+    await wizard.configureFiles(ids);
   },
 
   /**
-   * Attach a file to the current chat, or detach it. The sidebar stays open on
-   * mobile: attaching several files in a row is the common case.
+   * Attach a file to the current chat, or detach it. An unconfigured file
+   * cannot be searched, so trying to attach one opens the configurator, and
+   * attaches it once it is saved. The sidebar stays open on mobile:
+   * attaching several files in a row is the common case.
    */
   'file.toggle': async ({ event, id }) => {
     if (event?.ctrlKey || event?.metaKey) {
       event.preventDefault();
-      await openSettingsScope('file-settings', id);
+      await configureFile(id);
       return;
     }
     if (event?.altKey) {
@@ -523,88 +538,104 @@ export const commands = {
     if (!meta) return;
 
     const attaching = !(currentChat()?.fileIds || []).includes(id);
-    if (attaching && !embeddingsEnabled()) {
-      alert('Files are searched by embedding. Please configure an embeddings model in Settings first.');
+    if (!attaching) {
+      await conversation.toggleChatFile(id);
+      return;
+    }
+
+    const profile = profileOf(meta);
+    if (!profile) {
+      await configureFile(id, { attachOnSave: true });
+      return;
+    }
+    if (!usableMethods(profile).length) {
+      alert(
+        'This file is searched only by embeddings, and no embeddings model is configured. ' +
+          'Set one in the advanced settings (Alt+I), or change the file\'s configuration (Ctrl+Click).',
+      );
       return;
     }
 
     // No view change and no transcript re-render: this only flips a marker.
     await conversation.toggleChatFile(id);
-
-    // A file uploaded before the embeddings model was set has never been indexed.
-    if (attaching && (meta.progress ?? 0) < 100) embedding.startEmbedding(id);
   },
 
-  'file.delete': async ({ event, id }) => {
-    if (event?.ctrlKey || event?.metaKey) {
-      event.preventDefault();
-      await openSettingsScope('file-settings', id);
-      return;
-    }
-    if (state.session.view === 'file-settings' && state.session.activeFileId === id) {
-      leaveSettings();
-    }
-    await library.deleteFile(id);
+  /** The caution button: configure a file that cannot be searched yet. */
+  'file.configure': async ({ id }) => {
+    await configureFile(id);
   },
 
-  'file.openSettings': async ({ event, id }) => {
+  /** Ctrl/Cmd+Click anywhere on a file row: change its search configuration. */
+  'file.edit': async ({ event, id }) => {
     if (!(event?.ctrlKey || event?.metaKey)) return;
     event.preventDefault();
-    await openSettingsScope('file-settings', id);
+    await configureFile(id);
   },
 
-  'file.chunk': async () => {
-    const id = state.session.activeFileId;
-    if (!id) return;
-    try {
-      await embedding.generateCustomChunks(id);
-      if (state.session.activeSettingKey === 'customChunks') {
-        await commands['settings.select']({ key: 'customChunks' });
-      } else {
-        renderMainView();
-      }
-    } catch (error) {
-      alert(`Error executing customChunker: ${error.message}`);
-    }
+  'file.delete': async ({ id }) => {
+    const meta = findFile(id);
+    if (!meta) return;
+    await library.deleteFile(id);
+    await wizard.forgetFile(id);
   },
 
-  'file.toggleEmbed': async () => {
-    const id = state.session.activeFileId;
-    if (!id) return;
-    if (!embeddingsEnabled()) {
-      alert('Please configure an embeddings model in Settings first.');
+  /* ---- file search configurator ---- */
+
+  'wizard.step': ({ key }) => wizard.goToStep(key),
+
+  'wizard.next': () => wizard.nextStep(),
+
+  'wizard.back': () => wizard.previousStep(),
+
+  'wizard.close': () => leaveSettings(),
+
+  'wizard.newProfile': () => wizard.startNewProfile(),
+
+  'wizard.useProfile': ({ key }) => wizard.useProfile(key),
+
+  'wizard.editProfile': ({ key }) => wizard.editProfile(key),
+
+  'wizard.deleteProfile': async ({ key }) => {
+    const profile = findProfile(key);
+    if (!profile) return;
+    const count = profiles.filesUsing(key).length;
+    const message = count
+      ? `Delete the profile "${profile.name}"? ${count} file(s) use it and will need configuring again.`
+      : `Delete the profile "${profile.name}"?`;
+    if (!confirm(message)) return;
+    await wizard.deleteProfile(key);
+  },
+
+  /** A form control in the configurator changed; see `installFieldBindings`. */
+  'wizard.setField': ({ element, rerender }) => {
+    if (!element?.dataset.field) return;
+    const value = element.type === 'checkbox' ? element.checked : element.value;
+    wizard.setField(element.dataset.scope || 'draft', element.dataset.field, value, {
+      rerender: Boolean(rerender),
+    });
+  },
+
+  'wizard.test': () => wizard.runTest(),
+
+  'wizard.generate': () => wizard.generate(),
+
+  /** Send the prompt box to the assistant; while it works, the same button stops it. */
+  'wizard.ask': async () => {
+    if (wizard.isAssistantBusy()) {
+      wizard.stopAssistant();
       return;
     }
-    await embedding.toggleEmbedding(id);
-  },
-
-  'file.exportVectors': async () => {
-    const id = state.session.activeFileId;
-    if (!id) return;
-    try {
-      await transfer.exportVectors(id);
-    } catch (error) {
-      alert(error.message);
-    }
-  },
-
-  'file.importVectors': async () => {
-    const id = state.session.activeFileId;
-    if (!id) return;
-    const text = await pickJSONText();
+    const input = $('#wizard-input');
+    const text = input?.value.trim() ?? '';
     if (!text) return;
-    try {
-      await transfer.importVectors(id, text);
-      if (state.session.activeSettingKey === 'customChunks') {
-        await commands['settings.select']({ key: 'customChunks' });
-      } else {
-        renderMainView();
-      }
-      alert('Imported chunks and vectors successfully.');
-    } catch (error) {
-      alert(`Failed to import: ${error.message}`);
-    }
+    input.value = '';
+    const sent = await wizard.ask(text);
+    if (!sent && input && !input.value) input.value = text;
   },
+
+  'wizard.clearAssistant': () => wizard.clearAssistant(),
+
+  'wizard.save': ({ key }) => wizard.save(key === 'update' ? 'update' : 'new'),
 
   /* ---- settings ---- */
 
@@ -630,31 +661,28 @@ export const commands = {
   'settings.toggle': async ({ event } = {}) => {
     if (event && !(event.ctrlKey || event.metaKey)) return;
     event?.preventDefault();
-    await openSettingsScope('settings');
+    toggleSettings();
   },
 
-  'settings.select': async ({ key }) => {
-    const scope = state.session.view === 'file-settings' ? 'file' : 'global';
-    const value = await settings.readEditorValue(scope, key, state.session.activeFileId);
+  'settings.select': ({ key }) => {
+    const value = settings.readEditorValue(key);
     setSession({ activeSettingKey: key, settingsDraft: value });
     setSettingsEditorValue(value);
     $('#settings-input')?.focus();
   },
 
   'settings.save': async () => {
-    const { activeSettingKey, activeFileId, view } = state.session;
+    const { activeSettingKey } = state.session;
     if (!activeSettingKey) return;
-    const scope = view === 'file-settings' ? 'file' : 'global';
     const value = $('#settings-input')?.value ?? '';
-    await settings.saveSetting(scope, activeSettingKey, value, activeFileId);
+    await settings.saveSetting(activeSettingKey, value);
     setSession({ activeSettingKey: null, settingsDraft: null });
   },
 
   'settings.reset': async () => {
-    const { activeSettingKey, activeFileId, view } = state.session;
+    const { activeSettingKey } = state.session;
     if (!activeSettingKey) return;
-    const scope = view === 'file-settings' ? 'file' : 'global';
-    await settings.resetSetting(scope, activeSettingKey, activeFileId);
+    await settings.resetSetting(activeSettingKey);
     setSession({ activeSettingKey: null, settingsDraft: null });
   },
 
@@ -663,14 +691,8 @@ export const commands = {
   },
 
   'settings.resetAll': async () => {
-    const { activeFileId, view } = state.session;
-    const scope = view === 'file-settings' ? 'file' : 'global';
-    const message = scope === 'file'
-      ? 'Reset ALL Advanced RAG parameters to default for this file?'
-      : 'Reset ALL Advanced parameters to default?';
-    if (!confirm(message)) return;
-
-    await settings.resetAllSettings(scope, activeFileId);
+    if (!confirm('Reset ALL Advanced parameters to default?')) return;
+    await settings.resetAllSettings();
     setSession({ activeSettingKey: null, settingsDraft: null });
   },
 
@@ -712,5 +734,3 @@ export function runCommand(name, context = {}) {
     console.error(`Command "${name}" failed:`, error);
   });
 }
-
-export { isEmbedding };

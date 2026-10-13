@@ -1,0 +1,343 @@
+/*
+ * The file search configurator. It reuses the settings header and the
+ * message-content code styling (`.msg-content`) for rendered output; the rest
+ * is here.
+ */
+
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.wizard .settings-subtitle {
+  margin: 0;
+}
+
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.wizard-steps button.active {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  font-weight: bold;
+}
+
+.wizard-section {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: 15px;
+}
+
+.wizard-section h3 {
+  margin: 0 0 10px;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.wizard-hint {
+  margin: 0 0 10px;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.wizard-error {
+  border: 1px solid var(--role-error);
+  background: var(--role-error-bg);
+  color: var(--role-error);
+  padding: 8px 10px;
+  white-space: pre-wrap;
+}
+
+.wizard-field {
+  margin-bottom: 12px;
+}
+
+.wizard-field label {
+  display: block;
+}
+
+.wizard-label {
+  display: block;
+  font-weight: bold;
+  font-size: 0.9em;
+  margin-bottom: 4px;
+}
+
+.wizard-field input,
+.wizard-field select,
+.wizard-field textarea {
+  margin-bottom: 4px;
+}
+
+.wizard-field .wizard-hint {
+  margin-bottom: 0;
+}
+
+.wizard-code {
+  min-height: 240px;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+/* A checkbox with a title and an explanation, as one click target. */
+.wizard-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border-soft);
+  cursor: pointer;
+}
+
+.wizard-check:hover {
+  background: var(--bg-soft-hover);
+}
+
+.wizard-check input {
+  width: auto;
+  margin: 0.35em 0 0;
+  flex-shrink: 0;
+}
+
+.wizard-check .wizard-hint {
+  display: block;
+  margin: 2px 0 0;
+}
+
+.wizard-check.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.wizard-check.disabled:hover {
+  background: transparent;
+}
+
+.wizard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.wizard-summary {
+  font-size: 0.9em;
+}
+
+/* ------------------------------------------------------------------ *
+ * Profile list
+ * ------------------------------------------------------------------ */
+
+.profile-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border-soft);
+}
+
+.profile-row.match {
+  border-color: var(--accent);
+}
+
+.profile-info {
+  min-width: 0;
+}
+
+.profile-name {
+  font-weight: bold;
+}
+
+.profile-meta {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.profile-actions .icon-btn {
+  padding: 5px;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 0.75em;
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+/* ------------------------------------------------------------------ *
+ * Outline preview
+ * ------------------------------------------------------------------ */
+
+.outline-summary {
+  margin: 0 0 8px;
+  font-size: 0.9em;
+}
+
+.outline-warning {
+  margin: 4px 0;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.outline-warning.severe {
+  color: var(--role-error);
+}
+
+.outline-tree {
+  max-height: 360px;
+  overflow: auto;
+  margin-top: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-inset);
+  font-size: 0.85em;
+}
+
+.outline-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 1px 8px 1px calc(8px + var(--depth, 0) * 14px);
+  white-space: nowrap;
+}
+
+.outline-row:hover {
+  background: var(--bg-soft-hover);
+}
+
+.outline-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline-size {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.outline-row.oversized .outline-size {
+  color: var(--role-error);
+}
+
+.outline-row.preamble .outline-label {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.outline-more {
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ *
+ * Test search
+ * ------------------------------------------------------------------ */
+
+.wizard-test-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.wizard-test-row select,
+.wizard-test-row input,
+.wizard-test-row button {
+  margin: 0;
+}
+
+.wizard-test-row select {
+  width: auto;
+}
+
+.wizard-test-row input[data-test-query] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wizard-test-row .wizard-flags {
+  width: 6em;
+  flex-shrink: 0;
+}
+
+.wizard-output {
+  margin-top: 10px;
+  max-height: 480px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-inset);
+}
+
+/* ------------------------------------------------------------------ *
+ * Assistant
+ * ------------------------------------------------------------------ */
+
+.assistant-log {
+  margin-top: 10px;
+}
+
+.assistant-msg {
+  border-left: 3px solid var(--border);
+  background: var(--bg-inset);
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+
+.assistant-msg.user {
+  border-color: var(--role-user);
+}
+
+.assistant-msg.model {
+  border-color: var(--role-assistant);
+}
+
+.assistant-msg.pending {
+  opacity: 0.85;
+}
+
+.assistant-status {
+  margin: 0;
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.assistant-changes {
+  margin: 6px 0 0;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.assistant-problems {
+  margin-top: 6px;
+  font-size: 0.85em;
+  color: var(--role-error);
+}
+
+.assistant-problems p,
+.assistant-problems ul {
+  margin: 0;
+}

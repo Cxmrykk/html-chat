@@ -9,9 +9,14 @@ export const KEYS = {
   chat: (id) => `mf_chat_${id}`,
   files: 'mf_files',
   fileData: (id) => `mf_filedata_${id}`,
+  /** A file's sections as last parsed (see `data/sections-repo.js`). */
+  sections: (id) => `mf_sections_${id}`,
+  /** Embedding units, one record each (see `data/chunks-repo.js`). */
   chunkPrefix: (fileId) => `mf_chunk_${fileId}_`,
   chunk: (fileId, index) =>
     `mf_chunk_${fileId}_${String(index).padStart(CHUNK_INDEX_WIDTH, '0')}`,
+  /** Every search profile, as one list. */
+  profiles: 'mf_rag_profiles',
   sidebarHidden: 'mf_sidebar_hidden',
   titleHidden: 'mf_title_hidden',
   promptHeight: 'mf_prompt_height',

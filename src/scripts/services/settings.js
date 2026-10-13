@@ -1,134 +1,59 @@
 import { EVENTS } from '../store/events.js';
-import {
-  state,
-  emit,
-  findFile,
-  persistConfig,
-  persistFiles,
-  invalidateContext,
-} from '../store/state.js';
-import {
-  GLOBAL_SETTINGS,
-  FILE_SETTINGS,
-  resetsEmbeddings,
-  requiresReembed,
-} from '../core/settings-schema.js';
+import { state, emit, persistConfig, invalidateContext } from '../store/state.js';
+import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 import { coerceForStorage } from '../core/values.js';
-import { resetAllEmbeddings, refreshFileChunks } from './embedding.js';
-import { getFileText, setFileText } from './file-library.js';
+import { resetAllEmbeddings } from './indexing.js';
 
-/** Settings management parameterised by scope (global or file-level). */
-
-export function schemaFor(scope) {
-  return scope === 'file' ? FILE_SETTINGS : GLOBAL_SETTINGS;
-}
-
-function targetFor(scope, fileId) {
-  return scope === 'file' ? findFile(fileId) : state.data.config;
-}
+/** The global advanced settings. Per-file search configuration lives in profiles. */
 
 /** Current stored value for a key, ready to display in the list. */
-export function readSetting(scope, key, fileId) {
-  const target = targetFor(scope, fileId);
-  return target ? target[key] : undefined;
+export function readSetting(key) {
+  return state.data.config[key];
 }
 
 /** Editor contents: the stored value, or the schema default when unset. */
-export async function readEditorValue(scope, key, fileId) {
-  const schema = schemaFor(scope);
-  const entry = schema[key];
+export function readEditorValue(key) {
+  const entry = GLOBAL_SETTINGS[key];
   if (!entry) return '';
-
-  if (scope === 'file' && key === 'fileText') {
-    return getFileText(fileId);
-  }
-
-  const target = targetFor(scope, fileId);
-  const value = target ? target[key] : undefined;
+  const value = state.data.config[key];
   return value !== undefined && value !== '' ? String(value) : entry.default;
 }
 
-async function afterMutation(scope, key, fileId, previousEmbeddingsModel) {
-  if (scope === 'file') {
-    await persistFiles();
-    if (requiresReembed(FILE_SETTINGS, key)) await refreshFileChunks(fileId);
-    emit(EVENTS.FILES);
-  } else {
-    await persistConfig();
-    if (
-      resetsEmbeddings(GLOBAL_SETTINGS, key) &&
-      previousEmbeddingsModel !== state.data.config.embeddingsModel
-    ) {
-      await resetAllEmbeddings();
-    }
-    // extraModels (and, in principle, any future global affecting the
-    // dropdown) needs the model list repainted.
-    emit(EVENTS.MODELS);
-    // Whether file search is on offer depends on the embeddings model.
-    emit(EVENTS.CHAT_FILES);
+async function afterMutation(previousEmbeddingsModel) {
+  await persistConfig();
+  if (previousEmbeddingsModel !== state.data.config.embeddingsModel) {
+    await resetAllEmbeddings();
   }
+  // Extra models change the dropdown; the embeddings model changes which
+  // search methods can run, and so the tools, the file list and the banner.
+  emit(EVENTS.MODELS);
+  emit(EVENTS.CHAT_FILES);
+  emit(EVENTS.FILES);
   invalidateContext();
 }
 
-export async function saveSetting(scope, key, rawValue, fileId) {
-  const schema = schemaFor(scope);
-  const entry = schema[key];
+export async function saveSetting(key, rawValue) {
+  const entry = GLOBAL_SETTINGS[key];
   if (!entry) return;
-
-  if (scope === 'file' && key === 'fileText') {
-    await setFileText(fileId, rawValue);
-    emit(EVENTS.FILES);
-    invalidateContext();
-    return;
-  }
-
-  const target = targetFor(scope, fileId);
-  if (!target) return;
-
   const previousModel = state.data.config.embeddingsModel;
-  target[key] = coerceForStorage(rawValue, entry.type);
-  await afterMutation(scope, key, fileId, previousModel);
+  state.data.config[key] = coerceForStorage(rawValue, entry.type);
+  await afterMutation(previousModel);
 }
 
-export async function resetSetting(scope, key, fileId) {
-  const schema = schemaFor(scope);
-  const entry = schema[key];
-  // File contents have no meaningful default to restore.
-  if (!entry || (scope === 'file' && key === 'fileText')) return;
-
-  const target = targetFor(scope, fileId);
-  if (!target) return;
-
+export async function resetSetting(key) {
+  const entry = GLOBAL_SETTINGS[key];
+  if (!entry) return;
   const previousModel = state.data.config.embeddingsModel;
-  target[key] = entry.default;
-  await afterMutation(scope, key, fileId, previousModel);
+  state.data.config[key] = entry.default;
+  await afterMutation(previousModel);
 }
 
-export async function resetAllSettings(scope, fileId) {
-  const schema = schemaFor(scope);
-  const target = targetFor(scope, fileId);
-  if (!target) return;
-
+export async function resetAllSettings() {
   const previousModel = state.data.config.embeddingsModel;
-  let needsReembed = false;
-
-  for (const [key, entry] of Object.entries(schema)) {
-    if (scope === 'file' && key === 'fileText') continue;
-    if (requiresReembed(schema, key) && target[key] !== entry.default) needsReembed = true;
-    target[key] = entry.default;
+  for (const [key, entry] of Object.entries(GLOBAL_SETTINGS)) {
+    state.data.config[key] = entry.default;
   }
-
-  if (scope === 'file') {
-    await persistFiles();
-    if (needsReembed) await refreshFileChunks(fileId);
-    emit(EVENTS.FILES);
-  } else {
-    await persistConfig();
-    if (previousModel !== state.data.config.embeddingsModel) await resetAllEmbeddings();
-    emit(EVENTS.MODELS);
-    emit(EVENTS.CHAT_FILES);
-  }
-  invalidateContext();
+  await afterMutation(previousModel);
 }
 
 /** Save connection configuration options. */

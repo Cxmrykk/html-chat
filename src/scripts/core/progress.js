@@ -3,8 +3,8 @@ import { estimateTokensOf } from './tokens.js';
 /**
  * Embedding progress computation.
  *
- * A chunk counts as "processed" if it has a vector OR is unembeddable, so a
- * file containing oversized chunks can still reach 100%.
+ * A unit counts as "processed" if it has a vector OR is unembeddable, so a
+ * file containing oversized units can still reach 100%.
  */
 export function computeProgress({ chunkCount, embeddedCount, ignoredCount = 0 }) {
   const processed = embeddedCount + ignoredCount;
@@ -17,10 +17,9 @@ export function computeProgress({ chunkCount, embeddedCount, ignoredCount = 0 })
   };
 }
 
-/** True when a chunk can never be embedded under the current limits. */
-export function isUnembeddable(chunk, { chunkLimit, batchMaxTokens }) {
-  const tokens = estimateTokensOf(chunk.text);
-  return tokens > chunkLimit || tokens > batchMaxTokens;
+/** True when a unit can never be embedded: it alone exceeds one request's token limit. */
+export function isUnembeddable(unit, { batchMaxTokens }) {
+  return estimateTokensOf(unit.text) > batchMaxTokens;
 }
 
 /** Estimated seconds remaining, or null when there is nothing to base it on. */
