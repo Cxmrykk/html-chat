@@ -20,7 +20,7 @@
  * With `prefers-reduced-motion`, labels are truncated but never move.
  */
 
-const STEP_MS = 300;
+const STEP_MS = 250;
 const END_PAUSE_MS = 1500;
 const ELLIPSIS = '…';
 /** Canvas and layout measurements can disagree by a fraction of a pixel. */
