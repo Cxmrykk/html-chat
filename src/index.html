@@ -110,7 +110,8 @@
           <div id="composer-bar">
             <div class="button-row">
               <select id="model-select" data-command="settings.setModel" title="Ctrl+Click to configure thinking levels"></select>
-              <button id="send-btn" data-command="chat.send" title="Ctrl+Enter / Cmd+Enter">Send</button>
+              <!-- The label scrolls when it does not fit (ui/marquee.js). -->
+              <button id="send-btn" data-command="chat.send" title="Ctrl+Enter / Cmd+Enter"><span class="marquee-label">Send</span></button>
               
               <!-- Message edit buttons -->
               <button id="save-edit-btn" class="hidden" data-command="message.saveEdit"

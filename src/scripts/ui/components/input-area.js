@@ -9,6 +9,7 @@ import { availableModels } from '../../services/models.js';
 import { toolSchemasFor } from '../../services/tools/index.js';
 import { wizardSteps, ASSISTANT_STEPS } from '../../services/wizard.js';
 import { isRetryable } from './message.js';
+import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
 
 /** Input area components: composer, settings editor and configurator bars. */
 
@@ -20,7 +21,8 @@ const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
 /**
  * The model dropdown, driven by whatever `services/models.js` last
  * discovered (plus any manually configured extras). When editing thinking,
- * the options flip to the reasoning levels.
+ * the options flip to the reasoning levels. A name too long for the dropdown
+ * scrolls (see `ui/marquee.js`).
  */
 export function updateModelDropdown() {
   const select = $('#model-select');
@@ -43,6 +45,7 @@ export function updateModelDropdown() {
     }
     setDisabled(select, false);
     select.title = 'Select reasoning effort';
+    syncSelectMarquee(select);
     return;
   }
 
@@ -65,6 +68,7 @@ export function updateModelDropdown() {
 
   setDisabled(select, !models.length);
   select.title = error ? `Model discovery failed: ${error}` : 'Ctrl+Click to configure thinking levels';
+  syncSelectMarquee(select);
 }
 
 /**
@@ -93,23 +97,28 @@ function generationLabel({ phase, tool, loop, maxLoops }) {
   return `${verb}${suffix}...`;
 }
 
+/** The text the send button should show right now. */
+function sendButtonText() {
+  if (state.runtime.generation.active) return generationLabel(state.runtime.generation);
+
+  const input = $('#chat-input');
+  const tokens = estimateTokens('x'.repeat((input?.value || '').length + contextChars()));
+  const label = formatCompactCount(tokens);
+  return label ? `Send (${label} tokens)` : 'Send';
+}
+
 /**
  * The send button doubles as a token counter, and as the stop button while a
- * request is in flight.
+ * request is in flight. Its label stays on one line and scrolls when it does
+ * not fit; the full text is always the button's accessible name.
  */
 export function renderSendButton() {
   const button = $('#send-btn');
   if (!button) return;
 
-  if (state.runtime.generation.active) {
-    setText(button, generationLabel(state.runtime.generation));
-    return;
-  }
-
-  const input = $('#chat-input');
-  const tokens = estimateTokens('x'.repeat((input?.value || '').length + contextChars()));
-  const label = formatCompactCount(tokens);
-  setText(button, label ? `Send (${label} tokens)` : 'Send');
+  const text = sendButtonText();
+  if (button.getAttribute('aria-label') !== text) button.setAttribute('aria-label', text);
+  setMarqueeText(button.querySelector('.marquee-label') || button, text);
 }
 
 function editingMessage() {
