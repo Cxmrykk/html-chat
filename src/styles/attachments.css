@@ -1,0 +1,189 @@
+/* ------------------------------------------------------------------ *
+ * Attachments
+ *
+ * A drop-down at the bottom of a message, styled like the thinking box's
+ * header. Inside it, one square viewer per image in a single column, each as
+ * wide as the drop-down. The image fills the viewer's width and scrolls
+ * vertically; zooming changes its width (ui/components/attachments.js).
+ * ------------------------------------------------------------------ */
+
+.attachments {
+  margin-top: 10px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-raised);
+}
+
+.attachments-header {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.attachments-header:hover {
+  background: var(--bg-soft-hover);
+  color: var(--text);
+}
+
+.attachments-header .icon {
+  width: 1.2em;
+  height: 1.2em;
+}
+
+.attachments-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px;
+  border-top: 1px dashed var(--border-soft);
+}
+
+.attachment {
+  margin: 0;
+  min-width: 0;
+}
+
+.attachment-frame {
+  position: relative;
+}
+
+/*
+ * The single grid cell is the square itself, so an image smaller than it is
+ * centred by its auto margins, and one larger simply overflows and scrolls.
+ * Auto margins never push content out of reach, unlike flex centring.
+ */
+.attachment-viewer {
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: auto;
+  display: grid;
+  grid-template: 100% / 100%;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-soft);
+}
+
+.attachment-image {
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  margin: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.attachment-image.pixelated {
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+
+/* Over the square, not the image: it stays put while the image scrolls. */
+.attachment-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  pointer-events: none;
+}
+
+.attachment-overlay span {
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  padding: 4px 10px;
+  font-size: 0.85em;
+  font-weight: bold;
+  text-align: center;
+}
+
+.attachment-frame:hover .attachment-overlay span {
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.attachment-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.attachment-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-size {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.attachment-remove {
+  flex-shrink: 0;
+  padding: 2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Images waiting in the composer
+ * ------------------------------------------------------------------ */
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.composer-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 2px 2px 2px 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  font-size: 0.8em;
+}
+
+.composer-attachment img {
+  width: 24px;
+  height: 24px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.composer-attachment img.pixelated {
+  image-rendering: pixelated;
+}
+
+.composer-attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-attachment button {
+  flex-shrink: 0;
+  padding: 2px;
+}
+
+/* Dragging image files over the chat. */
+.main.drop-target #chat-container {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+}

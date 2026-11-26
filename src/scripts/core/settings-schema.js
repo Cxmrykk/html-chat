@@ -1,4 +1,4 @@
-import { isBlank, pickBoolean } from './values.js';
+import { isBlank, pickBoolean, pickNumber } from './values.js';
 import { DEFAULT_JS_TOOL_DESCRIPTION } from './tools.js';
 import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
 
@@ -23,6 +23,11 @@ const showEchoField = (value) => {
   if (isBlank(value)) return 'Off';
   const name = String(value).trim();
   return isReasoningField(name) ? name : `${name} (ignored)`;
+};
+
+const showCacheSize = (value, entry) => {
+  const mb = pickNumber(Number(entry.default), value);
+  return mb > 0 ? `${mb} MB` : 'Memory only';
 };
 
 export const GLOBAL_SETTINGS = {
@@ -124,6 +129,16 @@ export const GLOBAL_SETTINGS = {
       'When fetching models, also ask LiteLLM (/model/info) and Ollama (/api/show) what each model supports: tools, thinking and its levels, vision, context length. ' +
       'Off reads /models alone. A model reported without tool support is not offered tools.',
     display: showOnOff,
+  },
+  imageCacheMB: {
+    label: 'Image Cache (MB)',
+    category: 'Images',
+    type: 'number',
+    default: '100',
+    tooltip:
+      'How much browser storage original images may use so they survive a reload. The oldest are removed first once it is full. ' +
+      '0 keeps originals in memory only. Chats themselves only ever store a pixelated placeholder.',
+    display: showCacheSize,
   },
   collapseThinking: {
     label: 'Collapse Thinking',

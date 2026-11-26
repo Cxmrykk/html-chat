@@ -13,11 +13,13 @@ import * as conversation from '../services/conversation.js';
 import * as settings from '../services/settings.js';
 import * as transfer from '../services/transfer.js';
 import * as models from '../services/models.js';
-import { pickJSONText } from '../services/file-io.js';
+import * as images from '../services/images.js';
+import { pickJSONText, pickFiles } from '../services/file-io.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { sourceBlocks } from '../ui/markdown.js';
 import { isSendable, isEditable, isThinking } from '../core/roles.js';
+import { attachmentsOf } from '../core/attachments.js';
 import { nextRange, sameRange, editSlice, applyEdit } from '../core/edit-range.js';
 import { ICON_CHECK } from '../ui/icons.js';
 
@@ -26,9 +28,11 @@ import { ICON_CHECK } from '../ui/icons.js';
  * `data-command`; nothing is bound to `window` and there are no inline
  * `onclick` attributes anywhere.
  *
- * Each command receives `{ event, element, id, index, key, call, block }`,
- * where `call` is the `"round.call"` position of a tool call inside a thinking
- * message and `block` the index of a markdown block inside a message body.
+ * Each command receives `{ event, element, id, index, key, call, block,
+ * attachment, files }`, where `call` is the `"round.call"` position of a tool
+ * call inside a thinking message, `block` the index of a markdown block inside
+ * a message body, `attachment` the index of an image among a message's
+ * attachments, and `files` the files of a paste or drop.
  */
 
 /* ------------------------------------------------------------------ *
@@ -139,6 +143,33 @@ function collapseSidebarOnMobile() {
     setSession({ sidebarHidden: true }, { silent: true });
     persistPrefs();
   }
+}
+
+/** Replace the images waiting in the composer. */
+function setPendingAttachments(list) {
+  setSession({ pendingAttachments: list }, { silent: true });
+  emit(EVENTS.COMPOSER);
+}
+
+/**
+ * Before a request built from `messages` goes out: if any image in them is
+ * only a placeholder, say so, and let the user back out to restore it.
+ * Resolves with whether to go ahead.
+ */
+async function confirmPlaceholders(messages) {
+  const missing = await images.missingImages(messages);
+  if (!missing.length) return true;
+
+  const subject =
+    missing.length === 1
+      ? 'An image in this chat is only a placeholder'
+      : `${missing.length} images in this chat are only placeholders`;
+  return confirm(
+    `${subject}: the original is no longer stored.\n\n` +
+      'Unless you restore it first (open the attachments and click the placeholder), ' +
+      'the pixelated placeholder, scaled up to the original size, will be sent instead.\n\n' +
+      'Send anyway?',
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -252,16 +283,121 @@ export const commands = {
       return;
     }
     const input = $('#chat-input');
-    const text = input?.value ?? '';
-    if (!text.trim()) return;
+    if (!input) return;
+    const text = input.value ?? '';
+    const pending = state.session.pendingAttachments || [];
+    if (!text.trim() && !pending.length) return;
+
+    // Shift+Send never reaches the API, so nothing is sent as a placeholder.
+    const skipApi = Boolean(event?.shiftKey);
+    if (!skipApi && !(await confirmPlaceholders(currentChat()?.messages || []))) return;
 
     input.value = '';
+    setPendingAttachments([]);
     try {
-      await conversation.sendMessage({ text, skipApi: Boolean(event?.shiftKey) });
+      await conversation.sendMessage({ text, attachments: pending, skipApi });
     } catch (error) {
       input.value = text;
+      setPendingAttachments(pending);
       alert(error.message);
     }
+  },
+
+  /* ---- attachments ---- */
+
+  /**
+   * Images pasted or dropped. While a message is being edited they are added
+   * to it; otherwise they wait in the composer for the next send.
+   */
+  'attachments.add': async ({ files } = {}) => {
+    if (state.session.view !== 'chat') return;
+    const list = [...(files || [])].filter(images.isImageFile);
+    if (!list.length) return;
+
+    const { records, errors } = await images.ingestImages(list);
+    if (errors.length) alert(errors.join('\n'));
+    if (!records.length) return;
+
+    const index = state.session.editingMessageIndex;
+    if (index !== null) {
+      await conversation.addAttachments(index, records);
+      return;
+    }
+    setPendingAttachments([...(state.session.pendingAttachments || []), ...records]);
+  },
+
+  'attachments.removePending': ({ key }) => {
+    const at = Number.parseInt(key, 10);
+    const list = state.session.pendingAttachments || [];
+    if (!Number.isInteger(at) || !list[at]) return;
+    setPendingAttachments(list.filter((_, i) => i !== at));
+  },
+
+  /** Remove an image from the message being edited. */
+  'attachments.remove': async ({ index, attachment }) => {
+    if (!Number.isInteger(index) || !Number.isInteger(attachment)) return;
+    if (state.session.editingMessageIndex !== index) return;
+    await conversation.removeAttachment(index, attachment);
+  },
+
+  /**
+   * A click on a placeholder: pick files to bring back originals.
+   *
+   *   - Several files: each is matched to placeholders by hash, across every
+   *     chat. Files that match nothing are ignored; if none match, nothing
+   *     is replaced at all.
+   *   - One file: if it is this placeholder's original, it is restored. If
+   *     not, the user is warned, and may use it anyway: the attachment then
+   *     becomes that image, for good.
+   */
+  'attachments.restore': async ({ index, attachment: at }) => {
+    const target = attachmentsOf(currentChat()?.messages[index])[at];
+    if (!target || images.imageUrlFor(target.hash)) return;
+
+    const files = await pickFiles({ multiple: true, accept: 'image/*' });
+    if (!files.length) return;
+
+    if (files.length > 1) {
+      const { matches, unmatched } = await images.matchImageFiles(files, images.placeholderHashes());
+      if (!matches.size) {
+        alert('None of the selected images is the original of a placeholder, so nothing was replaced.');
+        return;
+      }
+      images.restoreOriginals(matches);
+      if (unmatched.length) {
+        alert(
+          `Restored ${matches.size} image(s). ${unmatched.length} of the selected images ` +
+            'matched no placeholder and were ignored.',
+        );
+      }
+      return;
+    }
+
+    const [file] = files;
+    const { matches } = await images.matchImageFiles([file], [target.hash]);
+    if (matches.size) {
+      images.restoreOriginals(matches);
+      return;
+    }
+
+    const proceed = confirm(
+      `"${file.name}" is not the original of this placeholder: its contents differ.\n\n` +
+        'Use it anyway? The placeholder will be replaced by this image permanently.',
+    );
+    if (!proceed) return;
+
+    let record;
+    try {
+      record = await images.ingestImage(file);
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
+
+    // The chat may have changed while the picker was open.
+    const current = attachmentsOf(currentChat()?.messages[index])[at];
+    if (!current || current.hash !== target.hash) return;
+    await conversation.replaceAttachment(index, at, record);
   },
 
   /* ---- messages ---- */
@@ -442,6 +578,13 @@ export const commands = {
     await conversation.toggleCallCollapsed(index, call);
   },
 
+  /** Open or close a message's attachments. */
+  'message.toggleAttachments': async ({ index }) => {
+    const message = currentChat()?.messages[index];
+    if (!message) return;
+    await conversation.setAttachmentsOpen(index, message.attachmentsOpen !== true);
+  },
+
   'message.fork': async ({ index }) => {
     stopEditing();
     leaveSettings();
@@ -449,21 +592,27 @@ export const commands = {
   },
 
   'message.retry': async ({ index }) => {
-    const message = currentChat()?.messages[index];
+    const chat = currentChat();
+    const message = chat?.messages[index];
     if (!isRetryable(message)) return;
+
+    // Everything up to and including this message is what gets sent.
+    if (!(await confirmPlaceholders(chat.messages.slice(0, index + 1)))) return;
 
     stopEditing();
 
     if (message.role === 'user') {
       const input = $('#chat-input');
       const text = message.content || '';
+      const attachments = attachmentsOf(message);
       // A user message replaces itself and everything after it.
       await conversation.truncateMessages(index);
       if (input) input.value = '';
       try {
-        await conversation.sendMessage({ text });
+        await conversation.sendMessage({ text, attachments });
       } catch (error) {
         if (input) input.value = text;
+        if (attachments.length) setPendingAttachments(attachments);
         alert(error.message);
       }
     } else if (isThinking(message)) {

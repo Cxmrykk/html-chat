@@ -1,6 +1,7 @@
 import { isThinking, THINKING_ROLE } from './roles.js';
 import { roundHasOutput } from './thinking.js';
 import { normalizeRoundReasoning } from './reasoning.js';
+import { normalizeAttachments } from './attachments.js';
 
 /**
  * Bringing a chat record — from storage, from an import, or from a fork — up
@@ -32,6 +33,10 @@ import { normalizeRoundReasoning } from './reasoning.js';
  *
  * A round's stored reasoning is validated rather than trusted: an import can
  * carry anything, and a malformed block sent back would fail the request.
+ *
+ * Image attachments (`core/attachments.js`) are validated the same way, and
+ * an attachment that cannot be shown is dropped. A thinking message never
+ * carries any.
  *
  * Nothing can be running when a record is read, so a thinking message that
  * never stopped counting, or a call that never returned, was cut off (a
@@ -92,7 +97,14 @@ function isUnsettled(message) {
 
 /** A current-shape thinking message, settled as nothing could still be running. */
 function normalizeWork(message) {
-  const { active, content, rounds, ...rest } = message;
+  const {
+    active,
+    content,
+    rounds,
+    attachments: _attachments,
+    attachmentsOpen: _attachmentsOpen,
+    ...rest
+  } = message;
   const work = {
     ...rest,
     role: THINKING_ROLE,
@@ -100,6 +112,15 @@ function normalizeWork(message) {
   };
   if (isUnsettled(work)) work.outcome = 'interrupted';
   return work;
+}
+
+/** Any other message: its attachments validated, the fields dropped when none survive. */
+function normalizeAttached(message) {
+  if (!('attachments' in message) && !('attachmentsOpen' in message)) return message;
+  const { attachments, attachmentsOpen, ...rest } = message;
+  const list = normalizeAttachments(attachments);
+  if (!list.length) return rest;
+  return { ...rest, attachments: list, ...(attachmentsOpen === true ? { attachmentsOpen: true } : {}) };
 }
 
 /** One legacy round: the calls of an assistant message, paired with the results after it. */
@@ -259,7 +280,7 @@ function foldMessages(messages) {
 
 function normalizeMessages(messages) {
   return foldMessages(messages).map((message) =>
-    isThinking(message) ? normalizeWork(message) : message,
+    isThinking(message) ? normalizeWork(message) : normalizeAttached(message),
   );
 }
 

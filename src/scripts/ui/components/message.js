@@ -14,6 +14,7 @@ import {
   callStatusOf,
   callStatusNote,
 } from '../../core/tools.js';
+import { attachmentsOf, attachmentNote } from '../../core/attachments.js';
 import {
   renderMarkdown,
   renderMarkdownBlocks,
@@ -21,6 +22,7 @@ import {
   codeCollapseState,
   restoreCodeCollapseState,
 } from '../markdown.js';
+import { attachmentsHTML } from './attachments.js';
 import {
   ICON_COPY,
   ICON_EDIT,
@@ -90,14 +92,16 @@ function thinkingMarkdown(message, includeReasoning) {
 }
 
 /**
- * The markdown for a message: its text, or for a thinking message its rounds.
- * What "copy" and the transcript export use, so they match the screen.
- * `reasoning: false` leaves out the reasoning, keeping only what the model
- * was sent back.
+ * The markdown for a message: its text followed by a note per image, or for a
+ * thinking message its rounds. What "copy" and the transcript export use, so
+ * they match the screen. `reasoning: false` leaves out the reasoning, keeping
+ * only what the model was sent back.
  */
 export function messageMarkdown(message, { reasoning = true } = {}) {
   if (isThinking(message)) return thinkingMarkdown(message, reasoning);
-  return message?.content || '';
+  return [message?.content || '', ...attachmentsOf(message).map(attachmentNote)]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 /* ------------------------------------------------------------------ *
@@ -170,11 +174,12 @@ function elapsedHTML(seconds) {
 /**
  * A thinking message renders its rounds. Anything else renders its text as
  * markdown blocks, each traceable to its span of the source, which is what
- * lets an edit pick out part of the message by clicking it.
+ * lets an edit pick out part of the message by clicking it. Its images are
+ * not part of the body: they render below it, in the attachments drop-down.
  */
 function bodyHTML(message) {
   if (isThinking(message)) return thinkingBodyHTML(message);
-  return renderMarkdownBlocks(messageMarkdown(message));
+  return renderMarkdownBlocks(message?.content || '');
 }
 
 /* ------------------------------------------------------------------ *
@@ -381,6 +386,7 @@ export function messageHTML(message, index, { editing = false } = {}) {
         ${roleSelectHTML(message)}
       </div>
       <div class="msg-content">${bodyHTML(message)}</div>
+      ${attachmentsHTML(message, { editing })}
     </div>`;
 }
 

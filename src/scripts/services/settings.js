@@ -3,11 +3,14 @@ import { state, emit, persistConfig, invalidateContext } from '../store/state.js
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 import { coerceForStorage } from '../core/values.js';
 import { refreshModels } from './models.js';
+import { trimImageCache } from './images.js';
 
 /** The global advanced settings. */
 
 /** Settings that change what model discovery asks for, so the list is fetched again. */
 const DISCOVERY_KEYS = ['probeCapabilities'];
+/** Settings that change how much the image cache may hold. */
+const IMAGE_CACHE_KEYS = ['imageCacheMB'];
 
 /** Current stored value for a key, ready to display in the list. */
 export function readSetting(key) {
@@ -31,6 +34,8 @@ async function afterMutation(keys) {
   invalidateContext();
   // Not awaited: the dropdown shows its loading state meanwhile.
   if (keys.some((key) => DISCOVERY_KEYS.includes(key))) refreshModels();
+  // Not awaited: a smaller cap evicts the oldest originals in the background.
+  if (keys.some((key) => IMAGE_CACHE_KEYS.includes(key))) trimImageCache();
 }
 
 export async function saveSetting(key, rawValue) {

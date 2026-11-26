@@ -13,9 +13,11 @@ import {
   renderInputArea,
   renderSendButton,
   renderSettingsEditor,
+  renderComposerAttachments,
   applyChromeState,
   updateModelDropdown,
 } from './components/input-area.js';
+import { syncAttachmentImages } from './components/attachments.js';
 import { syncEditSelection } from './components/edit-selection.js';
 import {
   renderChatView,
@@ -137,6 +139,17 @@ export function installBindings() {
     // outline and nothing else.
     renderInputArea();
     syncEditSelection();
+  });
+
+  on(EVENTS.COMPOSER, () => {
+    renderInputArea();
+  });
+
+  on(EVENTS.IMAGES, ({ hash }) => {
+    // Only the images themselves are swapped; every viewer is square, so
+    // nothing around them moves.
+    if (state.session.view === 'chat') syncAttachmentImages(hash);
+    renderComposerAttachments();
   });
 
   on(EVENTS.SESSION, () => {

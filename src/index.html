@@ -101,7 +101,7 @@
               <select id="model-select" data-command="settings.setModel" title="Ctrl+Click to configure thinking levels"></select>
               <!-- The label scrolls when it does not fit (ui/marquee.js). -->
               <button id="send-btn" data-command="chat.send" title="Ctrl+Enter / Cmd+Enter"><span class="marquee-label">Send</span></button>
-              
+
               <!-- Message edit buttons -->
               <button id="save-edit-btn" class="hidden" data-command="message.saveEdit"
                       title="Ctrl+Enter / Cmd+Enter">Save</button>
@@ -114,7 +114,9 @@
                       title="Save thinking levels (Ctrl+Enter / Cmd+Enter)">Save</button>
               <button id="cancel-thinking-btn" class="hidden" data-command="thinking.cancel">Cancel</button>
             </div>
-            <textarea id="chat-input" placeholder="Type your prompt here..."></textarea>
+            <!-- Images pasted or dropped, waiting to go out with the next message. -->
+            <div id="composer-attachments" class="composer-attachments hidden"></div>
+            <textarea id="chat-input" placeholder="Type your prompt here... Paste or drop images to attach them."></textarea>
             <textarea id="thinking-input" class="hidden" placeholder="none&#10;low&#10;medium&#10;high"></textarea>
           </div>
 

@@ -2,6 +2,12 @@ import { $ } from '../ui/dom.js';
 import { runCommand } from './commands.js';
 import { state, setSession, persistPrefs } from '../store/state.js';
 import { renderSendButton } from '../ui/components/input-area.js';
+import {
+  setAttachmentZoom,
+  zoomAttachment,
+  resetAttachmentZoom,
+} from '../ui/components/attachments.js';
+import { isImageFile } from '../services/images.js';
 
 /**
  * A single delegated listener resolves `data-command` attributes against the
@@ -13,6 +19,7 @@ function contextFor(element, event) {
   const message = element.closest('[data-index]');
   const call = element.closest('[data-call]');
   const block = element.closest('[data-block]');
+  const attachment = element.closest('[data-attachment]');
   return {
     event,
     element,
@@ -23,6 +30,8 @@ function contextFor(element, event) {
     call: call?.dataset.call,
     // A top-level markdown block's position inside a message body.
     block: block ? Number.parseInt(block.dataset.block, 10) : undefined,
+    // An image's position among its message's attachments.
+    attachment: attachment ? Number.parseInt(attachment.dataset.attachment, 10) : undefined,
   };
 }
 
@@ -110,14 +119,14 @@ function installCodeCollapseDelegation() {
   document.addEventListener('click', (event) => {
     if (event.ctrlKey || event.metaKey) return;
     if (event.target.closest('.msg.editing > .msg-content')) return;
-    
+
     // Ignore if user is selecting text
     const selection = window.getSelection();
     if (selection && selection.toString().trim() !== '') return;
 
     const pre = event.target.closest('pre.collapsible-code');
     if (!pre) return;
-    
+
     pre.classList.toggle('collapsed');
   });
 }
@@ -145,6 +154,136 @@ function installCopyAffordances() {
       target.classList.add('flash');
       setTimeout(() => target.classList.remove('flash'), 100);
     });
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Images
+ * ------------------------------------------------------------------ */
+
+/** The image files of a paste or drop. Some browsers only expose clipboard files as items. */
+function imageFilesFrom(transfer) {
+  if (!transfer) return [];
+  let files = [...(transfer.files || [])];
+  if (!files.length && transfer.items) {
+    files = [...transfer.items]
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+  }
+  return files.filter(isImageFile);
+}
+
+function carriesFiles(event) {
+  return [...(event.dataTransfer?.types || [])].includes('Files');
+}
+
+/**
+ * Images come in by pasting or dropping; there is no button. A paste counts
+ * when it is aimed at the composer or at nothing in particular, never at
+ * another field. Text in the same paste still lands in the composer as usual:
+ * a textarea ignores the image part.
+ */
+function installAttachmentInput() {
+  document.addEventListener('paste', (event) => {
+    if (state.session.view !== 'chat') return;
+    const field =
+      event.target instanceof Element ? event.target.closest('input, textarea, select') : null;
+    if (field && field.id !== 'chat-input') return;
+    const files = imageFilesFrom(event.clipboardData);
+    if (files.length) runCommand('attachments.add', { event, files });
+  });
+
+  const main = $('.main');
+  if (main) {
+    let depth = 0;
+    const clear = () => {
+      depth = 0;
+      main.classList.remove('drop-target');
+    };
+
+    main.addEventListener('dragenter', (event) => {
+      if (!carriesFiles(event) || state.session.view !== 'chat') return;
+      depth++;
+      main.classList.add('drop-target');
+    });
+    main.addEventListener('dragleave', (event) => {
+      if (!carriesFiles(event)) return;
+      depth = Math.max(0, depth - 1);
+      if (!depth) main.classList.remove('drop-target');
+    });
+    main.addEventListener('dragover', (event) => {
+      if (!carriesFiles(event) || state.session.view !== 'chat') return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    });
+    main.addEventListener('drop', (event) => {
+      if (!carriesFiles(event)) return;
+      event.preventDefault();
+      clear();
+      if (state.session.view !== 'chat') return;
+      const files = imageFilesFrom(event.dataTransfer);
+      if (files.length) runCommand('attachments.add', { event, files });
+    });
+  }
+
+  // A file dropped anywhere else must not make the browser navigate to it.
+  window.addEventListener('dragover', (event) => {
+    if (carriesFiles(event)) event.preventDefault();
+  });
+  window.addEventListener('drop', (event) => {
+    if (carriesFiles(event)) event.preventDefault();
+    main?.classList.remove('drop-target');
+  });
+}
+
+/**
+ * Zooming an image under the cursor. A trackpad pinch arrives as a wheel event
+ * with Ctrl held (Chrome, Edge, Firefox), as does Ctrl+Scroll on a mouse;
+ * Safari sends gesture events instead. Plain scrolling is the viewer's own
+ * overflow. A double-click resets the zoom.
+ */
+function installAttachmentZoom() {
+  const container = $('#chat-container');
+  if (!container) return;
+
+  container.addEventListener(
+    'wheel',
+    (event) => {
+      if (!event.ctrlKey) return;
+      const viewer = event.target.closest('.attachment-viewer');
+      if (!viewer) return;
+      event.preventDefault();
+      const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+      zoomAttachment(viewer, event.deltaY * scale, { x: event.clientX, y: event.clientY });
+    },
+    { passive: false },
+  );
+
+  container.addEventListener('dblclick', (event) => {
+    const viewer = event.target.closest('.attachment-viewer');
+    if (!viewer || viewer.closest('.attachment.is-placeholder')) return;
+    event.preventDefault();
+    resetAttachmentZoom(viewer);
+  });
+
+  let gesture = null;
+  container.addEventListener('gesturestart', (event) => {
+    const viewer = event.target.closest?.('.attachment-viewer');
+    if (!viewer) return;
+    event.preventDefault();
+    gesture = { viewer, zoom: Number(viewer.dataset.zoom) || 1 };
+  });
+  container.addEventListener('gesturechange', (event) => {
+    if (!gesture) return;
+    event.preventDefault();
+    setAttachmentZoom(gesture.viewer, gesture.zoom * event.scale, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+  });
+  container.addEventListener('gestureend', () => {
+    gesture = null;
   });
 }
 
@@ -201,6 +340,8 @@ export function installEventHandlers() {
   installEditSelection();
   installCodeCollapseDelegation();
   installCopyAffordances();
+  installAttachmentInput();
+  installAttachmentZoom();
   installModifierTracking();
   installEditorBindings();
 }

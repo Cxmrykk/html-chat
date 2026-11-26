@@ -14,9 +14,11 @@ import {
 import * as chatsRepo from '../data/chats-repo.js';
 import { requestCompletion } from './api/completions.js';
 import { toolSchemasFor, runToolCall } from './tools/index.js';
+import { wireImages } from './images.js';
 import { buildApiMessages } from '../core/tool-calls.js';
 import { normalizeRoundReasoning } from '../core/reasoning.js';
 import { normalizeChat } from '../core/chats.js';
+import { attachmentsOf, normalizeAttachment, normalizeAttachments } from '../core/attachments.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 import { isThinking, THINKING_ROLE } from '../core/roles.js';
 import { roundsOf, roundHasOutput, hasOutput, isCollapsible } from '../core/thinking.js';
@@ -176,6 +178,69 @@ export async function truncateMessages(length) {
   invalidateContext();
   await persistChat();
   emit(EVENTS.MESSAGES_TRUNCATED, { length: chat.messages.length });
+}
+
+/* ------------------------------------------------------------------ *
+ * Attachments
+ *
+ * Every change repaints the row `anchored`, so adding or removing an image
+ * while editing never scrolls the transcript away from it.
+ * ------------------------------------------------------------------ */
+
+/** A message that may carry attachments: anything but a thinking message. */
+function attachableMessage(index) {
+  const message = currentChat()?.messages[index];
+  return message && !isThinking(message) ? message : null;
+}
+
+async function afterAttachmentChange(index) {
+  invalidateContext();
+  emit(EVENTS.MESSAGE, { index, anchored: true });
+  await persistChat();
+}
+
+/** Append images to a message, and open its attachments so they show. */
+export async function addAttachments(index, records) {
+  const message = attachableMessage(index);
+  const list = normalizeAttachments(records);
+  if (!message || !list.length) return;
+  message.attachments = [...attachmentsOf(message), ...list];
+  message.attachmentsOpen = true;
+  await afterAttachmentChange(index);
+}
+
+export async function removeAttachment(index, at) {
+  const message = attachableMessage(index);
+  const list = attachmentsOf(message);
+  if (!message || !list[at]) return;
+  const next = list.filter((_, i) => i !== at);
+  if (next.length) {
+    message.attachments = next;
+  } else {
+    delete message.attachments;
+    delete message.attachmentsOpen;
+  }
+  await afterAttachmentChange(index);
+}
+
+/** Put a different image in an attachment's place, for good. */
+export async function replaceAttachment(index, at, record) {
+  const message = attachableMessage(index);
+  const list = attachmentsOf(message);
+  const replacement = normalizeAttachment(record);
+  if (!message || !list[at] || !replacement) return;
+  message.attachments = list.map((attachment, i) => (i === at ? replacement : attachment));
+  await afterAttachmentChange(index);
+}
+
+/** Open or close a message's attachments. Presentational, like `setCollapsed`. */
+export async function setAttachmentsOpen(index, open) {
+  const message = attachableMessage(index);
+  if (!message || !attachmentsOf(message).length) return;
+  if (open) message.attachmentsOpen = true;
+  else delete message.attachmentsOpen;
+  emit(EVENTS.MESSAGE, { index, anchored: true });
+  await persistChat();
 }
 
 /* ------------------------------------------------------------------ *
@@ -576,12 +641,15 @@ function appendStopped(chatId) {
 /**
  * The wire messages for a request to `model`: reasoning from the turn in
  * progress is replayed to the model that wrote it, plain text only under the
- * configured field.
+ * configured field, and every image goes out as its original or, failing
+ * that, its upscaled placeholder.
  */
-function apiMessagesFor(chat, model) {
+async function apiMessagesFor(chat, model) {
+  const images = await wireImages(chat.messages);
   return buildApiMessages(chat.messages, {
     model,
     echoField: String(state.data.config.reasoningEchoField ?? '').trim(),
+    images,
   });
 }
 
@@ -604,7 +672,7 @@ async function requestRound({ turn, chat, chatId, signal, forceAnswer }) {
     reply = await requestCompletion({
       config: state.data.config,
       model,
-      messages: apiMessagesFor(chat, model),
+      messages: await apiMessagesFor(chat, model),
       tools: toolSchemasFor(),
       forceAnswer,
       signal,
@@ -750,12 +818,14 @@ async function runTurns(chatId) {
 }
 
 /**
- * Append the user's message and run the model's turn. `skipApi` appends the
- * message without calling the API at all.
+ * Append the user's message, with any images, and run the model's turn. A
+ * message may be images alone. `skipApi` appends the message without calling
+ * the API at all.
  */
-export async function sendMessage({ text = '', skipApi = false } = {}) {
+export async function sendMessage({ text = '', attachments = [], skipApi = false } = {}) {
   const trimmed = text.trim();
-  if (!trimmed) return;
+  const images = normalizeAttachments(attachments);
+  if (!trimmed && !images.length) return;
 
   if (!state.data.config.key && !skipApi) {
     throw new Error('Please enter your API key in the settings first.');
@@ -767,11 +837,15 @@ export async function sendMessage({ text = '', skipApi = false } = {}) {
 
   const chat = currentChat();
   if (!chat.messages.length) {
-    chat.title = buildTitle(trimmed);
+    chat.title = buildTitle(trimmed || 'Image');
     await persistChatIndex();
     emit(EVENTS.CHATS);
   }
-  await appendMessage({ role: 'user', content: trimmed });
+  await appendMessage({
+    role: 'user',
+    content: trimmed,
+    ...(images.length ? { attachments: images } : {}),
+  });
   if (skipApi) return;
 
   await runTurns(state.data.currentChatId);

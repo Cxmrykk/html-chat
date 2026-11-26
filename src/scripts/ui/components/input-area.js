@@ -13,13 +13,14 @@ import {
 import { availableModels, capabilitiesFor, reasoningChoicesFor } from '../../services/models.js';
 import { toolSchemasFor } from '../../services/tools/index.js';
 import { isRetryable } from './message.js';
+import { composerAttachmentsHTML } from './attachments.js';
 import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
 
 /** Input area components: composer and settings editor bars. */
 
-const PROMPT_PLACEHOLDER = 'Type your prompt here...';
+const PROMPT_PLACEHOLDER = 'Type your prompt here... Paste or drop images to attach them.';
 const PICK_PLACEHOLDER =
-  'Click the part of the message you want to edit. Shift+Click another part to select everything in between.';
+  'Click the part of the message you want to edit. Shift+Click another part to select everything in between. Paste or drop images to add them to the message.';
 const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
 
 function optionHTML(value, title = '') {
@@ -97,6 +98,7 @@ export function updateModelDropdown() {
  * on the very payload a send would build, so whatever is left out of the
  * request (errors, thinking, unpaired tool calls) is left out of the estimate,
  * and the tool definitions that ride along with every request are counted.
+ * Images are not: what they cost depends on the provider.
  */
 function contextChars() {
   if (state.runtime.contextChars !== -1) return state.runtime.contextChars;
@@ -125,7 +127,12 @@ function sendButtonText() {
   const input = $('#chat-input');
   const tokens = estimateTokens('x'.repeat((input?.value || '').length + contextChars()));
   const label = formatCompactCount(tokens);
-  return label ? `Send (${label} tokens)` : 'Send';
+  const pending = state.session.pendingAttachments?.length || 0;
+
+  const parts = [];
+  if (label) parts.push(`${label} tokens`);
+  if (pending) parts.push(`${pending} image${pending === 1 ? '' : 's'}`);
+  return parts.length ? `Send (${parts.join(' + ')})` : 'Send';
 }
 
 /**
@@ -147,6 +154,25 @@ function editingMessage() {
   const index = state.session.editingMessageIndex;
   if (!chat || index === null) return null;
   return chat.messages[index] || null;
+}
+
+/**
+ * The images waiting to be sent, above the prompt. Hidden while a message or
+ * the thinking levels are being edited: images pasted then go to the message.
+ */
+export function renderComposerAttachments() {
+  const strip = $('#composer-attachments');
+  if (!strip) return;
+
+  const list = state.session.pendingAttachments || [];
+  const show =
+    list.length > 0 &&
+    state.session.view === 'chat' &&
+    state.session.editingMessageIndex === null &&
+    !state.session.editingThinking;
+
+  setHidden(strip, !show);
+  strip.innerHTML = show ? composerAttachmentsHTML(list) : '';
 }
 
 /**
@@ -206,6 +232,7 @@ export function renderInputArea() {
   }
 
   renderComposerMode(chatInput, editingMsg);
+  renderComposerAttachments();
   renderSendButton();
 }
 

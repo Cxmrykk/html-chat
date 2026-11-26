@@ -2,6 +2,7 @@ import { estimateTokens } from './tokens.js';
 import { isSendable, isThinking } from './roles.js';
 import { roundsOf } from './thinking.js';
 import { REASONING_FIELDS, isReasoningField, replayableBlocks } from './reasoning.js';
+import { attachmentsOf, sendsImages } from './attachments.js';
 
 /**
  * Tool calls on the wire: assembling them from streamed fragments, parsing
@@ -181,6 +182,24 @@ function wireRounds(message, replay) {
   return payload;
 }
 
+/**
+ * A message's wire content: its text, or with `images` (`Map<hash, url>`) and
+ * a role that may carry them, a text part followed by one image part per
+ * attachment. An attachment with no url is left out.
+ */
+function wireContent(message, images) {
+  const text = message.content || '';
+  if (!images || !sendsImages(message)) return text;
+
+  const parts = [];
+  for (const attachment of attachmentsOf(message)) {
+    const url = images.get(attachment.hash);
+    if (url) parts.push({ type: 'image_url', image_url: { url } });
+  }
+  if (!parts.length) return text;
+  return text ? [{ type: 'text', text }, ...parts] : parts;
+}
+
 function lastUserIndex(messages) {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'user') return i;
@@ -204,11 +223,14 @@ function lastUserIndex(messages) {
  *     reduced to its text, or dropped if it has none;
  *   - reasoning is replayed only for rounds after the latest user message —
  *     the turn in progress, which is all any provider requires — and only to
- *     `model`. With no `model`, nothing is replayed.
+ *     `model`. With no `model`, nothing is replayed;
+ *   - user messages carry their images as content parts when `images` maps
+ *     each attachment's hash to a url. Without `images`, only text is built
+ *     (the context estimate does that).
  *
  * Everything is reduced to wire fields, so presentational ones never leave.
  */
-export function buildApiMessages(messages, { model = '', echoField = '' } = {}) {
+export function buildApiMessages(messages, { model = '', echoField = '', images = null } = {}) {
   const sendable = (messages || []).filter(isSendable);
   const turnStart = lastUserIndex(sendable) + 1;
   const payload = [];
@@ -222,17 +244,27 @@ export function buildApiMessages(messages, { model = '', echoField = '' } = {}) 
       continue;
     }
 
-    payload.push({ role: message.role, content: message.content || '' });
+    payload.push({ role: message.role, content: wireContent(message, images) });
   }
 
   return payload;
+}
+
+/** Text characters of a wire content value; image parts are not counted. */
+function contentChars(content) {
+  if (typeof content === 'string') return content.length;
+  if (!Array.isArray(content)) return 0;
+  return content.reduce(
+    (sum, part) => sum + (part?.type === 'text' && typeof part.text === 'string' ? part.text.length : 0),
+    0,
+  );
 }
 
 /** Characters of text in a built payload, for the context estimate. */
 export function payloadChars(payload) {
   let total = 0;
   for (const message of payload) {
-    total += (message.content || '').length;
+    total += contentChars(message.content);
     for (const call of message.tool_calls || []) {
       total += call.function.name.length + call.function.arguments.length;
     }

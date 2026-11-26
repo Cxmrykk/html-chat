@@ -21,6 +21,13 @@ export const EVENTS = {
    * composer and the selection outline follow it; the transcript stays put.
    */
   EDIT: 'edit',
+  /** The images waiting in the composer changed. */
+  COMPOSER: 'composer',
+  /**
+   * Whether the original of an image is held changed: it was found, found
+   * missing, or restored. Payload: { hash }.
+   */
+  IMAGES: 'images',
   /** UI mode: active view, editing target, sidebar visibility. */
   SESSION: 'session',
   /** A request started, changed phase, or finished. */

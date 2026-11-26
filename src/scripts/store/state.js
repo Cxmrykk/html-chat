@@ -45,6 +45,12 @@ export const state = {
     /** What the composer was loaded with, to tell an untouched part from an edited one. */
     editingLoaded: null,
     editingThinking: false,
+    /**
+     * Images pasted or dropped into the composer, waiting to go out with the
+     * next message: attachment records (`core/attachments.js`) whose originals
+     * are held by `services/images.js`.
+     */
+    pendingAttachments: [],
     /** Which setting the settings editor has open. */
     activeSettingKey: null,
     /** Unsaved editor contents, restored when returning to the same key. */
