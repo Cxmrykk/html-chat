@@ -65,7 +65,7 @@ Anything not reported counts as unknown, and the app behaves as if there were no
 
 The **Send** button shows an estimate of the context size, at about 4 characters per token. It covers the full request, including tool definitions.
 
-The chat list in the sidebar always fills the height left below the settings box, and scrolls on its own. Chats are grouped under date headings (Today, Yesterday, Previous 7 Days, Previous 30 Days, then by month) according to when each chat was created. Turn this off with **Chat Date Groups**.
+The chat list in the sidebar always fills the height left below the settings box, and scrolls on its own. Chats are grouped under centered date headings by when each chat was created: Today, Yesterday, one heading per day for the rest of the last week (e.g. `Nov 24`), then Previous 30 Days, then by month. Turn this off with **Chat Date Groups**.
 
 ### Reasoning effort
 

@@ -189,7 +189,7 @@ export const GLOBAL_SETTINGS = {
     type: 'boolean',
     default: 'true',
     tooltip:
-      'Group the chat list in the sidebar under date headings (Today, Yesterday, Previous 7 Days, ...), by when each chat was created: true or false.',
+      'Group the chat list in the sidebar under date headings by when each chat was created: Today, Yesterday, each day of the last week (e.g. Nov 24), the previous 30 days, then by month. true or false.',
     display: showOnOff,
   },
   collapseThinking: {
