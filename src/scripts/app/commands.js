@@ -189,6 +189,16 @@ function attachmentAt(index, at) {
   return attachmentsOf(currentChat()?.messages[index])[at] || null;
 }
 
+/** Whether `index` and `at` address an image of the message being edited. */
+function isEditedAttachment(index, at) {
+  return (
+    Number.isInteger(index) &&
+    Number.isInteger(at) &&
+    state.session.editingMessageIndex === index &&
+    Boolean(attachmentAt(index, at))
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * Commands
  * ------------------------------------------------------------------ */
@@ -352,9 +362,19 @@ export const commands = {
 
   /** Remove an image from the message being edited. */
   'attachments.remove': async ({ index, attachment }) => {
-    if (!Number.isInteger(index) || !Number.isInteger(attachment)) return;
-    if (state.session.editingMessageIndex !== index) return;
+    if (!isEditedAttachment(index, attachment)) return;
     await conversation.removeAttachment(index, attachment);
+  },
+
+  /**
+   * Move an image of the message being edited one place earlier (`key` -1)
+   * or later (`key` 1).
+   */
+  'attachments.move': async ({ index, attachment: at, key }) => {
+    const step = Number.parseInt(key, 10);
+    if (step !== -1 && step !== 1) return;
+    if (!isEditedAttachment(index, at)) return;
+    await conversation.moveAttachment(index, at, at + step);
   },
 
   /**
@@ -364,10 +384,8 @@ export const commands = {
    * original simply restores it.
    */
   'attachments.replace': async ({ index, attachment: at }) => {
-    if (!Number.isInteger(index) || !Number.isInteger(at)) return;
-    if (state.session.editingMessageIndex !== index) return;
+    if (!isEditedAttachment(index, at)) return;
     const target = attachmentAt(index, at);
-    if (!target) return;
 
     const [file] = await pickFiles({ multiple: false, accept: 'image/*' });
     if (!file) return;

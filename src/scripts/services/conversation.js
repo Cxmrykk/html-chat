@@ -183,8 +183,8 @@ export async function truncateMessages(length) {
 /* ------------------------------------------------------------------ *
  * Attachments
  *
- * Every change repaints the row `anchored`, so adding or removing an image
- * while editing never scrolls the transcript away from it.
+ * Every change repaints the row `anchored`, so adding, removing or moving an
+ * image while editing never scrolls the transcript away from it.
  * ------------------------------------------------------------------ */
 
 /** A message that may carry attachments: anything but a thinking message. */
@@ -220,6 +220,22 @@ export async function removeAttachment(index, at) {
     delete message.attachments;
     delete message.attachmentsOpen;
   }
+  await afterAttachmentChange(index);
+}
+
+/**
+ * Move an image from position `from` to position `to`. The order is the one
+ * they are shown and sent in.
+ */
+export async function moveAttachment(index, from, to) {
+  const message = attachableMessage(index);
+  const list = [...attachmentsOf(message)];
+  if (!message || !list[from] || !Number.isInteger(to)) return;
+  if (to < 0 || to >= list.length || to === from) return;
+
+  const [moved] = list.splice(from, 1);
+  list.splice(to, 0, moved);
+  message.attachments = list;
   await afterAttachmentChange(index);
 }
 

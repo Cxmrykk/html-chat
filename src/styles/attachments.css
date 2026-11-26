@@ -8,6 +8,10 @@
  * viewer's width: a landscape image sits centred in the square, a portrait
  * one scrolls vertically. Zooming changes the image's width
  * (ui/components/attachments.js).
+ *
+ * Over an image there is nothing but, while editing, its corner buttons. Its
+ * caption carries the tag, `[name]`, on the left, red with a `(!)` prefix for
+ * a placeholder, and the dimensions on the right.
  * ------------------------------------------------------------------ */
 
 .attachments {
@@ -85,6 +89,7 @@
   min-width: 0;
 }
 
+/* Holds the viewer and, over it, the corner buttons, which must not scroll with it. */
 .attachment-frame {
   position: relative;
 }
@@ -125,45 +130,35 @@
   cursor: pointer;
 }
 
-/* Over the viewer, not the image: it stays put while the image scrolls. */
-.attachment-overlay {
+/*
+ * The corner buttons of an image being edited: the same 10px inset from the
+ * top and right that a message's buttons keep (`.msg-actions-container`), and
+ * the same button size (`.msg-actions button.icon-btn`).
+ */
+.attachment-actions {
   position: absolute;
-  inset: 0;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 10px;
-  pointer-events: none;
+  gap: 5px;
 }
 
-.attachment-overlay span {
-  background: rgba(0, 0, 0, 0.65);
-  color: #fff;
-  padding: 4px 10px;
-  font-size: 0.85em;
-  font-weight: bold;
-  text-align: center;
+.attachment-actions button {
+  font-size: 0.8em;
 }
 
-.attachment-frame:hover .attachment-overlay span {
-  background: rgba(0, 0, 0, 0.85);
+.attachment-actions button.icon-btn {
+  padding: 3px;
 }
 
-/* On a real image being edited, the hint only shows while hovering it. */
-.attachment-overlay.on-hover {
-  opacity: 0;
-  transition: opacity 0.15s ease;
+.attachment-actions button.icon-btn .icon {
+  width: 1.2em;
+  height: 1.2em;
 }
 
-.attachment-frame:hover .attachment-overlay.on-hover {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .attachment-overlay.on-hover {
-    transition: none;
-  }
-}
+/* ---- Caption: [tag] on the left, dimensions on the right ---- */
 
 .attachment-caption {
   display: flex;
@@ -174,22 +169,37 @@
   color: var(--text-muted);
 }
 
-.attachment-name {
+/*
+ * The brackets and the `(!)` flag never shrink; only the name between them is
+ * cut short, so the tag always reads as a closed `[...]`.
+ */
+.attachment-tag {
+  display: flex;
   flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.attachment-tag > span {
+  flex-shrink: 0;
+}
+
+.attachment-tag > .attachment-name {
+  flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.attachment.is-missing .attachment-tag {
+  color: var(--role-error);
+  font-weight: bold;
 }
 
 .attachment-size {
   flex-shrink: 0;
+  margin-left: auto;
   font-variant-numeric: tabular-nums;
-}
-
-.attachment-remove {
-  flex-shrink: 0;
-  padding: 2px;
 }
 
 /* ------------------------------------------------------------------ *

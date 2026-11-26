@@ -19,72 +19,91 @@ import {
  * width: a landscape image sits centred in the square, a portrait one scrolls
  * vertically. Zooming (`setAttachmentZoom`) scales the image within it.
  *
+ * Nothing is drawn over the image except, while its message is being edited,
+ * a row of buttons in the top-right corner: move earlier, move later, remove.
+ * Under it, a caption carries the image's tag, `[name]`, on the left and its
+ * dimensions on the right. Once the original is known to be gone, the tag
+ * turns red and reads `(!) [name]`.
+ *
  * A click on an image means one of two things:
  *
  *   - while its message is being edited, replace it (`attachments.replace`);
  *   - otherwise, if it is a placeholder, restore its original
  *     (`attachments.restore`).
  *
- * A placeholder is drawn pixelated under a text overlay saying which.
+ * The image's tooltip says which.
  */
 
 const MAX_ZOOM = 8;
+const ZOOM_HINT = 'Pinch or Ctrl+Scroll to zoom';
 
 function sizeLabel(attachment) {
   return `${attachment.width}×${attachment.height}`;
 }
 
-function overlayText(status, editing) {
-  if (editing) return status === 'original' ? 'Click to replace' : 'Placeholder · click to replace';
-  return status === 'checking'
-    ? 'Looking for the original…'
-    : 'Placeholder · click to restore the original';
+/** What a click on the image does, for its tooltip; empty when it does nothing. */
+function clickHint(placeholder, editing) {
+  if (editing) return 'Click to replace this image';
+  return placeholder ? 'Placeholder: click to restore the original image' : '';
 }
 
-/** One image. Looks for its original the first time it is drawn. */
-export function attachmentItemHTML(attachment, at, { editing = false } = {}) {
+/**
+ * The corner buttons of an image in a message being edited. `data-key` is the
+ * step a move takes; the ends of the list cannot move further out.
+ */
+function actionsHTML(at, count) {
+  const btn = (command, title, icon, { key = '', disabled = false } = {}) =>
+    `<button class="icon-btn" data-command="${command}"${key ? ` data-key="${key}"` : ''}
+             title="${title}"${disabled ? ' disabled' : ''}>${icon}</button>`;
+
+  return `
+    <div class="attachment-actions">
+      ${btn('attachments.move', 'Move earlier', ICON_CHEVRON_UP, { key: '-1', disabled: at === 0 })}
+      ${btn('attachments.move', 'Move later', ICON_CHEVRON_DOWN, { key: '1', disabled: at >= count - 1 })}
+      ${btn('attachments.remove', 'Remove this image', ICON_DELETE)}
+    </div>`;
+}
+
+/**
+ * One image, `at` of `count`. Looks for its original the first time it is
+ * drawn.
+ */
+export function attachmentItemHTML(attachment, at, { editing = false, count = 1 } = {}) {
   let url = imageUrlFor(attachment.hash);
   if (!url) requestImage(attachment.hash);
   url = imageUrlFor(attachment.hash);
-  const status = url ? 'original' : imageStatus(attachment.hash);
   const placeholder = !url;
+  // Red only once the lookup is over, so a cached original never flashes red.
+  const missing = placeholder && imageStatus(attachment.hash) === 'missing';
 
   // Zooming out stops when the whole image fits the square: narrower than it
   // for a portrait image, full width for any other.
   const minZoom = Math.min(1, attachment.width / attachment.height);
 
-  let command = '';
-  if (editing) {
-    command = ' data-command="attachments.replace" title="Click to replace this image"';
-  } else if (placeholder) {
-    command = ' data-command="attachments.restore" title="Click to restore the original image"';
-  }
+  const command = editing
+    ? 'attachments.replace'
+    : placeholder
+      ? 'attachments.restore'
+      : '';
+  const hint = clickHint(placeholder, editing);
 
   const image = `<img class="attachment-image${placeholder ? ' pixelated' : ''}"
       src="${escapeHTML(url || attachment.placeholder)}" alt="${escapeHTML(attachment.name)}"
-      style="aspect-ratio: ${attachment.width} / ${attachment.height}" draggable="false"${command}>`;
+      style="aspect-ratio: ${attachment.width} / ${attachment.height}" draggable="false"${
+        command ? ` data-command="${command}"` : ''
+      }${hint ? ` title="${escapeHTML(hint)}"` : ''}>`;
 
-  // A placeholder always says what it is; a real image only offers
-  // replacement, on hover, while editing.
-  const overlay =
-    placeholder || editing
-      ? `<div class="attachment-overlay${placeholder ? '' : ' on-hover'}" aria-hidden="true"><span>${escapeHTML(
-          overlayText(status, editing),
-        )}</span></div>`
-      : '';
+  const viewerHint = [ZOOM_HINT, editing || placeholder ? '' : 'double-click to reset']
+    .filter(Boolean)
+    .join(' · ');
 
-  const remove = editing
-    ? `<button class="attachment-remove" data-command="attachments.remove" title="Remove this image">${ICON_DELETE}</button>`
-    : '';
-
-  const viewerHint = editing
-    ? 'Pinch or Ctrl+Scroll to zoom · click to replace'
-    : placeholder
-      ? 'Pinch or Ctrl+Scroll to zoom · click to restore'
-      : 'Pinch or Ctrl+Scroll to zoom · double-click to reset';
+  const tagTitle = missing
+    ? `${attachment.name} (placeholder: the original is not stored)`
+    : attachment.name;
 
   const classes = ['attachment'];
   if (placeholder) classes.push('is-placeholder');
+  if (missing) classes.push('is-missing');
   if (editing) classes.push('is-replaceable');
 
   return `
@@ -92,13 +111,14 @@ export function attachmentItemHTML(attachment, at, { editing = false } = {}) {
             data-hash="${escapeHTML(attachment.hash)}">
       <div class="attachment-frame">
         <div class="attachment-viewer" data-zoom="1" data-min-zoom="${minZoom}"
-             title="${viewerHint}">${image}</div>
-        ${overlay}
+             title="${escapeHTML(viewerHint)}">${image}</div>
+        ${editing ? actionsHTML(at, count) : ''}
       </div>
       <figcaption class="attachment-caption">
-        <span class="attachment-name">${escapeHTML(attachment.name)}</span>
-        <span class="attachment-size">${escapeHTML(sizeLabel(attachment))}${placeholder ? ' · placeholder' : ''}</span>
-        ${remove}
+        <span class="attachment-tag" title="${escapeHTML(tagTitle)}">${
+          missing ? '<span class="attachment-flag">(!)&nbsp;</span>' : ''
+        }<span>[</span><span class="attachment-name">${escapeHTML(attachment.name)}</span><span>]</span></span>
+        <span class="attachment-size">${escapeHTML(sizeLabel(attachment))}</span>
       </figcaption>
     </figure>`;
 }
@@ -116,7 +136,7 @@ export function attachmentsHTML(message, { editing = false } = {}) {
   const hint = open ? 'Hide attachments' : 'Show attachments';
   const body = open
     ? `<div class="attachments-body">${list
-        .map((attachment, at) => attachmentItemHTML(attachment, at, { editing }))
+        .map((attachment, at) => attachmentItemHTML(attachment, at, { editing, count: list.length }))
         .join('')}</div>`
     : '';
 
@@ -146,10 +166,13 @@ export function syncAttachmentImages(hash) {
     const row = figure.closest('.msg[data-index]');
     const index = Number.parseInt(row?.dataset.index, 10);
     const at = Number.parseInt(figure.dataset.attachment, 10);
-    const attachment = attachmentsOf(messages[index])[at];
+    const list = attachmentsOf(messages[index]);
+    const attachment = list[at];
     if (!attachment) continue;
     const editing = state.session.editingMessageIndex === index;
-    figure.replaceWith(fromHTML(attachmentItemHTML(attachment, at, { editing })));
+    figure.replaceWith(
+      fromHTML(attachmentItemHTML(attachment, at, { editing, count: list.length })),
+    );
   }
 }
 
