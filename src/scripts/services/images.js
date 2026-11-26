@@ -1,7 +1,7 @@
 import { EVENTS } from '../store/events.js';
 import { state, emit } from '../store/state.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
-import { pickNumber } from '../core/values.js';
+import { pickNumber, pickInteger } from '../core/values.js';
 import { attachmentsOf, sendsImages, normalizeAttachment } from '../core/attachments.js';
 import * as imageCache from '../data/image-cache.js';
 
@@ -24,8 +24,21 @@ import * as imageCache from '../data/image-cache.js';
  * image can swap the placeholder for the original in place.
  */
 
-/** The longest side of a placeholder, in pixels. */
-const PLACEHOLDER_MAX_SIDE = 16;
+/**
+ * Fallbacks for the Placeholder Width and Placeholder Max Pixels settings: a
+ * placeholder starts this wide (never wider than the original), and is halved
+ * in width until it holds at most this many pixels.
+ */
+const DEFAULT_PLACEHOLDER_WIDTH = 64;
+const DEFAULT_PLACEHOLDER_MAX_PIXELS = 64 * 64;
+/**
+ * Placeholders are lossy: their colours need only be close. WebP keeps
+ * transparency; where a browser cannot encode it, a PNG with each colour
+ * channel rounded to `PNG_LEVELS` levels compresses nearly as well.
+ */
+const PLACEHOLDER_QUALITY = 0.5;
+const PNG_LEVELS = 16;
+
 const DEFAULT_CACHE_MB = 100;
 
 /** hash -> { blob, url }: originals held this session. */
@@ -176,6 +189,84 @@ export function requestImage(hash) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Placeholders
+ * ------------------------------------------------------------------ */
+
+/** A configured positive whole number, else its fallback. */
+function positiveSetting(key, fallback) {
+  const value = pickInteger(fallback, state.data.config[key], GLOBAL_SETTINGS[key].default);
+  return value >= 1 ? value : fallback;
+}
+
+/** The configured starting width and pixel budget for new placeholders. */
+export function placeholderLimits() {
+  return {
+    width: positiveSetting('placeholderWidth', DEFAULT_PLACEHOLDER_WIDTH),
+    maxPixels: positiveSetting('placeholderMaxPixels', DEFAULT_PLACEHOLDER_MAX_PIXELS),
+  };
+}
+
+/**
+ * The placeholder's pixel size for an original of `width` × `height`.
+ *
+ * It starts `limits.width` wide (or the original's width, if narrower) at the
+ * original's aspect ratio, and while it holds more than `limits.maxPixels`,
+ * its width is halved and its height worked out again. An image too tall to
+ * fit even one pixel wide has its height cut to the budget; the viewer and
+ * the wire use the original's size, so only the stored thumbnail is squashed.
+ */
+export function placeholderSize(width, height, limits = placeholderLimits()) {
+  const { width: startWidth, maxPixels } = limits;
+  const heightFor = (w) => Math.max(1, Math.round((height * w) / width));
+
+  let w = Math.max(1, Math.min(startWidth, width));
+  let h = heightFor(w);
+  while (w > 1 && w * h > maxPixels) {
+    w = Math.max(1, Math.floor(w / 2));
+    h = heightFor(w);
+  }
+  if (w * h > maxPixels) h = Math.max(1, Math.floor(maxPixels / w));
+  return { width: w, height: h };
+}
+
+/** Round every colour channel to `PNG_LEVELS` levels, so the PNG compresses. Alpha is kept. */
+function quantize(context, width, height) {
+  const step = 255 / (PNG_LEVELS - 1);
+  const image = context.getImageData(0, 0, width, height);
+  const data = image.data;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = Math.round(Math.round(data[i] / step) * step);
+    data[i + 1] = Math.round(Math.round(data[i + 1] / step) * step);
+    data[i + 2] = Math.round(Math.round(data[i + 2] / step) * step);
+  }
+  context.putImageData(image, 0, 0);
+}
+
+/**
+ * Encode a drawn placeholder: lossy WebP where the browser can write it (it
+ * hands back a PNG when it cannot), else a colour-reduced PNG.
+ */
+function encodePlaceholder(canvas, context) {
+  const webp = canvas.toDataURL('image/webp', PLACEHOLDER_QUALITY);
+  if (webp.startsWith('data:image/webp')) return webp;
+  quantize(context, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
+}
+
+/** The pixelated stand-in for a decoded image, as a data URL. */
+function placeholderOf(bitmap) {
+  const size = placeholderSize(bitmap.width, bitmap.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = size.width;
+  canvas.height = size.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return encodePlaceholder(canvas, context);
+}
+
+/* ------------------------------------------------------------------ *
  * Taking images in
  * ------------------------------------------------------------------ */
 
@@ -192,19 +283,6 @@ async function decode(blob, name) {
   } catch {
     throw new Error(`"${name}" could not be read as an image.`);
   }
-}
-
-/** The pixelated stand-in: at most `PLACEHOLDER_MAX_SIDE` on its longest side. */
-function placeholderOf(bitmap) {
-  const scale = Math.min(1, PLACEHOLDER_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  const context = canvas.getContext('2d');
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = 'high';
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/png');
 }
 
 /** Hash, measure and hold one image file, and resolve with its attachment record. */

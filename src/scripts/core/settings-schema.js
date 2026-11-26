@@ -1,4 +1,4 @@
-import { isBlank, pickBoolean, pickNumber } from './values.js';
+import { isBlank, pickBoolean, pickNumber, pickInteger } from './values.js';
 import { DEFAULT_JS_TOOL_DESCRIPTION } from './tools.js';
 import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
 
@@ -28,6 +28,20 @@ const showEchoField = (value) => {
 const showCacheSize = (value, entry) => {
   const mb = pickNumber(Number(entry.default), value);
   return mb > 0 ? `${mb} MB` : 'Memory only';
+};
+
+/** A positive whole number of pixels; anything else shows (and acts as) the default. */
+const positivePixels = (value, entry) => {
+  const parsed = pickInteger(NaN, value);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : Number(entry.default);
+};
+
+const showPixels = (value, entry) => `${positivePixels(value, entry)} px`;
+
+const showPixelBudget = (value, entry) => {
+  const pixels = positivePixels(value, entry);
+  const side = Math.sqrt(pixels);
+  return Number.isInteger(side) ? `${pixels} px (${side}×${side})` : `${pixels} px`;
 };
 
 export const GLOBAL_SETTINGS = {
@@ -139,6 +153,26 @@ export const GLOBAL_SETTINGS = {
       'How much browser storage original images may use so they survive a reload. The oldest are removed first once it is full. ' +
       '0 keeps originals in memory only. Chats themselves only ever store a pixelated placeholder.',
     display: showCacheSize,
+  },
+  placeholderWidth: {
+    label: 'Placeholder Width',
+    category: 'Images',
+    type: 'number',
+    default: '64',
+    tooltip:
+      'How many pixels wide a placeholder starts at (never wider than the original). It is halved until it fits Placeholder Max Pixels. ' +
+      'Applies to images added from now on; existing placeholders keep their size.',
+    display: showPixels,
+  },
+  placeholderMaxPixels: {
+    label: 'Placeholder Max Pixels',
+    category: 'Images',
+    type: 'number',
+    default: '4096',
+    tooltip:
+      'The most pixels (width × height) a placeholder may hold. While it holds more, its width is halved. ' +
+      'Placeholders are stored in the chat, so larger values make chats larger. Applies to images added from now on.',
+    display: showPixelBudget,
   },
   collapseThinking: {
     label: 'Collapse Thinking',
