@@ -6,6 +6,7 @@ import {
   thinkingBlocksOf,
   createThinkingBlockAccumulator,
 } from '../../core/reasoning.js';
+import { reasoningEffortToSend } from '../../core/capabilities.js';
 import { createToolCallAccumulator, toolCallsOf } from '../../core/tool-calls.js';
 
 /**
@@ -17,8 +18,13 @@ import { createToolCallAccumulator, toolCallsOf } from '../../core/tool-calls.js
  * resolves with the complete set.
  */
 
-/** Build the sampling parameters from whichever schema entries are set. */
-function buildParameters(config) {
+/**
+ * Build the sampling parameters from whichever schema entries are set. The
+ * reasoning effort is checked against what the endpoint reported for `model`
+ * (see `core/capabilities.js`), so a level the model does not take is never
+ * sent to it.
+ */
+function buildParameters(config, model) {
   const params = {};
   for (const [key, entry] of Object.entries(GLOBAL_SETTINGS)) {
     if (!entry.payloadKey || isBlank(config[key])) continue;
@@ -27,9 +33,12 @@ function buildParameters(config) {
     if (Number.isFinite(value)) params[entry.payloadKey] = value;
   }
 
-  if (config.reasoningEffort && config.reasoningEffort !== 'none') {
-    params.reasoning_effort = config.reasoningEffort;
-  }
+  const effort = reasoningEffortToSend(
+    config.reasoningEffort,
+    config.modelCapabilities?.[model],
+    config.availableReasoningLevels,
+  );
+  if (effort) params.reasoning_effort = effort;
 
   return params;
 }
@@ -154,7 +163,7 @@ export async function requestCompletion({
       model,
       messages,
       stream: true,
-      ...buildParameters(config),
+      ...buildParameters(config, model),
       ...buildToolFields(tools, forceAnswer),
     }),
     signal,

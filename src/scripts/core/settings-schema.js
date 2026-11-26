@@ -115,6 +115,16 @@ export const GLOBAL_SETTINGS = {
     tooltip: 'Comma-separated models to always offer, for servers that do not implement /models.',
     display: (value) => (isBlank(value) ? 'None' : String(value)),
   },
+  probeCapabilities: {
+    label: 'Probe Capabilities',
+    category: 'API & Connections',
+    type: 'boolean',
+    default: 'true',
+    tooltip:
+      'When fetching models, also ask LiteLLM (/model/info) and Ollama (/api/show) what each model supports: tools, thinking and its levels, vision, context length. ' +
+      'Off reads /models alone. A model reported without tool support is not offered tools.',
+    display: showOnOff,
+  },
   collapseThinking: {
     label: 'Collapse Thinking',
     category: 'UI & Display',

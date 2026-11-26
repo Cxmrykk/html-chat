@@ -17,12 +17,23 @@ export function mergeModelLists(...lists) {
 }
 
 /**
- * Ids from a `/models` response. The spec says `{ data: [{ id }] }`; a few
- * servers answer with a bare array, a `models` key, or `name` instead of `id`.
+ * The entries of a `/models` response. The spec says `{ data: [{ id }] }`; a
+ * few servers answer with a bare array or a `models` key.
  */
-export function modelIdsFrom(payload) {
+export function modelEntriesFrom(payload) {
   const entries = Array.isArray(payload) ? payload : payload?.data ?? payload?.models ?? [];
-  if (!Array.isArray(entries)) return [];
-  const ids = entries.map((entry) => (typeof entry === 'string' ? entry : entry?.id ?? entry?.name));
-  return normalizeModelList(ids).sort((a, b) => a.localeCompare(b));
+  return Array.isArray(entries) ? entries : [];
+}
+
+/** An entry's id: the entry itself if it is a string, else `id`, else `name`. */
+export function modelEntryId(entry) {
+  const id = typeof entry === 'string' ? entry : entry?.id ?? entry?.name;
+  return typeof id === 'string' ? id.trim() : '';
+}
+
+/** Ids from a `/models` response, sorted. */
+export function modelIdsFrom(payload) {
+  return normalizeModelList(modelEntriesFrom(payload).map(modelEntryId)).sort((a, b) =>
+    a.localeCompare(b),
+  );
 }

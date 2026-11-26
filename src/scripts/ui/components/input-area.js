@@ -5,7 +5,12 @@ import { formatCompactCount, escapeHTML } from '../../core/format.js';
 import { buildApiMessages, payloadChars } from '../../core/tool-calls.js';
 import { toolSchemaChars, toolActivityLabel } from '../../core/tools.js';
 import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
-import { availableModels } from '../../services/models.js';
+import {
+  describeCapabilities,
+  capabilitySourceLabel,
+  DEFAULT_EFFORT,
+} from '../../core/capabilities.js';
+import { availableModels, capabilitiesFor, reasoningChoicesFor } from '../../services/models.js';
 import { toolSchemasFor } from '../../services/tools/index.js';
 import { isRetryable } from './message.js';
 import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
@@ -17,34 +22,45 @@ const PICK_PLACEHOLDER =
   'Click the part of the message you want to edit. Shift+Click another part to select everything in between.';
 const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
 
+function optionHTML(value, title = '') {
+  const tip = title ? ` title="${escapeHTML(title)}"` : '';
+  return `<option value="${escapeHTML(value)}"${tip}>${escapeHTML(value)}</option>`;
+}
+
+/**
+ * While thinking levels are being chosen, the dropdown lists the efforts the
+ * selected model takes: the ones its endpoint reported (with `default`,
+ * which sends none), or the user's own list when it reported nothing.
+ */
+function renderReasoningDropdown(select) {
+  const model = state.data.config.lastModel;
+  const { levels, reported, source } = reasoningChoicesFor(model);
+  const effort = state.data.config.reasoningEffort;
+
+  select.innerHTML = levels.map((level) => optionHTML(level)).join('');
+  select.value = levels.includes(effort) ? effort : levels[0];
+  setDisabled(select, false);
+
+  select.title = reported
+    ? `Reasoning effort for ${model || 'this model'}, as reported by ${capabilitySourceLabel(source)}. ` +
+      `"${DEFAULT_EFFORT}" sends none and leaves it to the server.`
+    : 'Reasoning effort, from your own list (edit it below). "none" sends none.';
+  syncSelectMarquee(select);
+}
+
 /**
  * The model dropdown, driven by whatever `services/models.js` last
  * discovered (plus any manually configured extras). When editing thinking,
  * the options flip to the reasoning levels. A name too long for the dropdown
- * scrolls (see `ui/marquee.js`).
+ * scrolls (see `ui/marquee.js`). Hovering it says what the selected model
+ * can do, when its endpoint said.
  */
 export function updateModelDropdown() {
   const select = $('#model-select');
   if (!select) return;
 
   if (state.session.editingThinking) {
-    const levels = (state.data.config.availableReasoningLevels || '')
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (levels.length) {
-      select.innerHTML = levels
-        .map((level) => `<option value="${escapeHTML(level)}">${escapeHTML(level)}</option>`)
-        .join('');
-      select.value = state.data.config.reasoningEffort || 'none';
-    } else {
-      select.innerHTML = `<option value="none">none</option>`;
-      select.value = 'none';
-    }
-    setDisabled(select, false);
-    select.title = 'Select reasoning effort';
-    syncSelectMarquee(select);
+    renderReasoningDropdown(select);
     return;
   }
 
@@ -53,7 +69,7 @@ export function updateModelDropdown() {
 
   if (models.length) {
     select.innerHTML = models
-      .map((model) => `<option value="${escapeHTML(model)}">${escapeHTML(model)}</option>`)
+      .map((model) => optionHTML(model, describeCapabilities(capabilitiesFor(model))))
       .join('');
     select.value = state.data.config.lastModel;
   } else {
@@ -66,7 +82,13 @@ export function updateModelDropdown() {
   }
 
   setDisabled(select, !models.length);
-  select.title = error ? `Model discovery failed: ${error}` : 'Ctrl+Click to configure thinking levels';
+
+  if (error) {
+    select.title = `Model discovery failed: ${error}`;
+  } else {
+    const summary = describeCapabilities(capabilitiesFor(state.data.config.lastModel));
+    select.title = [summary, 'Ctrl+Click to configure thinking levels'].filter(Boolean).join('\n');
+  }
   syncSelectMarquee(select);
 }
 
@@ -176,7 +198,12 @@ export function renderInputArea() {
   setHidden(thinkInput, !editingThink);
 
   if (chatInput && !editingThink) chatInput.disabled = false;
-  if (thinkInput && editingThink) thinkInput.disabled = false;
+  if (thinkInput && editingThink) {
+    thinkInput.disabled = false;
+    thinkInput.title = reasoningChoicesFor().reported
+      ? 'Your own levels, used for models whose endpoint reports none. This model uses the levels its endpoint reported.'
+      : 'Your own levels, one per line. Used for models whose endpoint reports none.';
+  }
 
   renderComposerMode(chatInput, editingMsg);
   renderSendButton();
