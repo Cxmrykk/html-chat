@@ -31,6 +31,7 @@ import {
   ICON_SAVE,
   ICON_CANCEL,
   ICON_WRAP,
+  ICON_SELECT_ALL,
   ICON_DELETE,
   ICON_CHEVRON_DOWN,
   ICON_CHEVRON_UP,
@@ -108,20 +109,21 @@ export function messageMarkdown(message, { reasoning = true } = {}) {
  * Shared pieces
  * ------------------------------------------------------------------ */
 
+/**
+ * The row's buttons. While editing: save, cancel, select every block of the
+ * message, and toggle wrapping in the composer.
+ */
 function actionsHTML(message, editing) {
   const btn = (cmd, label, icon) =>
     `<button data-command="${cmd}" title="${label}" class="icon-btn">${icon}</button>`;
 
   if (editing) {
-    const buttons = [btn('message.saveEdit', 'Save', ICON_SAVE)];
-    if (isRetryable(message)) {
-      buttons.push(btn('message.retryEdit', 'Retry (save and regenerate)', ICON_RETRY));
-    }
-    buttons.push(
+    return [
+      btn('message.saveEdit', 'Save', ICON_SAVE),
       btn('message.cancelEdit', 'Cancel', ICON_CANCEL),
+      btn('message.selectAll', 'Select All', ICON_SELECT_ALL),
       btn('message.toggleWrap', 'Toggle Wrap', ICON_WRAP),
-    );
-    return buttons.join('');
+    ].join('');
   }
 
   const buttons = [];

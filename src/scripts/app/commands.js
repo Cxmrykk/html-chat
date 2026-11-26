@@ -495,7 +495,8 @@ export const commands = {
    * Enter edit mode. Nothing in the transcript moves; only the row's buttons
    * change. The user then clicks the block of the message to edit, and may
    * Shift+Click another to extend the selection to it (see
-   * `message.selectBlock`). A message with no blocks to click (an empty one)
+   * `message.selectBlock`), or select every block at once
+   * (`message.selectAll`). A message with no blocks to click (an empty one)
    * is loaded whole straight away.
    */
   'message.edit': ({ index }) => {
@@ -560,6 +561,30 @@ export const commands = {
   },
 
   /**
+   * Select every block of the message being edited, as if the first had been
+   * clicked and the last Shift+Clicked. A message with no blocks is already
+   * loaded whole, and a selection that already covers everything is left
+   * alone, so neither can throw away text typed into the composer.
+   */
+  'message.selectAll': () => {
+    const index = state.session.editingMessageIndex;
+    if (index === null) return;
+    const message = currentChat()?.messages[index];
+    if (!message) return;
+
+    const content = message.content || '';
+    const blocks = sourceBlocks(content);
+    if (!blocks.length) return;
+
+    const range = { start: 0, end: blocks.length - 1, anchor: 0 };
+    const current = state.session.editingSource === content ? state.session.editingRange : null;
+    if (sameRange(current, range)) return;
+
+    if (!confirmDiscard()) return;
+    loadEditRange(message, range);
+  },
+
+  /**
    * Splice the composer's text back in place of the selected blocks. With
    * nothing selected there is nothing to save, and the edit just ends. If the
    * message changed after the blocks were picked, the offsets no longer mean
@@ -599,24 +624,6 @@ export const commands = {
 
     stopEditing();
     return true;
-  },
-
-  /**
-   * Save the edit and immediately regenerate from it: everything after the
-   * message is dropped and the edited text is resent.
-   */
-  'message.retryEdit': async () => {
-    const index = state.session.editingMessageIndex;
-    if (index === null) return;
-
-    const saved = await commands['message.saveEdit']();
-    if (!saved) return;
-
-    // Roles that cannot start a turn just get the save.
-    const message = currentChat()?.messages[index];
-    if (!isRetryable(message)) return;
-
-    await commands['message.retry']({ index });
   },
 
   'message.cancelEdit': () => {

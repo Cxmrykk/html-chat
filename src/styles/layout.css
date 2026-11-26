@@ -92,11 +92,15 @@ header {
 }
 
 /*
- * The textareas are the last thing in the main column. Without their default
- * bottom margin (`styles/base.css`) the column ends exactly at the input box,
- * so the sidebar, which stretches to the same height, ends there too.
+ * The textareas are the last thing in the main column, and it must end
+ * exactly at their bottom border, so the sidebar (stretched to the same
+ * height) ends there too. That takes two things: no bottom margin (the
+ * default in `styles/base.css` adds 10px), and `display: block`, because an
+ * inline-block textarea sits on a line box whose descender space adds a few
+ * more pixels below it.
  */
 #input-area textarea {
+  display: block;
   margin-bottom: 0;
 }
 

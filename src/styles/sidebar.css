@@ -37,15 +37,15 @@
   margin-bottom: 20px;
 }
 
-/* Opens the advanced settings with a plain click. */
+/*
+ * Opens the advanced settings with a plain click. It looks like any other
+ * heading; only the cursor says it can be clicked, and a click never selects
+ * its text.
+ */
 #settings-heading {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-}
-
-#settings-heading:hover {
-  color: var(--accent);
 }
 
 .checkbox-label {

@@ -12,7 +12,6 @@ import {
 } from '../../core/capabilities.js';
 import { availableModels, capabilitiesFor, reasoningChoicesFor } from '../../services/models.js';
 import { toolSchemasFor } from '../../services/tools/index.js';
-import { isRetryable } from './message.js';
 import { composerAttachmentsHTML } from './attachments.js';
 import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
 
@@ -20,7 +19,7 @@ import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
 
 const PROMPT_PLACEHOLDER = 'Type your prompt here... Paste or drop images to attach them.';
 const PICK_PLACEHOLDER =
-  'Click the part of the message you want to edit. Shift+Click another part to select everything in between. Paste or drop images to add them to the message.';
+  'Click the part of the message you want to edit, or Select All. Shift+Click another part to select everything in between. Paste or drop images to add them to the message.';
 const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
 
 const CLOSE_TITLE = 'Close the settings';
@@ -212,9 +211,6 @@ export function renderInputArea() {
   setHidden($('#send-btn'), !normalMode);
 
   setHidden($('#save-edit-btn'), !editingMsg);
-  // Retry regenerates from this message, so it only applies to the role that
-  // can start a turn — the same test the non-editing retry button uses.
-  setHidden($('#retry-edit-btn'), !editingMsg || !isRetryable(editingMsg));
   setHidden($('#cancel-edit-btn'), !editingMsg);
 
   setHidden($('#save-thinking-btn'), !editingThink);

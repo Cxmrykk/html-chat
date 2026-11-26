@@ -93,12 +93,15 @@ Hover a message to see its buttons:
 
 ### Editing part of a message
 
-After clicking **Edit**, click the block (paragraph, list, code block, etc.) you want to change. Its source loads into the composer, and a dotted outline marks it. Shift+Click another block to select everything in between.
+After clicking **Edit**, click the block (paragraph, list, code block, etc.) you want to change. Its source loads into the composer, and a dotted outline marks it. Shift+Click another block to select everything in between, or click **Select All** to select every block of the message at once.
 
 - Clicking another block switches the selection to it.
 - Clicking the selected block again deselects it.
 - **Save** (`Ctrl+Enter`) writes the edit back. An empty composer deletes the selected part.
-- **Retry** saves the edit and regenerates from the message.
+- **Cancel** ends the edit without saving.
+- **Toggle Wrap** switches line wrapping in the composer.
+
+To regenerate from an edited message, save it, then use **Retry** on it.
 
 ### Thinking boxes
 
