@@ -1,11 +1,13 @@
 /* ------------------------------------------------------------------ *
  * Attachments
  *
- * A drop-down at the bottom of a message, styled like the thinking box's
- * header. Inside it, the images are tiled in two equal columns, each in a
- * square viewer as wide as its column. The image fills the viewer's width:
- * a landscape image sits centred in the square, a portrait one scrolls
- * vertically. Zooming changes the image's width (ui/components/attachments.js).
+ * A drop-down at the bottom of a message. Its header has the same geometry
+ * as a tool call's (padding, font size, line height, icon column), so the two
+ * read as one family. Inside it, the images are tiled in two equal columns,
+ * each in a square viewer as wide as its column. The image fills the
+ * viewer's width: a landscape image sits centred in the square, a portrait
+ * one scrolls vertically. Zooming changes the image's width
+ * (ui/components/attachments.js).
  * ------------------------------------------------------------------ */
 
 .attachments {
@@ -14,17 +16,20 @@
   background: var(--bg-raised);
 }
 
+/* Matches `.tool-call-header` in chat.css. */
 .attachments-header {
   display: flex;
   width: 100%;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 0.85em;
+  text-align: left;
+  font-size: 0.9em;
+  line-height: 1.5;
   font-weight: bold;
   text-transform: uppercase;
 }
@@ -34,9 +39,35 @@
   color: var(--text);
 }
 
-.attachments-header .icon {
+/* Same box as `.tool-call-status`: centred on the first line of text. */
+.attachments-icon {
+  flex-shrink: 0;
+  width: 1.2em;
+  height: 1.5em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.attachments-icon .icon {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.attachments-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The chevron, as on a tool call: on the first text line, at the far end. */
+.attachments-header > .icon {
+  flex-shrink: 0;
   width: 1.2em;
   height: 1.2em;
+  margin-top: 0.15em;
 }
 
 /* Two equal columns; `minmax(0, 1fr)` stops a long caption from widening one. */

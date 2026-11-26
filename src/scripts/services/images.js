@@ -16,6 +16,10 @@ import * as imageCache from '../data/image-cache.js';
  * neither is a placeholder: shown pixelated, and sent scaled up to the
  * original's size, since endpoints refuse images that small.
  *
+ * The user is warned before placeholders are sent, once per set: hashes they
+ * have agreed to send as placeholders are remembered for the session, and
+ * only a placeholder not among them warns again.
+ *
  * Status changes are announced with `EVENTS.IMAGES` so anything showing the
  * image can swap the placeholder for the original in place.
  */
@@ -34,6 +38,8 @@ const pendingLookups = new Map();
 const wireOriginals = new Map();
 /** `${width}x${height}:${placeholder}` -> data URL of the upscaled placeholder. */
 const wirePlaceholders = new Map();
+/** Hashes the user has agreed to send as placeholders this session. */
+const acknowledged = new Set();
 
 function announce(hash) {
   emit(EVENTS.IMAGES, { hash });
@@ -306,6 +312,26 @@ export async function missingImages(messages) {
     }
   }
   return missing;
+}
+
+/**
+ * What a send must warn about: every attachment that would go out as a
+ * placeholder (`missing`), and the hashes among them the user has not yet
+ * agreed to send that way (`unconfirmed`). Nothing unconfirmed, no warning.
+ */
+export async function placeholdersToConfirm(messages) {
+  const missing = await missingImages(messages);
+  const hashes = [...new Set(missing.map((attachment) => attachment.hash))];
+  return {
+    missing,
+    hashes,
+    unconfirmed: hashes.filter((hash) => !acknowledged.has(hash)),
+  };
+}
+
+/** Remember that these placeholders may be sent without asking again. */
+export function acknowledgePlaceholders(hashes) {
+  for (const hash of hashes || []) acknowledged.add(hash);
 }
 
 function readDataURL(blob) {

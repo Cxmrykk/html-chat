@@ -3,7 +3,13 @@ import { state, currentChat } from '../../store/state.js';
 import { escapeHTML } from '../../core/format.js';
 import { attachmentsOf } from '../../core/attachments.js';
 import { imageUrlFor, imageStatus, requestImage } from '../../services/images.js';
-import { ICON_CHEVRON_DOWN, ICON_CHEVRON_UP, ICON_DELETE, ICON_CANCEL } from '../icons.js';
+import {
+  ICON_CHEVRON_DOWN,
+  ICON_CHEVRON_UP,
+  ICON_DELETE,
+  ICON_CANCEL,
+  ICON_PAPERCLIP,
+} from '../icons.js';
 
 /**
  * A message's attachments: a drop-down at the bottom of the row, and inside it
@@ -97,7 +103,11 @@ export function attachmentItemHTML(attachment, at, { editing = false } = {}) {
     </figure>`;
 }
 
-/** The drop-down, or nothing for a message without images. Closed unless opened. */
+/**
+ * The drop-down, or nothing for a message without images. Closed unless
+ * opened. Its header is built like a tool call's: an icon, the label, and the
+ * chevron at the far end.
+ */
 export function attachmentsHTML(message, { editing = false } = {}) {
   const list = attachmentsOf(message);
   if (!list.length) return '';
@@ -114,6 +124,7 @@ export function attachmentsHTML(message, { editing = false } = {}) {
     <div class="attachments${open ? ' open' : ''}">
       <button class="attachments-header" data-command="message.toggleAttachments"
               aria-expanded="${open ? 'true' : 'false'}" title="${hint}">
+        <span class="attachments-icon" aria-hidden="true">${ICON_PAPERCLIP}</span>
         <span class="attachments-label">Attachments (${list.length})</span>
         ${open ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN}
       </button>

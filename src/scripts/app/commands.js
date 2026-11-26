@@ -154,22 +154,34 @@ function setPendingAttachments(list) {
 /**
  * Before a request built from `messages` goes out: if any image in them is
  * only a placeholder, say so, and let the user back out to restore it.
- * Resolves with whether to go ahead.
+ *
+ * Asked once per set of placeholders: once the user agrees, those images are
+ * not asked about again this session. Only a placeholder they have not agreed
+ * to yet brings the warning back. Resolves with whether to go ahead.
  */
 async function confirmPlaceholders(messages) {
-  const missing = await images.missingImages(messages);
-  if (!missing.length) return true;
+  const { missing, hashes, unconfirmed } = await images.placeholdersToConfirm(messages);
+  if (!unconfirmed.length) return true;
 
+  const count = missing.length;
   const subject =
-    missing.length === 1
+    count === 1
       ? 'An image in this chat is only a placeholder'
-      : `${missing.length} images in this chat are only placeholders`;
-  return confirm(
-    `${subject}: the original is no longer stored.\n\n` +
-      'Unless you restore it first (open the attachments and click the placeholder), ' +
-      'the pixelated placeholder, scaled up to the original size, will be sent instead.\n\n' +
+      : `${count} images in this chat are only placeholders`;
+  const fresh =
+    unconfirmed.length < hashes.length
+      ? ` (${unconfirmed.length} new since you last confirmed)`
+      : '';
+  const them = count === 1 ? 'it' : 'them';
+
+  const proceed = confirm(
+    `${subject}${fresh}: the original is no longer stored.\n\n` +
+      `Unless you restore ${them} first (open the attachments and click the placeholder), ` +
+      `the pixelated placeholder, scaled up to the original size, will be sent instead.\n\n` +
       'Send anyway?',
   );
+  if (proceed) images.acknowledgePlaceholders(hashes);
+  return proceed;
 }
 
 /** The attachment at `at` of message `index`, if it still exists. */
