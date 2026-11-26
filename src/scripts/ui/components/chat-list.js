@@ -30,14 +30,14 @@ function chatItemHTML(chat) {
     </div>`;
 }
 
-function groupHeadingHTML(label, count, collapsed) {
+/** The heading: the date, then the chevron right beside it. */
+function groupHeadingHTML(label, collapsed) {
   const hint = collapsed ? 'Show these chats' : 'Hide these chats';
   return `
     <button class="chat-date-group${collapsed ? ' collapsed' : ''}" data-command="chat.toggleGroup"
             data-key="${escapeHTML(label)}" aria-expanded="${collapsed ? 'false' : 'true'}"
             title="${hint}">
       <span class="chat-date-label">${escapeHTML(label)}</span>
-      <span class="chat-date-count">${count}</span>
       ${collapsed ? ICON_CHEVRON_DOWN : ICON_CHEVRON_UP}
     </button>`;
 }
@@ -51,7 +51,7 @@ function groupedHTML(chats) {
       const shown = folded
         ? members.filter((chat) => chat.id === state.data.currentChatId)
         : members;
-      return groupHeadingHTML(label, members.length, folded) + shown.map(chatItemHTML).join('');
+      return groupHeadingHTML(label, folded) + shown.map(chatItemHTML).join('');
     })
     .join('');
 }

@@ -69,7 +69,7 @@ The **Send** button shows an estimate of the context size, at about 4 characters
 
 The chat list in the sidebar always fills the height left below the settings box, and scrolls on its own. Chats are grouped under date headings by when each chat was created: Today, Yesterday, one heading per day for the rest of the last 30 days (e.g. `Nov 24`), then Older.
 
-Each heading shows how many chats it holds. Click it to collapse or expand the group. A collapsed group still shows the chat that is open. Collapsed groups are not kept across reloads.
+Click a heading, or the chevron beside it, to collapse or expand the group. A collapsed group still shows the chat that is open. Collapsed groups are not kept across reloads.
 
 Turn grouping off with **Chat Date Groups**.
 
