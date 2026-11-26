@@ -23,7 +23,8 @@ const BASE_CONFIG = {
 /**
  * Global settings that no longer exist. File search has been removed, and
  * with it every setting that configured it: tool descriptions, embeddings,
- * the retrieval budget and its batching, and the sidebar's file list.
+ * the retrieval budget and its batching, and the sidebar's file list. The
+ * chat list now always fills the sidebar, so its height limit is gone too.
  */
 const RETIRED_FIELDS = [
   'godModePrompt',
@@ -41,6 +42,7 @@ const RETIRED_FIELDS = [
   'chunkBatchSize',
   'chunkBatchMaxTokens',
   'maxVisibleFiles',
+  'maxVisibleChats',
 ];
 
 /**

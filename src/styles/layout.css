@@ -60,9 +60,18 @@ header {
   margin-top: 1rem;
 }
 
+/*
+ * A column as tall as the grid: the settings box takes what it needs, and the
+ * chat list fills the rest and scrolls inside itself (`styles/sidebar.css`).
+ * The sidebar only scrolls as a whole when the screen is too short for even
+ * the chat list's minimum height.
+ */
 .sidebar {
   flex: 1;
   min-width: 250px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   padding-right: 10px;
 }

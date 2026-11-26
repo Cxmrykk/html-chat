@@ -215,14 +215,6 @@ export const GLOBAL_SETTINGS = {
     tooltip: 'Show a centered "Click to expand" fading overlay on collapsed code blocks.',
     display: showOnOff,
   },
-  maxVisibleChats: {
-    label: 'Max Visible Chats',
-    category: 'UI & Display',
-    type: 'number',
-    default: '',
-    tooltip: 'Maximum number of chats displayed at once in the sidebar.',
-    display: (value) => (isBlank(value) ? 'Unlimited' : String(value)),
-  },
 };
 
 /** Group schema keys by category, preserving declaration order. */

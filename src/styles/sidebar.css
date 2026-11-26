@@ -2,17 +2,50 @@
   margin-bottom: 20px;
 }
 
+/*
+ * The chats section takes every pixel the settings box leaves. Its list is the
+ * only thing that scrolls, so the header and its New button stay in view.
+ * `8em` keeps a few rows usable on a very short screen; below that the whole
+ * sidebar scrolls instead.
+ */
+.sidebar-section.chats-section {
+  flex: 1 1 auto;
+  min-height: 8em;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+
 .section-header {
   display: flex;
+  flex-shrink: 0;
   justify-content: space-between;
   align-items: center;
 }
 
+#chat-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .config-box {
+  flex-shrink: 0;
   background: var(--bg-inset);
   padding: 15px;
   border: 1px solid var(--border);
   margin-bottom: 20px;
+}
+
+/* Opens the advanced settings with a plain click. */
+#settings-heading {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#settings-heading:hover {
+  color: var(--accent);
 }
 
 .checkbox-label {
@@ -36,6 +69,10 @@
   padding: 5px;
   border: 1px solid transparent;
   margin-bottom: 5px;
+}
+
+.chat-item:last-child {
+  margin-bottom: 0;
 }
 
 .chat-item.active {

@@ -64,6 +64,8 @@ Anything not reported counts as unknown, and the app behaves as if there were no
 
 The **Send** button shows an estimate of the context size, at about 4 characters per token. It covers the full request, including tool definitions.
 
+The chat list in the sidebar always fills the height left below the settings box, and scrolls on its own.
+
 ### Reasoning effort
 
 Ctrl+Click the model dropdown to choose the `reasoning_effort` sent with each request. The levels depend on what the endpoint reported for the selected model:
@@ -112,9 +114,9 @@ Calls run one at a time. Results are capped by **Max Tool Result Tokens**. The t
 
 ## Advanced settings
 
-Open them with Ctrl+Click on the **Settings** heading, or `Alt+I`.
+Open them by clicking the **Settings** heading in the sidebar, or with `Alt+I`. Click it again to close them.
 
-To change a setting, select it, edit the value in the bottom textarea, and save with **Save** or `Ctrl+Enter`. **Reset** restores one setting's default, and **Reset All** restores every default. Leaving a value blank uses the default.
+To change a setting, select it, edit the value in the bottom textarea, and save with **Save** or `Ctrl+Enter`. **Reset** restores one setting's default, **Cancel** discards your edit, and **Reset All** restores every default. Leaving a value blank uses the default. While a setting is being edited, **Close** is grayed out, so it can't be clicked by mistake instead of Save, Reset or Cancel.
 
 | Setting                                                        | Default           | Notes                                                                                                                                                        |
 | -------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -125,9 +127,10 @@ To change a setting, select it, edit the value in the bottom textarea, and save 
 | JavaScript Tool Description                                    | built-in          | What the model is told about the JavaScript tool                                                                                                             |
 | Extra Models                                                   | —                 | Comma-separated. Always added to the model dropdown                                                                                                          |
 | Probe Capabilities                                             | true              | Ask LiteLLM and Ollama what each model supports. Changing it fetches the model list again                                                                   |
+| Image Cache (MB)                                               | 100               | Browser storage for original images, so they survive a reload. `0` keeps them in memory only                                                                |
+| Placeholder Width, Placeholder Max Pixels                      | 64, 4096          | Size of the pixelated placeholder a chat stores for each image                                                                                              |
 | Collapse Thinking                                              | true              | Whether new thinking boxes start closed                                                                                                                      |
 | Auto-Collapse Code, Threshold, Preview Lines, Hint             | true, 20, 5, true | Long code blocks fold. Click to toggle                                                                                                                       |
-| Max Visible Chats                                              | unlimited         | Limits sidebar list height                                                                                                                                   |
 
 ## Keyboard and mouse
 
@@ -157,6 +160,7 @@ To change a setting, select it, edit the value in the bottom textarea, and save 
 - Token counts are estimates, at 4 characters per token.
 - Ollama reports the context length a model was trained with, which can be larger than the context it actually runs with (`num_ctx`).
 - Earlier versions could search uploaded files. That feature has been removed: the files, profiles and vectors it stored are deleted on first load, and old search calls in chats are shown by name with their raw arguments.
+- Earlier versions had a **Max Visible Chats** setting. The chat list now always fills the sidebar, so the setting is gone and its stored value is deleted on load.
 
 ## License
 

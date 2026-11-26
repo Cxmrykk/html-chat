@@ -27,10 +27,9 @@ export function readEditorValue(key) {
 
 async function afterMutation(keys) {
   await persistConfig();
-  // Extra models change the dropdown; Max Visible Chats changes the chat list;
-  // tool settings change what every request carries.
+  // Extra models change the dropdown; tool settings change what every
+  // request carries.
   emit(EVENTS.MODELS);
-  emit(EVENTS.CHATS);
   invalidateContext();
   // Not awaited: the dropdown shows its loading state meanwhile.
   if (keys.some((key) => DISCOVERY_KEYS.includes(key))) refreshModels();

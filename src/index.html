@@ -65,7 +65,7 @@
       <aside class="sidebar" id="sidebar">
         <div class="config-box">
           <h3 id="settings-heading" data-command="settings.toggle"
-              title="Ctrl+Click for Super Secret Settings">Settings</h3>
+              title="Click for Super Secret Settings (Alt+I)">Settings</h3>
           <label for="cfg-url">Base URL</label>
           <input type="text" id="cfg-url" placeholder="https://api.openai.com/v1" data-command="settings.saveConnection" />
           <label for="cfg-key">API Key</label>
@@ -79,7 +79,8 @@
           <button data-command="chat.export">Export</button>
         </div>
 
-        <div class="sidebar-section">
+        <!-- Fills the rest of the sidebar; the list inside scrolls on its own. -->
+        <div class="sidebar-section chats-section">
           <div class="section-header">
             <h3>Your Chats</h3>
             <button data-command="chat.new" title="New: Alt+T · Import: Alt+Click">
@@ -127,7 +128,9 @@
                       title="Ctrl+Enter / Cmd+Enter">Save</button>
               <button id="settings-reset-btn" data-command="settings.reset">Reset</button>
               <button id="settings-cancel-btn" data-command="settings.cancel">Cancel</button>
-              <button id="settings-close-btn" data-command="settings.close">Close</button>
+              <!-- Disabled while a setting is being edited (ui/components/input-area.js). -->
+              <button id="settings-close-btn" data-command="settings.close"
+                      title="Close the settings">Close</button>
             </div>
             <textarea id="settings-input" placeholder="Select a setting above to edit..."></textarea>
           </div>

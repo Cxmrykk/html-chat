@@ -23,6 +23,9 @@ const PICK_PLACEHOLDER =
   'Click the part of the message you want to edit. Shift+Click another part to select everything in between. Paste or drop images to add them to the message.';
 const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
 
+const CLOSE_TITLE = 'Close the settings';
+const CLOSE_BLOCKED_TITLE = 'Save, reset or cancel the setting being edited first';
+
 function optionHTML(value, title = '') {
   const tip = title ? ` title="${escapeHTML(title)}"` : '';
   return `<option value="${escapeHTML(value)}"${tip}>${escapeHTML(value)}</option>`;
@@ -236,7 +239,11 @@ export function renderInputArea() {
   renderSendButton();
 }
 
-/** Enable/disable the settings editor according to whether a key is selected. */
+/**
+ * Enable/disable the settings editor according to whether a key is selected.
+ * Close works the other way round: it is grayed out while a setting is being
+ * edited, so it cannot be hit instead of Save, Reset or Cancel.
+ */
 export function renderSettingsEditor() {
   const { activeSettingKey } = state.session;
   const editor = $('#settings-input');
@@ -247,6 +254,10 @@ export function renderSettingsEditor() {
   setDisabled($('#settings-save-btn'), !hasSelection);
   setDisabled($('#settings-reset-btn'), !hasSelection);
   setDisabled($('#settings-cancel-btn'), !hasSelection);
+
+  const close = $('#settings-close-btn');
+  setDisabled(close, hasSelection);
+  if (close) close.title = hasSelection ? CLOSE_BLOCKED_TITLE : CLOSE_TITLE;
 
   if (!hasSelection) {
     editor.value = '';

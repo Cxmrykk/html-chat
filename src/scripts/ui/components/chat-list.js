@@ -1,27 +1,16 @@
 import { $ } from '../dom.js';
 import { state } from '../../store/state.js';
 import { escapeHTML } from '../../core/format.js';
-import { pickInteger } from '../../core/values.js';
 import { ICON_RENAME, ICON_DELETE } from '../icons.js';
 
-const ROW_HEIGHT = '1.6em + 17px';
-
-function applyMaxHeight(list, limit) {
-  const max = pickInteger(0, limit);
-  if (max > 0) {
-    list.style.maxHeight = `calc(${max} * (${ROW_HEIGHT}))`;
-    list.style.overflowY = 'auto';
-  } else {
-    list.style.maxHeight = '';
-    list.style.overflowY = '';
-  }
-}
-
+/**
+ * The sidebar's chat list. It always fills the height the sidebar leaves it
+ * and scrolls on its own (see `#chat-list` in `styles/sidebar.css`), so
+ * nothing here sizes it.
+ */
 export function renderChatList() {
   const list = $('#chat-list');
   if (!list) return;
-
-  applyMaxHeight(list, state.data.config.maxVisibleChats);
 
   if (!state.data.chats.length) {
     list.innerHTML = '<p class="list-empty">No chats. Start a new one.</p>';

@@ -730,9 +730,8 @@ export const commands = {
     }
   },
 
-  'settings.toggle': async ({ event } = {}) => {
-    if (event && !(event.ctrlKey || event.metaKey)) return;
-    event?.preventDefault();
+  /** Open or close the advanced settings: a plain click on the heading, or Alt+I. */
+  'settings.toggle': () => {
     toggleSettings();
   },
 
@@ -768,7 +767,15 @@ export const commands = {
     setSession({ activeSettingKey: null, settingsDraft: null });
   },
 
-  'settings.close': () => leaveSettings(),
+  /**
+   * Leave the settings. Not while a setting is being edited: the Close button
+   * is disabled then, so a click meant for Save, Reset or Cancel cannot throw
+   * the edit away.
+   */
+  'settings.close': () => {
+    if (state.session.activeSettingKey) return;
+    leaveSettings();
+  },
 
   /* ---- thinking levels ---- */
 
