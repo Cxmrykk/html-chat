@@ -1,8 +1,12 @@
 import { escapeHTML } from '../../core/format.js';
-import { groupByCategory, describeSetting } from '../../core/settings-schema.js';
+import { groupByCategory } from '../../core/settings-schema.js';
 
-/** The category-grouped list of settings buttons, shared by both scopes. */
-export function settingsListHTML({ schema, activeKey, readValue }) {
+/**
+ * The category-grouped list of settings buttons. `describe(key)` gives the
+ * summary shown on the right, so the same list serves the defaults and a
+ * model's overrides.
+ */
+export function settingsListHTML({ schema, activeKey, describe }) {
   const groups = groupByCategory(schema);
   let html = '';
 
@@ -16,7 +20,7 @@ export function settingsListHTML({ schema, activeKey, readValue }) {
     html += keys
       .map((key) => {
         const entry = schema[key];
-        const summary = describeSetting(schema, key, readValue(key));
+        const summary = describe(key);
         return `
           <button class="setting-row${activeKey === key ? ' active-setting' : ''}"
                   data-command="settings.select" data-key="${escapeHTML(key)}"

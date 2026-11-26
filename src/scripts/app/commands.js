@@ -20,6 +20,7 @@ import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { sourceBlocks } from '../ui/markdown.js';
 import { isSendable, isEditable, isThinking } from '../core/roles.js';
 import { attachmentsOf } from '../core/attachments.js';
+import { isPerModel } from '../core/settings-schema.js';
 import { nextRange, sameRange, editSlice, applyEdit } from '../core/edit-range.js';
 import { ICON_CHECK } from '../ui/icons.js';
 
@@ -48,6 +49,15 @@ function leaveSettings(patch = {}) {
     editingThinking: false,
     ...patch,
   });
+}
+
+/**
+ * The model a setting is edited for: the one picked in the settings view,
+ * if the setting may be overridden per model; otherwise null, the global value.
+ */
+function settingScope(key) {
+  const model = state.session.settingsModel;
+  return model && isPerModel(key) ? model : null;
 }
 
 /** The session fields of an edit's selected blocks, cleared. */
@@ -742,8 +752,19 @@ export const commands = {
     toggleSettings();
   },
 
+  /**
+   * Pick whose LLM parameters the settings view edits: a model, or nothing
+   * for the defaults every model inherits. A setting open in the editor is
+   * closed, since its value belongs to the previous choice.
+   */
+  'settings.selectModel': ({ element }) => {
+    const model = element?.value || null;
+    if (model === state.session.settingsModel) return;
+    setSession({ settingsModel: model, activeSettingKey: null, settingsDraft: null });
+  },
+
   'settings.select': ({ key }) => {
-    const value = settings.readEditorValue(key);
+    const value = settings.readEditorValue(key, settingScope(key));
     setSession({ activeSettingKey: key, settingsDraft: value });
     setSettingsEditorValue(value);
     $('#settings-input')?.focus();
@@ -753,14 +774,14 @@ export const commands = {
     const { activeSettingKey } = state.session;
     if (!activeSettingKey) return;
     const value = $('#settings-input')?.value ?? '';
-    await settings.saveSetting(activeSettingKey, value);
+    await settings.saveSetting(activeSettingKey, value, settingScope(activeSettingKey));
     setSession({ activeSettingKey: null, settingsDraft: null });
   },
 
   'settings.reset': async () => {
     const { activeSettingKey } = state.session;
     if (!activeSettingKey) return;
-    await settings.resetSetting(activeSettingKey);
+    await settings.resetSetting(activeSettingKey, settingScope(activeSettingKey));
     setSession({ activeSettingKey: null, settingsDraft: null });
   },
 
@@ -769,8 +790,12 @@ export const commands = {
   },
 
   'settings.resetAll': async () => {
-    if (!confirm('Reset ALL Advanced parameters to default?')) return;
-    await settings.resetAllSettings();
+    const model = state.session.settingsModel;
+    const question = model
+      ? `Remove every parameter override for "${model}"? It will use the defaults again.`
+      : 'Reset ALL Advanced parameters to default? Per-model overrides are kept.';
+    if (!confirm(question)) return;
+    await settings.resetAllSettings(model);
     setSession({ activeSettingKey: null, settingsDraft: null });
   },
 

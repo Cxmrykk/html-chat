@@ -4,7 +4,8 @@ import { estimateTokens } from '../../core/tokens.js';
 import { formatCompactCount, escapeHTML } from '../../core/format.js';
 import { buildApiMessages, payloadChars } from '../../core/tool-calls.js';
 import { toolSchemaChars, toolActivityLabel } from '../../core/tools.js';
-import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
+import { GLOBAL_SETTINGS, isPerModel, describeSetting } from '../../core/settings-schema.js';
+import { OMIT } from '../../core/model-params.js';
 import {
   describeCapabilities,
   capabilitySourceLabel,
@@ -236,6 +237,22 @@ export function renderInputArea() {
 }
 
 /**
+ * What the empty editor says: the setting's description, and for a model's
+ * override, what an empty value inherits and how to send nothing.
+ */
+function settingPlaceholder(key) {
+  const tooltip = GLOBAL_SETTINGS[key]?.tooltip || '';
+  const model = state.session.settingsModel;
+  if (!model || !isPerModel(key)) return tooltip;
+
+  const inherited = describeSetting(GLOBAL_SETTINGS, key, state.data.config[key]);
+  return (
+    `For ${model}. Empty inherits the default (${inherited}); "${OMIT}" sends nothing for this model.\n\n` +
+    tooltip
+  );
+}
+
+/**
  * Enable/disable the settings editor according to whether a key is selected.
  * Close works the other way round: it is grayed out while a setting is being
  * edited, so it cannot be hit instead of Save, Reset or Cancel.
@@ -261,7 +278,7 @@ export function renderSettingsEditor() {
     return;
   }
 
-  editor.placeholder = GLOBAL_SETTINGS[activeSettingKey]?.tooltip || '';
+  editor.placeholder = settingPlaceholder(activeSettingKey);
 }
 
 /** Push the stored draft into the editor without clobbering an active edit. */

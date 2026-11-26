@@ -8,6 +8,10 @@ import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
  * Each entry carries everything the rest of the app needs to know about it:
  * how to store it (`type`), what to call it (`label`) and what to show in the
  * list (`display`). Nothing else should maintain parallel lists of keys.
+ *
+ * Entries marked `perModel` are the LLM parameters sent with each request.
+ * Their global value is the default for every model; a model may override it
+ * (see `core/model-params.js`).
  */
 
 /** Display helpers shared by several entries. */
@@ -52,6 +56,7 @@ export const GLOBAL_SETTINGS = {
     default: '',
     tooltip: 'Controls randomness (0.0 to 2.0).',
     payloadKey: 'temperature',
+    perModel: true,
     display: showApiDefault,
   },
   top_p: {
@@ -61,6 +66,7 @@ export const GLOBAL_SETTINGS = {
     default: '',
     tooltip: 'Nucleus sampling (0.0 to 1.0).',
     payloadKey: 'top_p',
+    perModel: true,
     display: showApiDefault,
   },
   max_tokens: {
@@ -71,6 +77,7 @@ export const GLOBAL_SETTINGS = {
     tooltip: 'Maximum number of tokens to generate.',
     payloadKey: 'max_tokens',
     integer: true,
+    perModel: true,
     display: showApiDefault,
   },
   frequency_penalty: {
@@ -80,6 +87,7 @@ export const GLOBAL_SETTINGS = {
     default: '',
     tooltip: 'Penalizes new tokens based on existing frequency (-2.0 to 2.0).',
     payloadKey: 'frequency_penalty',
+    perModel: true,
     display: showApiDefault,
   },
   presence_penalty: {
@@ -89,6 +97,7 @@ export const GLOBAL_SETTINGS = {
     default: '',
     tooltip: 'Penalizes new tokens based on presence (-2.0 to 2.0).',
     payloadKey: 'presence_penalty',
+    perModel: true,
     display: showApiDefault,
   },
   maxToolRounds: {
@@ -174,6 +183,15 @@ export const GLOBAL_SETTINGS = {
       'Placeholders are stored in the chat, so larger values make chats larger. Applies to images added from now on.',
     display: showPixelBudget,
   },
+  chatDateGroups: {
+    label: 'Chat Date Groups',
+    category: 'UI & Display',
+    type: 'boolean',
+    default: 'true',
+    tooltip:
+      'Group the chat list in the sidebar under date headings (Today, Yesterday, Previous 7 Days, ...), by when each chat was created: true or false.',
+    display: showOnOff,
+  },
   collapseThinking: {
     label: 'Collapse Thinking',
     category: 'UI & Display',
@@ -216,6 +234,19 @@ export const GLOBAL_SETTINGS = {
     display: showOnOff,
   },
 };
+
+/** Whether a setting may be overridden per model: the LLM parameters sent with each request. */
+export function isPerModel(key) {
+  return Boolean(GLOBAL_SETTINGS[key]?.perModel);
+}
+
+/** Every per-model key, in declaration order. */
+export const PER_MODEL_KEYS = Object.keys(GLOBAL_SETTINGS).filter(isPerModel);
+
+/** The entries of `schema` whose key passes `predicate`, in declaration order. */
+export function pickSchema(schema, predicate) {
+  return Object.fromEntries(Object.entries(schema).filter(([key]) => predicate(key)));
+}
 
 /** Group schema keys by category, preserving declaration order. */
 export function groupByCategory(schema) {

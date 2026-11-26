@@ -171,6 +171,9 @@ export function installBindings() {
 
   on(EVENTS.MODELS, () => {
     updateModelDropdown();
+    // The settings view lists the models parameters can be set for, and what
+    // each setting currently reads.
+    if (state.session.view === 'settings') renderSettingsView();
   });
 
   on(EVENTS.SESSION, renderSettingsEditor);

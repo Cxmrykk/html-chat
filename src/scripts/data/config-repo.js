@@ -3,6 +3,7 @@ import { KEYS } from './keys.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 import { normalizeModelList } from '../core/models.js';
 import { normalizeCapabilityMap, DEFAULT_EFFORT } from '../core/capabilities.js';
+import { normalizeModelParams } from '../core/model-params.js';
 
 const BASE_CONFIG = {
   url: 'https://api.openai.com/v1',
@@ -10,6 +11,8 @@ const BASE_CONFIG = {
   models: [],
   /** `{ [modelId]: capabilities }`, cached from the last discovery (core/capabilities.js). */
   modelCapabilities: {},
+  /** `{ [modelId]: { [settingKey]: value } }`, per-model LLM parameters (core/model-params.js). */
+  modelParams: {},
   jsExecution: false,
   lastModel: '',
   reasoningEffort: DEFAULT_EFFORT,
@@ -79,6 +82,7 @@ export async function loadConfig() {
   // Legacy installs stored a comma-separated string; it becomes the initial cache.
   config.models = normalizeModelList(config.models);
   config.modelCapabilities = normalizeCapabilityMap(config.modelCapabilities);
+  config.modelParams = normalizeModelParams(config.modelParams);
   return config;
 }
 

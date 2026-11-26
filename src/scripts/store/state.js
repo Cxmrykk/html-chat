@@ -55,6 +55,11 @@ export const state = {
     activeSettingKey: null,
     /** Unsaved editor contents, restored when returning to the same key. */
     settingsDraft: null,
+    /**
+     * The model whose LLM parameters the settings view edits, or null for the
+     * defaults every model inherits (see `core/model-params.js`).
+     */
+    settingsModel: null,
   },
 
   runtime: {

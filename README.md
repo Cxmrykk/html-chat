@@ -6,10 +6,11 @@ Features:
 
 - Streaming chat with reasoning display (`reasoning_content` / `reasoning` fields, inline `<think>` tags, LiteLLM `thinking_blocks`)
 - Model capabilities (tools, thinking and its levels, vision, context length) read from LiteLLM, Ollama and OpenAI-compatible `/models` responses
+- Per-model LLM parameters (temperature, top P, ...) on top of shared defaults
 - Tool calling: JavaScript execution in the page
 - Editing, retrying, forking and deleting any message, and changing its role
 - Markdown, syntax highlighting and KaTeX math
-- Import and export of chats
+- Chat list grouped by date, import and export of chats
 - Light and dark themes, with keyboard-driven navigation
 
 ## Getting started
@@ -64,7 +65,7 @@ Anything not reported counts as unknown, and the app behaves as if there were no
 
 The **Send** button shows an estimate of the context size, at about 4 characters per token. It covers the full request, including tool definitions.
 
-The chat list in the sidebar always fills the height left below the settings box, and scrolls on its own.
+The chat list in the sidebar always fills the height left below the settings box, and scrolls on its own. Chats are grouped under date headings (Today, Yesterday, Previous 7 Days, Previous 30 Days, then by month) according to when each chat was created. Turn this off with **Chat Date Groups**.
 
 ### Reasoning effort
 
@@ -121,9 +122,22 @@ Open them by clicking the **Settings** heading in the sidebar, or with `Alt+I`. 
 
 To change a setting, select it, edit the value in the bottom textarea, and save with **Save** or `Ctrl+Enter`. **Reset** restores one setting's default, **Cancel** discards your edit, and **Reset All** restores every default. Leaving a value blank uses the default. While a setting is being edited, **Close** is grayed out, so it can't be clicked by mistake instead of Save, Reset or Cancel.
 
+### Per-model parameters
+
+The **Parameters for** dropdown at the top of the settings picks whose LLM parameters you are editing (Temperature, Top P, Max Tokens, Frequency and Presence Penalty):
+
+- **All models (defaults)**: every setting is shown. The LLM parameters set here apply to every model that doesn't override them.
+- **A model**: only the LLM parameters are shown, and what you set applies to that model alone.
+  - A blank value inherits the default, shown as `Inherit (...)`.
+  - `none` sends nothing for that model, even if a default is set. Use this for models that reject a parameter.
+  - **Reset** removes one override, and **Reset All** removes all of that model's overrides.
+  - Models with overrides are marked `(custom)` in the dropdown.
+
+Reset All with no model selected restores the defaults and keeps every model's overrides.
+
 | Setting                                                        | Default           | Notes                                                                                                                                                        |
 | -------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Temperature, Top P, Max Tokens, Frequency and Presence Penalty | API default       | Sent only when set                                                                                                                                           |
+| Temperature, Top P, Max Tokens, Frequency and Presence Penalty | API default       | Sent only when set. Can be overridden per model                                                                                                              |
 | Max Tool Rounds                                                | 10                | After this many rounds, the model must answer without tools                                                                                                  |
 | Max Tool Result Tokens                                         | 4000              | Truncates JavaScript results. `0` disables the cap                                                                                                           |
 | Echo Reasoning Field                                           | off               | `reasoning_content` or `reasoning`. Sends plain-text reasoning back during a tool loop, for models that need it. Signed thinking blocks are always sent back |
@@ -132,6 +146,7 @@ To change a setting, select it, edit the value in the bottom textarea, and save 
 | Probe Capabilities                                             | true              | Ask LiteLLM and Ollama what each model supports. Changing it fetches the model list again                                                                   |
 | Image Cache (MB)                                               | 100               | Browser storage for original images, so they survive a reload. `0` keeps them in memory only                                                                |
 | Placeholder Width, Placeholder Max Pixels                      | 64, 4096          | Size of the pixelated placeholder a chat stores for each image                                                                                              |
+| Chat Date Groups                                               | true              | Group the sidebar's chat list under date headings                                                                                                            |
 | Collapse Thinking                                              | true              | Whether new thinking boxes start closed                                                                                                                      |
 | Auto-Collapse Code, Threshold, Preview Lines, Hint             | true, 20, 5, true | Long code blocks fold. Click to toggle                                                                                                                       |
 
@@ -162,6 +177,7 @@ To change a setting, select it, edit the value in the bottom textarea, and save 
 - All data lives in this browser's IndexedDB. Clearing site data deletes your chats and key. Use Export to back up chats.
 - Token counts are estimates, at 4 characters per token.
 - Ollama reports the context length a model was trained with, which can be larger than the context it actually runs with (`num_ctx`).
+- Chat date groups go by when a chat was created, not when it was last used.
 - Earlier versions could search uploaded files. That feature has been removed: the files, profiles and vectors it stored are deleted on first load, and old search calls in chats are shown by name with their raw arguments.
 - Earlier versions had a **Max Visible Chats** setting. The chat list now always fills the sidebar, so the setting is gone and its stored value is deleted on load.
 

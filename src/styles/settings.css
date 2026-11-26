@@ -8,10 +8,37 @@
   margin: 0;
 }
 
+/* Whose LLM parameters the list edits: the defaults, or one model. */
+.settings-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.settings-scope label {
+  flex-shrink: 0;
+  font-size: 0.85em;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.settings-scope select {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
 .settings-subtitle {
   margin-top: 5px;
   font-size: 0.85em;
   color: var(--text-muted);
+}
+
+.settings-subtitle code {
+  background: var(--bg-code);
+  padding: 1px 4px;
 }
 
 .settings-toolbar {

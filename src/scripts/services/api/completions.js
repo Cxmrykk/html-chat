@@ -7,6 +7,7 @@ import {
   createThinkingBlockAccumulator,
 } from '../../core/reasoning.js';
 import { reasoningEffortToSend } from '../../core/capabilities.js';
+import { effectiveParam, isOmitted } from '../../core/model-params.js';
 import { createToolCallAccumulator, toolCallsOf } from '../../core/tool-calls.js';
 
 /**
@@ -19,7 +20,9 @@ import { createToolCallAccumulator, toolCallsOf } from '../../core/tool-calls.js
  */
 
 /**
- * Build the sampling parameters from whichever schema entries are set. The
+ * Build the sampling parameters from whichever schema entries are set, for
+ * `model`: its own override where it has one (`core/model-params.js`), the
+ * global default otherwise. An override of `none` sends nothing. The
  * reasoning effort is checked against what the endpoint reported for `model`
  * (see `core/capabilities.js`), so a level the model does not take is never
  * sent to it.
@@ -27,8 +30,9 @@ import { createToolCallAccumulator, toolCallsOf } from '../../core/tool-calls.js
 function buildParameters(config, model) {
   const params = {};
   for (const [key, entry] of Object.entries(GLOBAL_SETTINGS)) {
-    if (!entry.payloadKey || isBlank(config[key])) continue;
-    const raw = config[key];
+    if (!entry.payloadKey) continue;
+    const raw = effectiveParam(config, model, key);
+    if (isBlank(raw) || isOmitted(raw)) continue;
     const value = entry.integer ? Number.parseInt(raw, 10) : Number.parseFloat(raw);
     if (Number.isFinite(value)) params[entry.payloadKey] = value;
   }
