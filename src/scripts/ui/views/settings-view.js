@@ -15,7 +15,7 @@ export function renderSettingsView() {
         <h2>Super Secret Settings</h2>
         <button data-command="settings.resetAll">Reset All</button>
       </div>
-      <p class="settings-subtitle">Advanced engine parameters. Hover over a setting to see its description. How each file is searched is set up per file: click a file with a caution sign, or Ctrl+Click any file.</p>
+      <p class="settings-subtitle">Advanced engine parameters. Hover over a setting to see its description.</p>
       ${settingsListHTML({
         schema: GLOBAL_SETTINGS,
         activeKey: state.session.activeSettingKey,

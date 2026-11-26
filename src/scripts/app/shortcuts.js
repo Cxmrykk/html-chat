@@ -49,10 +49,6 @@ function installSubmitShortcuts() {
       runCommand('thinking.save', { event });
       return true;
     }
-    if (element.id === 'wizard-input') {
-      runCommand('wizard.ask', { event });
-      return true;
-    }
     if (state.session.editingMessageIndex !== null) {
       runCommand('message.saveEdit', { event });
       return true;
@@ -61,24 +57,13 @@ function installSubmitShortcuts() {
     return true;
   };
 
-  for (const id of ['#chat-input', '#settings-input', '#thinking-input', '#wizard-input']) {
+  for (const id of ['#chat-input', '#settings-input', '#thinking-input']) {
     $(id)?.addEventListener('keydown', (event) => submitFrom(event.target, event));
   }
 }
 
-/** Enter in the configurator's test box runs the test search. */
-function installWizardShortcuts() {
-  document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Enter' || event.isComposing) return;
-    if (!event.target.matches?.('[data-test-query]')) return;
-    event.preventDefault();
-    runCommand('wizard.test', { event });
-  });
-}
-
 export function installShortcuts() {
   installSubmitShortcuts();
-  installWizardShortcuts();
 
   document.addEventListener('keydown', (event) => {
     const tag = document.activeElement?.tagName.toLowerCase();

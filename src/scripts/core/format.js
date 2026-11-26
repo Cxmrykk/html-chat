@@ -50,12 +50,6 @@ export function formatCompactCount(value) {
   return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}k`;
 }
 
-/** Chunks-per-second, or an ellipsis while the first batch is in flight. */
-export function formatSpeed(chunksPerSecond) {
-  if (!chunksPerSecond || !Number.isFinite(chunksPerSecond)) return '...';
-  return `${chunksPerSecond.toFixed(1)} c/s`;
-}
-
 export function truncate(text, limit) {
   const value = text || '';
   return value.length > limit ? `${value.substring(0, limit)}...` : value;

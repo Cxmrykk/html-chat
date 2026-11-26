@@ -2,8 +2,6 @@
 export const EVENTS = {
   /** Chat list membership, ordering, titles or selection changed. */
   CHATS: 'chats',
-  /** Which files the current chat may search changed. */
-  CHAT_FILES: 'chat:files',
   /** The current chat's message array changed wholesale. */
   MESSAGES: 'messages',
   /**
@@ -23,26 +21,12 @@ export const EVENTS = {
    * composer and the selection outline follow it; the transcript stays put.
    */
   EDIT: 'edit',
-  /** File list membership, or a file's configuration, changed. */
-  FILES: 'files',
-  /** Embedding progress for one file. Payload: { id }. */
-  FILE_PROGRESS: 'file:progress',
-  /** Search profiles were added, changed or removed. */
-  PROFILES: 'profiles',
-  /**
-   * The file search configurator changed. Payload: { part, resetScroll? },
-   * where `part` is 'all', 'preview', 'test' or 'assistant': the smallest
-   * piece of the view that needs repainting.
-   */
-  WIZARD: 'wizard',
   /** UI mode: active view, editing target, sidebar visibility. */
   SESSION: 'session',
   /** A request started, changed phase, or finished. */
   GENERATION: 'generation',
   /** The estimated context size may have changed. */
   CONTEXT: 'context',
-  /** A user-supplied hook failed. Payload: { key, error }. */
-  HOOK_ERROR: 'hook:error',
   /** The model list, or the status of fetching it, changed. */
   MODELS: 'models',
 };

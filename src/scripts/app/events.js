@@ -64,33 +64,6 @@ function installCommandDelegation() {
 }
 
 /**
- * The configurator's form controls carry `data-field` instead of a command.
- * Typing is stored silently on `input`, so the field keeps its focus;
- * checkboxes and selects, and fields marked `data-rerender="change"` once
- * they are committed, redraw the configurator because other parts of it
- * depend on them.
- */
-function installFieldBindings() {
-  const handle = (event, committed) => {
-    if (state.session.view !== 'wizard') return;
-    const element = event.target.closest?.('[data-field]');
-    if (!element) return;
-
-    const toggle = element.type === 'checkbox' || element.tagName === 'SELECT';
-    if (!committed && toggle) return;
-
-    const rerender = committed && (toggle || element.dataset.rerender === 'change');
-    // A committed text field was already stored by its input events.
-    if (committed && !rerender) return;
-
-    runCommand('wizard.setField', { event, element, rerender });
-  };
-
-  document.addEventListener('input', (event) => handle(event, false));
-  document.addEventListener('change', (event) => handle(event, true));
-}
-
-/**
  * While a message is being edited, a click on its rendered markdown selects
  * the block to edit instead of doing what it normally would: a link inside
  * does not navigate. Ctrl/Cmd+Click keeps its copy meaning. Only the message's
@@ -195,7 +168,7 @@ function installModifierTracking() {
 /** Live-bind the textareas so no value is ever read back out of the DOM. */
 function installEditorBindings() {
   const chatInput = $('#chat-input');
-  const resizable = [chatInput, $('#thinking-input'), $('#wizard-input')].filter(Boolean);
+  const resizable = [chatInput, $('#thinking-input')].filter(Boolean);
 
   const observer = new ResizeObserver((entries) => {
     for (const entry of entries) {
@@ -225,7 +198,6 @@ function installEditorBindings() {
 
 export function installEventHandlers() {
   installCommandDelegation();
-  installFieldBindings();
   installEditSelection();
   installCodeCollapseDelegation();
   installCopyAffordances();

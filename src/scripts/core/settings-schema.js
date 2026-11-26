@@ -1,5 +1,5 @@
 import { isBlank, pickBoolean } from './values.js';
-import { DEFAULT_JS_TOOL_DESCRIPTION, DEFAULT_SEARCH_DESCRIPTIONS } from './tools.js';
+import { DEFAULT_JS_TOOL_DESCRIPTION } from './tools.js';
 import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
 
 /**
@@ -8,9 +8,6 @@ import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
  * Each entry carries everything the rest of the app needs to know about it:
  * how to store it (`type`), what to call it (`label`) and what to show in the
  * list (`display`). Nothing else should maintain parallel lists of keys.
- *
- * How individual files are searched is not configured here: that lives in
- * search profiles (`core/rag-profile.js`), edited in the configurator.
  */
 
 /** Display helpers shared by several entries. */
@@ -110,58 +107,6 @@ export const GLOBAL_SETTINGS = {
     tooltip: 'What the model is told about the JavaScript execution tool.',
     display: showCustomOrDefault,
   },
-  textSearchToolDescription: {
-    label: 'Text Search Tool Description',
-    category: 'Tools',
-    type: 'code',
-    default: DEFAULT_SEARCH_DESCRIPTIONS.text,
-    tooltip:
-      'What the model is told about search_text. The result format, hints about the other search tools and the files (with their profile notes) are appended.',
-    display: showCustomOrDefault,
-  },
-  regexSearchToolDescription: {
-    label: 'Regex Search Tool Description',
-    category: 'Tools',
-    type: 'code',
-    default: DEFAULT_SEARCH_DESCRIPTIONS.regex,
-    tooltip:
-      'What the model is told about search_regex. The result format, hints about the other search tools and the files (with their profile notes) are appended.',
-    display: showCustomOrDefault,
-  },
-  semanticSearchToolDescription: {
-    label: 'Semantic Search Tool Description',
-    category: 'Tools',
-    type: 'code',
-    default: DEFAULT_SEARCH_DESCRIPTIONS.embeddings,
-    tooltip:
-      'What the model is told about search_semantic. The result format, hints about the other search tools and the files (with their profile notes) are appended.',
-    display: showCustomOrDefault,
-  },
-  embeddingsUrl: {
-    label: 'Embeddings Base URL',
-    category: 'API & Connections',
-    type: 'text',
-    default: '',
-    tooltip: 'Custom base URL for embeddings.',
-    display: showApiDefault,
-  },
-  embeddingsKey: {
-    label: 'Embeddings API Key',
-    category: 'API & Connections',
-    type: 'text',
-    default: '',
-    tooltip: 'API Key for the custom embeddings URL.',
-    display: (value) => (isBlank(value) ? 'API Default' : 'Custom'),
-  },
-  embeddingsModel: {
-    label: 'Embeddings Model',
-    category: 'API & Connections',
-    type: 'text',
-    default: '',
-    tooltip:
-      'Model used for semantic file search. Empty disables that method. Changing it discards every stored vector and re-indexes.',
-    display: (value) => (isBlank(value) ? 'Disabled' : String(value)),
-  },
   extraModels: {
     label: 'Extra Models',
     category: 'API & Connections',
@@ -169,30 +114,6 @@ export const GLOBAL_SETTINGS = {
     default: '',
     tooltip: 'Comma-separated models to always offer, for servers that do not implement /models.',
     display: (value) => (isBlank(value) ? 'None' : String(value)),
-  },
-  maxRagTokens: {
-    label: 'Max RAG Tokens',
-    category: 'File Search',
-    type: 'number',
-    default: '5000',
-    tooltip: 'Maximum estimated tokens returned by one file search, across all files searched.',
-    display: showValueOrDefault,
-  },
-  chunkBatchSize: {
-    label: 'Embedding Batch Size',
-    category: 'File Search',
-    type: 'number',
-    default: '100',
-    tooltip: 'Max pieces sent to the Embeddings API at once.',
-    display: showValueOrDefault,
-  },
-  chunkBatchMaxTokens: {
-    label: 'Embedding Batch Max Tokens',
-    category: 'File Search',
-    type: 'number',
-    default: '8192',
-    tooltip: 'Max estimated tokens sent to the Embeddings API per request. A single piece larger than this is skipped.',
-    display: showValueOrDefault,
   },
   collapseThinking: {
     label: 'Collapse Thinking',
@@ -241,14 +162,6 @@ export const GLOBAL_SETTINGS = {
     type: 'number',
     default: '',
     tooltip: 'Maximum number of chats displayed at once in the sidebar.',
-    display: (value) => (isBlank(value) ? 'Unlimited' : String(value)),
-  },
-  maxVisibleFiles: {
-    label: 'Max Visible Files',
-    category: 'UI & Display',
-    type: 'number',
-    default: '',
-    tooltip: 'Maximum number of files displayed at once in the sidebar.',
     display: (value) => (isBlank(value) ? 'Unlimited' : String(value)),
   },
 };

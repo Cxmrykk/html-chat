@@ -18,9 +18,9 @@ const BASE_CONFIG = {
 };
 
 /**
- * Global settings that no longer exist: file search is configured per
- * profile now, so the single search description, the wrapper function and
- * the global per-chunk settings have no successor here.
+ * Global settings that no longer exist. File search has been removed, and
+ * with it every setting that configured it: tool descriptions, embeddings,
+ * the retrieval budget and its batching, and the sidebar's file list.
  */
 const RETIRED_FIELDS = [
   'godModePrompt',
@@ -28,6 +28,16 @@ const RETIRED_FIELDS = [
   'fileWrapperFunc',
   'ragThreshold',
   'chunkMaxTokens',
+  'textSearchToolDescription',
+  'regexSearchToolDescription',
+  'semanticSearchToolDescription',
+  'embeddingsUrl',
+  'embeddingsKey',
+  'embeddingsModel',
+  'maxRagTokens',
+  'chunkBatchSize',
+  'chunkBatchMaxTokens',
+  'maxVisibleFiles',
 ];
 
 /**

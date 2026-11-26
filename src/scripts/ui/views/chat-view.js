@@ -1,9 +1,7 @@
 import { $ } from '../dom.js';
-import { state, currentChat, chatFiles, profileOf, usableMethods } from '../../store/state.js';
+import { state, currentChat } from '../../store/state.js';
 import { messageHTML, mountMessage } from '../components/message.js';
 import { enhance, renderMarkdown } from '../markdown.js';
-import { escapeHTML } from '../../core/format.js';
-import { METHOD_LABELS } from '../../core/rag-profile.js';
 
 /** The transcript. */
 
@@ -41,35 +39,6 @@ export function scrollToBottom() {
   if (container) container.scrollTop = container.scrollHeight;
 }
 
-/** How each attached file can be searched, or why it cannot. */
-function fileSearchBanner(files) {
-  const described = files
-    .map((file) => {
-      const profile = profileOf(file);
-      let status;
-      if (!profile) {
-        status = 'not configured, so not searchable';
-      } else {
-        const methods = usableMethods(profile);
-        status = methods.length
-          ? methods.map((method) => METHOD_LABELS[method].toLowerCase()).join(', ')
-          : 'embeddings only, but no embeddings model is configured';
-      }
-      // HTML characters in file names are escaped before reaching marked.
-      return `${escapeHTML(file.name)} (${status})`;
-    })
-    .join(', ');
-
-  return `
-    <div class="msg system">
-      <div class="msg-meta">
-        <span>System</span>
-        <span class="readonly-tag">[Read-Only]</span>
-      </div>
-      <div class="msg-content">${renderMarkdown(`**File search enabled.** The model can search the attached files: ${described}.`)}</div>
-    </div>`;
-}
-
 export function renderChatView({ preserveScroll = false } = {}) {
   const container = $('#chat-container');
   if (!container) return;
@@ -86,9 +55,6 @@ export function renderChatView({ preserveScroll = false } = {}) {
 
   const jsExecution = Boolean(state.data.config.jsExecution);
   let html = jsExecution ? JS_EXECUTION_BANNER : '';
-
-  const files = chatFiles(chat);
-  if (files.length > 0) html += fileSearchBanner(files);
 
   if (!chat.messages.length && !html) {
     html += '<p class="empty-chat-msg">It is empty in here. Send a prompt.</p>';

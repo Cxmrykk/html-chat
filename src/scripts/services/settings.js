@@ -2,9 +2,8 @@ import { EVENTS } from '../store/events.js';
 import { state, emit, persistConfig, invalidateContext } from '../store/state.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 import { coerceForStorage } from '../core/values.js';
-import { resetAllEmbeddings } from './indexing.js';
 
-/** The global advanced settings. Per-file search configuration lives in profiles. */
+/** The global advanced settings. */
 
 /** Current stored value for a key, ready to display in the list. */
 export function readSetting(key) {
@@ -19,41 +18,34 @@ export function readEditorValue(key) {
   return value !== undefined && value !== '' ? String(value) : entry.default;
 }
 
-async function afterMutation(previousEmbeddingsModel) {
+async function afterMutation() {
   await persistConfig();
-  if (previousEmbeddingsModel !== state.data.config.embeddingsModel) {
-    await resetAllEmbeddings();
-  }
-  // Extra models change the dropdown; the embeddings model changes which
-  // search methods can run, and so the tools, the file list and the banner.
+  // Extra models change the dropdown; Max Visible Chats changes the chat list;
+  // tool settings change what every request carries.
   emit(EVENTS.MODELS);
-  emit(EVENTS.CHAT_FILES);
-  emit(EVENTS.FILES);
+  emit(EVENTS.CHATS);
   invalidateContext();
 }
 
 export async function saveSetting(key, rawValue) {
   const entry = GLOBAL_SETTINGS[key];
   if (!entry) return;
-  const previousModel = state.data.config.embeddingsModel;
   state.data.config[key] = coerceForStorage(rawValue, entry.type);
-  await afterMutation(previousModel);
+  await afterMutation();
 }
 
 export async function resetSetting(key) {
   const entry = GLOBAL_SETTINGS[key];
   if (!entry) return;
-  const previousModel = state.data.config.embeddingsModel;
   state.data.config[key] = entry.default;
-  await afterMutation(previousModel);
+  await afterMutation();
 }
 
 export async function resetAllSettings() {
-  const previousModel = state.data.config.embeddingsModel;
   for (const [key, entry] of Object.entries(GLOBAL_SETTINGS)) {
     state.data.config[key] = entry.default;
   }
-  await afterMutation(previousModel);
+  await afterMutation();
 }
 
 /** Save connection configuration options. */

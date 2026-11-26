@@ -2,17 +2,14 @@ import { $ } from '../ui/dom.js';
 import { state, setSession } from '../store/state.js';
 import * as configRepo from '../data/config-repo.js';
 import * as chatsRepo from '../data/chats-repo.js';
-import * as filesRepo from '../data/files-repo.js';
 import * as prefsRepo from '../data/prefs-repo.js';
-import * as profilesRepo from '../data/profiles-repo.js';
-import { startEmbedding } from '../services/embedding.js';
-import { migrateLegacyFiles } from '../services/file-library.js';
+import { purgeRetiredData } from '../data/retired-repo.js';
 import { ensureActiveModel, refreshModels } from '../services/models.js';
 import { installBindings, renderAll } from '../ui/bindings.js';
 import { installEventHandlers } from './events.js';
 import { installShortcuts } from './shortcuts.js';
 
-/** Bootstrap: load, migrate, wire, render. Nothing else belongs here. */
+/** Bootstrap: load, wire, render. Nothing else belongs here. */
 
 function hydrateConnectionForm() {
   const config = state.data.config;
@@ -21,29 +18,14 @@ function hydrateConnectionForm() {
   if ($('#cfg-js-exec')) $('#cfg-js-exec').checked = Boolean(config.jsExecution);
 }
 
-/** Resume any file that was mid-embed when the tab last closed. */
-function resumeEmbeddings() {
-  for (const file of state.data.files) {
-    if (file.isEmbedding && (file.progress ?? 0) < 100) {
-      startEmbedding(file.id);
-    } else {
-      file.isEmbedding = false;
-    }
-  }
-}
-
 async function init() {
-  const [config, chats, files, prefs, profiles] = await Promise.all([
+  const [config, chats, prefs] = await Promise.all([
     configRepo.loadConfig(),
     chatsRepo.loadChats(),
-    filesRepo.loadFileMetas(),
     prefsRepo.loadPrefs(),
-    profilesRepo.loadProfiles(),
   ]);
 
   state.data.config = config;
-  state.data.files = files;
-  state.data.profiles = profiles;
   state.data.chats = chats.sort((a, b) => Number(b.id) - Number(a.id));
   state.data.currentChatId =
     prefs.currentChatId || (state.data.chats.length ? state.data.chats[0].id : null);
@@ -58,9 +40,6 @@ async function init() {
     { silent: true },
   );
 
-  // Files from before search profiles come up unconfigured.
-  await migrateLegacyFiles();
-
   hydrateConnectionForm();
   // The cached list (or legacy migration) may already point somewhere stale.
   ensureActiveModel();
@@ -68,9 +47,10 @@ async function init() {
   installEventHandlers();
   installShortcuts();
   renderAll();
-  resumeEmbeddings();
   // Not awaited: the cached model list renders immediately, this refines it.
   refreshModels();
+  // Not awaited: nothing reads the retired records, they only take up space.
+  purgeRetiredData().catch((error) => console.error('Could not remove retired data:', error));
 }
 
 init();

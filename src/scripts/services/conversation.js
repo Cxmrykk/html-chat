@@ -33,7 +33,7 @@ const IDLE = { active: false, phase: 'idle', tool: null, loop: 0, maxLoops: 0 };
 
 export async function createChat() {
   const id = Date.now().toString();
-  state.data.chats.unshift({ id, title: 'New Chat', messages: [], fileIds: [] });
+  state.data.chats.unshift({ id, title: 'New Chat', messages: [] });
   state.data.currentChatId = id;
   invalidateContext();
   await persistCurrentChat();
@@ -87,7 +87,6 @@ export async function forkChat(messageIndex) {
       id,
       title: `${chat.title} (Forked)`,
       messages: JSON.parse(JSON.stringify(chat.messages.slice(0, messageIndex + 1))),
-      fileIds: [...(chat.fileIds || [])],
     }),
   );
   state.data.currentChatId = id;
@@ -97,29 +96,6 @@ export async function forkChat(messageIndex) {
   await persistPrefs();
   emit(EVENTS.CHATS);
   emit(EVENTS.MESSAGES);
-}
-
-/**
- * Attach a file to the current chat, or detach it. Attached files are what the
- * model's file search covers; there is no other way for a file to reach a chat.
- * Returns whether the file is attached afterwards.
- */
-export async function toggleChatFile(fileId) {
-  if (!state.data.currentChatId) await createChat();
-  const chat = currentChat();
-  if (!chat) return false;
-
-  const ids = new Set(chat.fileIds || []);
-  const attached = !ids.has(fileId);
-  if (attached) ids.add(fileId);
-  else ids.delete(fileId);
-  chat.fileIds = [...ids];
-
-  // The tool definition lists the attached files, so the estimate moves too.
-  invalidateContext();
-  await persistChat();
-  emit(EVENTS.CHAT_FILES);
-  return attached;
 }
 
 /* ------------------------------------------------------------------ *
@@ -629,7 +605,7 @@ async function requestRound({ turn, chat, chatId, signal, forceAnswer }) {
       config: state.data.config,
       model,
       messages: apiMessagesFor(chat, model),
-      tools: toolSchemasFor(chat),
+      tools: toolSchemasFor(),
       forceAnswer,
       signal,
       onDelta: turn.apply,
@@ -734,7 +710,7 @@ async function runTurns(chatId) {
 
       for (const call of calls) {
         setGeneration({ phase: 'tool', tool: call.name });
-        await turn.runCall(call, () => runToolCall(call, { chat, signal }));
+        await turn.runCall(call, () => runToolCall(call, { signal }));
         // Running code cannot be interrupted, but the loop can stop after it.
         if (signal.aborted) {
           outcome = 'stopped';

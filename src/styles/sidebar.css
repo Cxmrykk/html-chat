@@ -38,34 +38,10 @@
   margin-bottom: 5px;
 }
 
-.chat-item.active,
-.file-item.selected {
+.chat-item.active {
   border-color: var(--border);
   background: var(--bg-inset);
-}
-
-.chat-item.active {
   font-weight: bold;
-}
-
-.file-item {
-  display: block;
-}
-
-.file-item-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.file-item.selected .chat-item-title {
-  font-weight: bold;
-}
-
-/* A file without a search profile: it cannot be attached until configured. */
-.file-item.unconfigured .chat-item-title {
-  color: var(--text-muted);
-  font-style: italic;
 }
 
 .chat-item-title {
@@ -92,33 +68,6 @@
 .chat-item-actions button .icon {
   width: 1em;
   height: 1em;
-}
-
-.chat-item-actions button.caution {
-  color: var(--role-system);
-  border-color: var(--role-system);
-}
-
-.chat-item-actions button.caution:hover {
-  background: var(--role-system-bg);
-}
-
-.file-progress-stats {
-  font-size: 0.75em;
-  color: var(--text-muted);
-  text-align: left;
-  margin-top: 2px;
-  font-weight: normal;
-}
-
-.file-progress-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  background: var(--accent);
-  width: 0%;
-  transition: width 0.3s ease;
 }
 
 body.ctrl-down .chat-item:hover {

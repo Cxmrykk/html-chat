@@ -1,10 +1,8 @@
 import { $ } from './dom.js';
-import { on } from '../store/state.js';
+import { on, state, currentChat } from '../store/state.js';
 import { EVENTS } from '../store/events.js';
-import { state, currentChat } from '../store/state.js';
 import { isModelOutput } from '../core/roles.js';
 import { renderChatList } from './components/chat-list.js';
-import { renderFileList, updateFileProgress } from './components/file-list.js';
 import {
   replaceMessage,
   updateMessageContent,
@@ -15,7 +13,6 @@ import {
   renderInputArea,
   renderSendButton,
   renderSettingsEditor,
-  renderWizardBar,
   applyChromeState,
   updateModelDropdown,
 } from './components/input-area.js';
@@ -28,12 +25,6 @@ import {
   scrollToBottom,
 } from './views/chat-view.js';
 import { renderSettingsView } from './views/settings-view.js';
-import {
-  renderWizardView,
-  renderWizardPreview,
-  renderWizardTest,
-  renderWizardAssistant,
-} from './views/wizard-view.js';
 import { syncTicker } from './ticker.js';
 
 /** Declarative event bindings mapping store events to UI renders. */
@@ -43,12 +34,10 @@ import { syncTicker } from './ticker.js';
  * the part being edited lives inside the row, so a new row needs it redrawn.
  */
 export function renderMainView({ preserveScroll = false } = {}) {
-  if (state.session.view === 'chat') {
-    renderChatView({ preserveScroll });
-  } else if (state.session.view === 'wizard') {
-    renderWizardView();
-  } else {
+  if (state.session.view === 'settings') {
     renderSettingsView();
+  } else {
+    renderChatView({ preserveScroll });
   }
   syncEditSelection();
 }
@@ -57,27 +46,13 @@ export function renderAll() {
   updateModelDropdown();
   applyChromeState();
   renderChatList();
-  renderFileList();
   renderMainView();
   renderInputArea();
-}
-
-/** Everything that shows which files the current chat may search. */
-function renderChatFiles() {
-  renderFileList();
 }
 
 export function installBindings() {
   on(EVENTS.CHATS, () => {
     renderChatList();
-    // A different current chat means a different set of attached files.
-    renderChatFiles();
-  });
-
-  on(EVENTS.CHAT_FILES, () => {
-    renderChatFiles();
-    if (state.session.view === 'chat') renderChatView({ preserveScroll: true });
-    syncEditSelection();
   });
 
   on(EVENTS.MESSAGES, () => {
@@ -164,35 +139,6 @@ export function installBindings() {
     syncEditSelection();
   });
 
-  on(EVENTS.FILES, () => {
-    renderChatFiles();
-  });
-
-  on(EVENTS.FILE_PROGRESS, ({ id }) => {
-    updateFileProgress(id);
-  });
-
-  on(EVENTS.PROFILES, () => {
-    renderFileList();
-    if (state.session.view === 'chat') renderChatView({ preserveScroll: true });
-    else if (state.session.view === 'wizard') renderWizardView();
-  });
-
-  on(EVENTS.WIZARD, ({ part = 'all', resetScroll = false } = {}) => {
-    if (state.session.view !== 'wizard') return;
-    if (part === 'preview') {
-      renderWizardPreview();
-    } else if (part === 'test') {
-      renderWizardTest();
-    } else if (part === 'assistant') {
-      renderWizardAssistant();
-      renderWizardBar();
-    } else {
-      renderWizardView({ resetScroll });
-      renderInputArea();
-    }
-  });
-
   on(EVENTS.SESSION, () => {
     applyChromeState();
     renderMainView();
@@ -212,10 +158,6 @@ export function installBindings() {
 
   on(EVENTS.MODELS, () => {
     updateModelDropdown();
-  });
-
-  on(EVENTS.HOOK_ERROR, ({ key, error }) => {
-    console.error(`[${key}]`, error);
   });
 
   on(EVENTS.SESSION, renderSettingsEditor);

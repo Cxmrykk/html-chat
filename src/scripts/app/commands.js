@@ -4,23 +4,16 @@ import {
   state,
   emit,
   currentChat,
-  findFile,
-  findProfile,
-  profileOf,
-  usableMethods,
   setSession,
   persistPrefs,
   persistConfig,
   invalidateContext,
 } from '../store/state.js';
 import * as conversation from '../services/conversation.js';
-import * as library from '../services/file-library.js';
 import * as settings from '../services/settings.js';
 import * as transfer from '../services/transfer.js';
 import * as models from '../services/models.js';
-import * as wizard from '../services/wizard.js';
-import * as profiles from '../services/profiles.js';
-import { pickFiles, readFileText, pickJSONText } from '../services/file-io.js';
+import { pickJSONText } from '../services/file-io.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { sourceBlocks } from '../ui/markdown.js';
@@ -42,9 +35,8 @@ import { ICON_CHECK } from '../ui/icons.js';
  * Helpers
  * ------------------------------------------------------------------ */
 
-/** Back to the transcript from any other view. An open configurator is abandoned. */
+/** Back to the transcript from the settings view. */
 function leaveSettings(patch = {}) {
-  wizard.closeWizard({ silent: true });
   setSession({
     view: 'chat',
     activeSettingKey: null,
@@ -134,19 +126,12 @@ function toggleSettings() {
     return;
   }
   stopEditing();
-  wizard.closeWizard({ silent: true });
   setSession({
     view: 'settings',
     activeSettingKey: null,
     settingsDraft: null,
     editingThinking: false,
   });
-}
-
-/** Open the file search configurator for a file. */
-async function configureFile(id, options = {}) {
-  stopEditing();
-  await wizard.openWizard(id, options);
 }
 
 function collapseSidebarOnMobile() {
@@ -508,142 +493,6 @@ export const commands = {
   'message.setRole': async ({ index, element }) => {
     await conversation.updateMessage(index, { role: element.value });
   },
-
-  /* ---- files ---- */
-
-  /** Upload files, then configure them one after another in the configurator. */
-  'file.upload': async () => {
-    const files = await pickFiles({ multiple: true });
-    const ids = [];
-    for (const file of files) {
-      ids.push(await library.addFile(file.name, await readFileText(file)));
-    }
-    if (!ids.length) return;
-    stopEditing();
-    await wizard.configureFiles(ids);
-  },
-
-  /**
-   * Attach a file to the current chat, or detach it. An unconfigured file
-   * cannot be searched, so trying to attach one opens the configurator, and
-   * attaches it once it is saved. The sidebar stays open on mobile:
-   * attaching several files in a row is the common case.
-   */
-  'file.toggle': async ({ event, id }) => {
-    if (event?.ctrlKey || event?.metaKey) {
-      event.preventDefault();
-      await configureFile(id);
-      return;
-    }
-    if (event?.altKey) {
-      event.preventDefault();
-      const [file] = await pickFiles({ multiple: false });
-      if (file) await library.replaceFileContents(id, await readFileText(file));
-      return;
-    }
-
-    const meta = findFile(id);
-    if (!meta) return;
-
-    const attaching = !(currentChat()?.fileIds || []).includes(id);
-    if (!attaching) {
-      await conversation.toggleChatFile(id);
-      return;
-    }
-
-    const profile = profileOf(meta);
-    if (!profile) {
-      await configureFile(id, { attachOnSave: true });
-      return;
-    }
-    if (!usableMethods(profile).length) {
-      alert(
-        'This file is searched only by embeddings, and no embeddings model is configured. ' +
-          'Set one in the advanced settings (Alt+I), or change the file\'s configuration (Ctrl+Click).',
-      );
-      return;
-    }
-
-    // No view change and no transcript re-render: this only flips a marker.
-    await conversation.toggleChatFile(id);
-  },
-
-  /** The caution button: configure a file that cannot be searched yet. */
-  'file.configure': async ({ id }) => {
-    await configureFile(id);
-  },
-
-  /** Ctrl/Cmd+Click anywhere on a file row: change its search configuration. */
-  'file.edit': async ({ event, id }) => {
-    if (!(event?.ctrlKey || event?.metaKey)) return;
-    event.preventDefault();
-    await configureFile(id);
-  },
-
-  'file.delete': async ({ id }) => {
-    const meta = findFile(id);
-    if (!meta) return;
-    await library.deleteFile(id);
-    await wizard.forgetFile(id);
-  },
-
-  /* ---- file search configurator ---- */
-
-  'wizard.step': ({ key }) => wizard.goToStep(key),
-
-  'wizard.next': () => wizard.nextStep(),
-
-  'wizard.back': () => wizard.previousStep(),
-
-  'wizard.close': () => leaveSettings(),
-
-  'wizard.newProfile': () => wizard.startNewProfile(),
-
-  'wizard.useProfile': ({ key }) => wizard.useProfile(key),
-
-  'wizard.editProfile': ({ key }) => wizard.editProfile(key),
-
-  'wizard.deleteProfile': async ({ key }) => {
-    const profile = findProfile(key);
-    if (!profile) return;
-    const count = profiles.filesUsing(key).length;
-    const message = count
-      ? `Delete the profile "${profile.name}"? ${count} file(s) use it and will need configuring again.`
-      : `Delete the profile "${profile.name}"?`;
-    if (!confirm(message)) return;
-    await wizard.deleteProfile(key);
-  },
-
-  /** A form control in the configurator changed; see `installFieldBindings`. */
-  'wizard.setField': ({ element, rerender }) => {
-    if (!element?.dataset.field) return;
-    const value = element.type === 'checkbox' ? element.checked : element.value;
-    wizard.setField(element.dataset.scope || 'draft', element.dataset.field, value, {
-      rerender: Boolean(rerender),
-    });
-  },
-
-  'wizard.test': () => wizard.runTest(),
-
-  'wizard.generate': () => wizard.generate(),
-
-  /** Send the prompt box to the assistant; while it works, the same button stops it. */
-  'wizard.ask': async () => {
-    if (wizard.isAssistantBusy()) {
-      wizard.stopAssistant();
-      return;
-    }
-    const input = $('#wizard-input');
-    const text = input?.value.trim() ?? '';
-    if (!text) return;
-    input.value = '';
-    const sent = await wizard.ask(text);
-    if (!sent && input && !input.value) input.value = text;
-  },
-
-  'wizard.clearAssistant': () => wizard.clearAssistant(),
-
-  'wizard.save': ({ key }) => wizard.save(key === 'update' ? 'update' : 'new'),
 
   /* ---- settings ---- */
 

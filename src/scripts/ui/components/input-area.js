@@ -1,4 +1,4 @@
-import { $, setHidden, setText, setDisabled } from '../dom.js';
+import { $, setHidden, setDisabled } from '../dom.js';
 import { state, currentChat } from '../../store/state.js';
 import { estimateTokens } from '../../core/tokens.js';
 import { formatCompactCount, escapeHTML } from '../../core/format.js';
@@ -7,11 +7,10 @@ import { toolSchemaChars, toolActivityLabel } from '../../core/tools.js';
 import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
 import { availableModels } from '../../services/models.js';
 import { toolSchemasFor } from '../../services/tools/index.js';
-import { wizardSteps, ASSISTANT_STEPS } from '../../services/wizard.js';
 import { isRetryable } from './message.js';
 import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
 
-/** Input area components: composer, settings editor and configurator bars. */
+/** Input area components: composer and settings editor bars. */
 
 const PROMPT_PLACEHOLDER = 'Type your prompt here...';
 const PICK_PLACEHOLDER =
@@ -83,7 +82,7 @@ function contextChars() {
   let total = 0;
   const chat = currentChat();
   if (chat) {
-    total = payloadChars(buildApiMessages(chat.messages)) + toolSchemaChars(toolSchemasFor(chat));
+    total = payloadChars(buildApiMessages(chat.messages)) + toolSchemaChars(toolSchemasFor());
   }
 
   state.runtime.contextChars = total;
@@ -141,39 +140,15 @@ function renderComposerMode(chatInput, editingMsg) {
   else chatInput.placeholder = picking ? PICK_PLACEHOLDER : EDIT_PLACEHOLDER;
 }
 
-/**
- * The configurator's bar: step navigation, and the assistant's prompt on the
- * steps where the assistant is shown. Ask turns into Stop while it works.
- */
-export function renderWizardBar() {
-  const wizard = state.session.wizard;
-  const steps = wizard ? wizardSteps(wizard) : [];
-  const index = wizard ? steps.indexOf(wizard.step) : -1;
-  const assisting = Boolean(wizard) && ASSISTANT_STEPS.includes(wizard.step);
-
-  setDisabled($('#wizard-back-btn'), index <= 0);
-  setHidden($('#wizard-next-btn'), index === -1 || index >= steps.length - 1);
-
-  const ask = $('#wizard-ask-btn');
-  setHidden(ask, !assisting);
-  setText(ask, wizard?.assistant.busy ? 'Stop' : 'Ask');
-  setHidden($('#wizard-input'), !assisting);
-}
-
 /** Show the bar that belongs to the current view, and the right buttons within. */
 export function renderInputArea() {
   const view = state.session.view;
 
   setHidden($('#composer-bar'), view !== 'chat');
   setHidden($('#settings-bar'), view !== 'settings');
-  setHidden($('#wizard-bar'), view !== 'wizard');
 
   if (view === 'settings') {
     renderSettingsEditor();
-    return;
-  }
-  if (view === 'wizard') {
-    renderWizardBar();
     return;
   }
 
