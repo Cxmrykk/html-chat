@@ -7,12 +7,13 @@ import { ICON_CHEVRON_DOWN, ICON_CHEVRON_UP, ICON_DELETE, ICON_CANCEL } from '..
 
 /**
  * A message's attachments: a drop-down at the bottom of the row, and inside it
- * one square viewer per image, stacked in a single column.
+ * one viewer per image, tiled in two columns.
  *
- * A viewer is always 1:1 and as wide as the drop-down. The image fills its
- * width and scrolls vertically; zooming (`setAttachmentZoom`) scales it within
- * the square. A placeholder is drawn pixelated under a text overlay, and a
- * click on it opens the file picker (`attachments.restore`).
+ * A viewer is as wide as its column. It takes the image's own aspect ratio,
+ * except for an image taller than it is wide, which is held to a 1:1 square
+ * and scrolls vertically. Zooming (`setAttachmentZoom`) scales the image
+ * within the viewer. A placeholder is drawn pixelated under a text overlay,
+ * and a click on it opens the file picker (`attachments.restore`).
  */
 
 const MAX_ZOOM = 8;
@@ -27,6 +28,13 @@ function overlayText(status) {
     : 'Placeholder · click to restore the original';
 }
 
+/** The viewer's shape: square for a portrait image, the image's own otherwise. */
+function viewerAspect(attachment) {
+  return attachment.height > attachment.width
+    ? '1 / 1'
+    : `${attachment.width} / ${attachment.height}`;
+}
+
 /** One image. Looks for its original the first time it is drawn. */
 export function attachmentItemHTML(attachment, at, { editing = false } = {}) {
   let url = imageUrlFor(attachment.hash);
@@ -35,7 +43,8 @@ export function attachmentItemHTML(attachment, at, { editing = false } = {}) {
   const status = url ? 'original' : imageStatus(attachment.hash);
   const placeholder = !url;
 
-  // Zooming out stops when a tall image fits the square whole.
+  // Zooming out stops when the whole image fits the viewer: for a portrait
+  // image that means narrower than the square, for any other it is full width.
   const minZoom = Math.min(1, attachment.width / attachment.height);
   const restore = placeholder
     ? ' data-command="attachments.restore" title="Click to restore the original image"'
@@ -58,6 +67,7 @@ export function attachmentItemHTML(attachment, at, { editing = false } = {}) {
             data-hash="${escapeHTML(attachment.hash)}">
       <div class="attachment-frame">
         <div class="attachment-viewer" data-zoom="1" data-min-zoom="${minZoom}"
+             style="aspect-ratio: ${viewerAspect(attachment)}"
              title="Pinch or Ctrl+Scroll to zoom · double-click to reset">${image}</div>
         ${overlay}
       </div>

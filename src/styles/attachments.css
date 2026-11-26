@@ -2,9 +2,11 @@
  * Attachments
  *
  * A drop-down at the bottom of a message, styled like the thinking box's
- * header. Inside it, one square viewer per image in a single column, each as
- * wide as the drop-down. The image fills the viewer's width and scrolls
- * vertically; zooming changes its width (ui/components/attachments.js).
+ * header. Inside it, the images are tiled in two equal columns. Each viewer
+ * is as wide as its column and takes its image's aspect ratio, except that a
+ * portrait image is held to a 1:1 square and scrolls vertically (the ratio is
+ * set inline by ui/components/attachments.js). Zooming changes the image's
+ * width.
  * ------------------------------------------------------------------ */
 
 .attachments {
@@ -38,9 +40,15 @@
   height: 1.2em;
 }
 
+/*
+ * Two equal columns. `minmax(0, 1fr)` stops a wide caption from stretching
+ * its column; `align-items: start` lets a short landscape tile sit beside a
+ * square one without being stretched to match.
+ */
 .attachments-body {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 12px;
   padding: 8px;
   border-top: 1px dashed var(--border-soft);
@@ -56,9 +64,11 @@
 }
 
 /*
- * The single grid cell is the square itself, so an image smaller than it is
- * centred by its auto margins, and one larger simply overflows and scrolls.
- * Auto margins never push content out of reach, unlike flex centring.
+ * The single grid cell is the viewer itself, so an image smaller than it
+ * (zoomed out) is centred by its auto margins, and one larger simply
+ * overflows and scrolls. Auto margins never push content out of reach,
+ * unlike flex centring. The 1:1 here is only a fallback: every viewer is
+ * given its real ratio inline.
  */
 .attachment-viewer {
   box-sizing: border-box;
@@ -86,7 +96,7 @@
   cursor: pointer;
 }
 
-/* Over the square, not the image: it stays put while the image scrolls. */
+/* Over the viewer, not the image: it stays put while the image scrolls. */
 .attachment-overlay {
   position: absolute;
   inset: 0;
