@@ -65,6 +65,9 @@ header {
  * chat list fills the rest and scrolls inside itself (`styles/sidebar.css`).
  * The sidebar only scrolls as a whole when the screen is too short for even
  * the chat list's minimum height.
+ *
+ * Its bottom edge is the grid's, which is also where the input box ends (see
+ * `#input-area textarea` below), so the chat list never reaches lower than it.
  */
 .sidebar {
   flex: 1;
@@ -86,6 +89,15 @@ header {
 
 #input-area {
   flex-shrink: 0;
+}
+
+/*
+ * The textareas are the last thing in the main column. Without their default
+ * bottom margin (`styles/base.css`) the column ends exactly at the input box,
+ * so the sidebar, which stretches to the same height, ends there too.
+ */
+#input-area textarea {
+  margin-bottom: 0;
 }
 
 /*
