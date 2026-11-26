@@ -29,6 +29,8 @@ export const state = {
     titleHidden: false,
     promptHeight: '',
     theme: 'light',
+    /** Labels of the chat list's date groups the user has folded (`core/chat-dates.js`). */
+    collapsedChatGroups: [],
     editingMessageIndex: null,
     /**
      * The part of that message being edited: a range of its markdown blocks,

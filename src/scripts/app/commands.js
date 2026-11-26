@@ -260,6 +260,19 @@ export const commands = {
     collapseSidebarOnMobile();
   },
 
+  /**
+   * Fold or unfold one date group of the chat list, named by its heading
+   * (`key`). Only the list is redrawn.
+   */
+  'chat.toggleGroup': ({ key }) => {
+    if (!key) return;
+    const collapsed = new Set(state.session.collapsedChatGroups || []);
+    if (collapsed.has(key)) collapsed.delete(key);
+    else collapsed.add(key);
+    setSession({ collapsedChatGroups: [...collapsed] }, { silent: true });
+    emit(EVENTS.CHATS);
+  },
+
   'chat.copyTranscript': ({ id, element }) => {
     const chat = state.data.chats.find((entry) => entry.id === id);
     if (!chat) return;

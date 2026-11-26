@@ -3,17 +3,18 @@ import { state } from '../../store/state.js';
 import { escapeHTML } from '../../core/format.js';
 import { pickBoolean } from '../../core/values.js';
 import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
-import { chatTimestamp, dateGroupLabel } from '../../core/chat-dates.js';
-import { ICON_RENAME, ICON_DELETE } from '../icons.js';
+import { groupChatsByDate } from '../../core/chat-dates.js';
+import { ICON_RENAME, ICON_DELETE, ICON_CHEVRON_DOWN, ICON_CHEVRON_UP } from '../icons.js';
 
 /**
  * The sidebar's chat list. It always fills the height the sidebar leaves it
  * and scrolls on its own (see `#chat-list` in `styles/sidebar.css`), so
  * nothing here sizes it.
  *
- * With Chat Date Groups on, a heading goes before each run of chats created
- * on the same day, week, month (see `core/chat-dates.js`). The list is sorted
- * newest first, so each heading appears once.
+ * With Chat Date Groups on, the chats sit under date headings (see
+ * `core/chat-dates.js`). Each heading is a button that folds its group; a
+ * folded group still shows the open chat, so switching chats from the
+ * keyboard never lands on one that cannot be seen.
  */
 
 function chatItemHTML(chat) {
@@ -29,15 +30,38 @@ function chatItemHTML(chat) {
     </div>`;
 }
 
-function groupHeadingHTML(label) {
-  return `<div class="chat-date-group" role="heading" aria-level="4">${escapeHTML(label)}</div>`;
+function groupHeadingHTML(label, count, collapsed) {
+  const hint = collapsed ? 'Show these chats' : 'Hide these chats';
+  return `
+    <button class="chat-date-group${collapsed ? ' collapsed' : ''}" data-command="chat.toggleGroup"
+            data-key="${escapeHTML(label)}" aria-expanded="${collapsed ? 'false' : 'true'}"
+            title="${hint}">
+      <span class="chat-date-label">${escapeHTML(label)}</span>
+      <span class="chat-date-count">${count}</span>
+      ${collapsed ? ICON_CHEVRON_DOWN : ICON_CHEVRON_UP}
+    </button>`;
+}
+
+function groupedHTML(chats) {
+  const collapsed = new Set(state.session.collapsedChatGroups || []);
+
+  return groupChatsByDate(chats)
+    .map(({ label, chats: members }) => {
+      const folded = collapsed.has(label);
+      const shown = folded
+        ? members.filter((chat) => chat.id === state.data.currentChatId)
+        : members;
+      return groupHeadingHTML(label, members.length, folded) + shown.map(chatItemHTML).join('');
+    })
+    .join('');
 }
 
 export function renderChatList() {
   const list = $('#chat-list');
   if (!list) return;
 
-  if (!state.data.chats.length) {
+  const chats = state.data.chats;
+  if (!chats.length) {
     list.innerHTML = '<p class="list-empty">No chats. Start a new one.</p>';
     return;
   }
@@ -47,20 +71,6 @@ export function renderChatList() {
     state.data.config.chatDateGroups,
     GLOBAL_SETTINGS.chatDateGroups.default,
   );
-  const now = Date.now();
-  let previous = null;
-  let html = '';
 
-  for (const chat of state.data.chats) {
-    if (grouped) {
-      const label = dateGroupLabel(chatTimestamp(chat), now);
-      if (label !== previous) {
-        html += groupHeadingHTML(label);
-        previous = label;
-      }
-    }
-    html += chatItemHTML(chat);
-  }
-
-  list.innerHTML = html;
+  list.innerHTML = grouped ? groupedHTML(chats) : chats.map(chatItemHTML).join('');
 }

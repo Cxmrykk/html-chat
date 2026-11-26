@@ -65,7 +65,13 @@ Anything not reported counts as unknown, and the app behaves as if there were no
 
 The **Send** button shows an estimate of the context size, at about 4 characters per token. It covers the full request, including tool definitions.
 
-The chat list in the sidebar always fills the height left below the settings box, and scrolls on its own. Chats are grouped under centered date headings by when each chat was created: Today, Yesterday, one heading per day for the rest of the last week (e.g. `Nov 24`), then Previous 30 Days, then by month. Turn this off with **Chat Date Groups**.
+### Chat list
+
+The chat list in the sidebar always fills the height left below the settings box, and scrolls on its own. Chats are grouped under date headings by when each chat was created: Today, Yesterday, one heading per day for the rest of the last 30 days (e.g. `Nov 24`), then Older.
+
+Each heading shows how many chats it holds. Click it to collapse or expand the group. A collapsed group still shows the chat that is open. Collapsed groups are not kept across reloads.
+
+Turn grouping off with **Chat Date Groups**.
 
 ### Reasoning effort
 
@@ -146,7 +152,7 @@ Reset All with no model selected restores the defaults and keeps every model's o
 | Probe Capabilities                                             | true              | Ask LiteLLM and Ollama what each model supports. Changing it fetches the model list again                                                                   |
 | Image Cache (MB)                                               | 100               | Browser storage for original images, so they survive a reload. `0` keeps them in memory only                                                                |
 | Placeholder Width, Placeholder Max Pixels                      | 64, 4096          | Size of the pixelated placeholder a chat stores for each image                                                                                              |
-| Chat Date Groups                                               | true              | Group the sidebar's chat list under date headings                                                                                                            |
+| Chat Date Groups                                               | true              | Group the sidebar's chat list under collapsible date headings                                                                                                |
 | Collapse Thinking                                              | true              | Whether new thinking boxes start closed                                                                                                                      |
 | Auto-Collapse Code, Threshold, Preview Lines, Hint             | true, 20, 5, true | Long code blocks fold. Click to toggle                                                                                                                       |
 

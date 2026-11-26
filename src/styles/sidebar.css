@@ -30,27 +30,64 @@
 }
 
 /*
- * A date heading in the chat list, centred over its chats. It sticks to the
- * top of the list while they scroll under it, so the background must hide
- * them.
+ * A date heading in the chat list: a button that folds its group, reading
+ * the label, the number of chats, and a chevron at the far end. It sticks to
+ * the top of the list while its chats scroll under it, so its background
+ * must hide them. The space between groups is a margin, not padding, so it
+ * scrolls away rather than sticking along with the heading.
  */
 .chat-date-group {
   position: sticky;
   top: 0;
   z-index: 1;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 6px 5px 4px;
+  border: none;
   background: var(--bg);
-  padding: 10px 5px 4px;
-  text-align: center;
+  color: var(--text-muted);
+  text-align: left;
   font-size: 0.75em;
   font-weight: bold;
   text-transform: uppercase;
-  color: var(--text-muted);
   user-select: none;
   -webkit-user-select: none;
 }
 
+.chat-date-group:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
 .chat-date-group:first-child {
   padding-top: 0;
+}
+
+.chat-date-group:not(:first-child) {
+  margin-top: 10px;
+}
+
+.chat-date-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-date-count {
+  flex-shrink: 0;
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-date-group .icon {
+  flex-shrink: 0;
+  width: 1.2em;
+  height: 1.2em;
 }
 
 .config-box {
