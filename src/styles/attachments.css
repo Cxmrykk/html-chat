@@ -2,11 +2,10 @@
  * Attachments
  *
  * A drop-down at the bottom of a message, styled like the thinking box's
- * header. Inside it, the images are tiled in two equal columns. Each viewer
- * is as wide as its column and takes its image's aspect ratio, except that a
- * portrait image is held to a 1:1 square and scrolls vertically (the ratio is
- * set inline by ui/components/attachments.js). Zooming changes the image's
- * width.
+ * header. Inside it, the images are tiled in two equal columns, each in a
+ * square viewer as wide as its column. The image fills the viewer's width:
+ * a landscape image sits centred in the square, a portrait one scrolls
+ * vertically. Zooming changes the image's width (ui/components/attachments.js).
  * ------------------------------------------------------------------ */
 
 .attachments {
@@ -40,11 +39,7 @@
   height: 1.2em;
 }
 
-/*
- * Two equal columns. `minmax(0, 1fr)` stops a wide caption from stretching
- * its column; `align-items: start` lets a short landscape tile sit beside a
- * square one without being stretched to match.
- */
+/* Two equal columns; `minmax(0, 1fr)` stops a long caption from widening one. */
 .attachments-body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -64,11 +59,9 @@
 }
 
 /*
- * The single grid cell is the viewer itself, so an image smaller than it
- * (zoomed out) is centred by its auto margins, and one larger simply
- * overflows and scrolls. Auto margins never push content out of reach,
- * unlike flex centring. The 1:1 here is only a fallback: every viewer is
- * given its real ratio inline.
+ * The single grid cell is the square itself, so an image smaller than it is
+ * centred by its auto margins, and one larger simply overflows and scrolls.
+ * Auto margins never push content out of reach, unlike flex centring.
  */
 .attachment-viewer {
   box-sizing: border-box;
@@ -93,6 +86,11 @@
 
 .attachment-image.pixelated {
   image-rendering: pixelated;
+}
+
+/* Clicking does something: restores a placeholder, or replaces while editing. */
+.attachment.is-placeholder .attachment-image,
+.attachment.is-replaceable .attachment-image {
   cursor: pointer;
 }
 
@@ -118,6 +116,22 @@
 
 .attachment-frame:hover .attachment-overlay span {
   background: rgba(0, 0, 0, 0.85);
+}
+
+/* On a real image being edited, the hint only shows while hovering it. */
+.attachment-overlay.on-hover {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.attachment-frame:hover .attachment-overlay.on-hover {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attachment-overlay.on-hover {
+    transition: none;
+  }
 }
 
 .attachment-caption {

@@ -11,6 +11,9 @@ import { state, currentChat } from '../../store/state.js';
  * whenever the row changes size (a window resize, KaTeX finishing, a font
  * loading).
  *
+ * A message with no text (empty, or only images) has no blocks: it is edited
+ * whole, but there is nothing to outline, so no outline is drawn.
+ *
  * Any render that touches the edited row calls `syncEditSelection` afterwards;
  * it is idempotent and cheap.
  */
@@ -54,23 +57,22 @@ function findTarget(container) {
   return element && content ? { element, content, range } : null;
 }
 
-/** Viewport top and bottom of the selected blocks, or null if they are not rendered. */
+/**
+ * Viewport top and bottom of the selected blocks, or null if there is nothing
+ * to outline: no blocks at all (a message with no text), or blocks that are
+ * not rendered.
+ */
 function selectedSpan(content, range) {
   const blocks = [...content.children].filter((child) => child.classList.contains('md-block'));
-
-  // A message with no blocks is edited whole.
-  if (!blocks.length) {
-    const box = content.getBoundingClientRect();
-    return { top: box.top, bottom: box.bottom };
-  }
+  if (!blocks.length) return null;
 
   const first = blocks[range.start];
   const last = blocks[range.end];
   if (!first || !last) return null;
-  return {
-    top: first.getBoundingClientRect().top,
-    bottom: last.getBoundingClientRect().bottom,
-  };
+
+  const top = first.getBoundingClientRect().top;
+  const bottom = last.getBoundingClientRect().bottom;
+  return bottom > top ? { top, bottom } : null;
 }
 
 export function syncEditSelection() {
@@ -91,7 +93,8 @@ export function syncEditSelection() {
   const span = selectedSpan(content, range);
   if (!span) {
     overlay?.remove();
-    watch(null);
+    // Still watched: text typed and saved later gives the row blocks to outline.
+    watch(element);
     return;
   }
 

@@ -241,7 +241,8 @@ function installAttachmentInput() {
  * Zooming an image under the cursor. A trackpad pinch arrives as a wheel event
  * with Ctrl held (Chrome, Edge, Firefox), as does Ctrl+Scroll on a mouse;
  * Safari sends gesture events instead. Plain scrolling is the viewer's own
- * overflow. A double-click resets the zoom.
+ * overflow. A double-click resets the zoom, except on an image where a click
+ * already does something (restoring a placeholder, replacing while editing).
  */
 function installAttachmentZoom() {
   const container = $('#chat-container');
@@ -262,7 +263,7 @@ function installAttachmentZoom() {
 
   container.addEventListener('dblclick', (event) => {
     const viewer = event.target.closest('.attachment-viewer');
-    if (!viewer || viewer.closest('.attachment.is-placeholder')) return;
+    if (!viewer || viewer.closest('.attachment.is-placeholder, .attachment.is-replaceable')) return;
     event.preventDefault();
     resetAttachmentZoom(viewer);
   });

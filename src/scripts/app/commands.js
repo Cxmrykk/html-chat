@@ -172,6 +172,11 @@ async function confirmPlaceholders(messages) {
   );
 }
 
+/** The attachment at `at` of message `index`, if it still exists. */
+function attachmentAt(index, at) {
+  return attachmentsOf(currentChat()?.messages[index])[at] || null;
+}
+
 /* ------------------------------------------------------------------ *
  * Commands
  * ------------------------------------------------------------------ */
@@ -341,7 +346,38 @@ export const commands = {
   },
 
   /**
-   * A click on a placeholder: pick files to bring back originals.
+   * A click on an image of the message being edited: pick one file and put
+   * it in that image's place, for good. Replacing is the point, so there is
+   * no warning when the file is a different image; picking the image's own
+   * original simply restores it.
+   */
+  'attachments.replace': async ({ index, attachment: at }) => {
+    if (!Number.isInteger(index) || !Number.isInteger(at)) return;
+    if (state.session.editingMessageIndex !== index) return;
+    const target = attachmentAt(index, at);
+    if (!target) return;
+
+    const [file] = await pickFiles({ multiple: false, accept: 'image/*' });
+    if (!file) return;
+
+    let record;
+    try {
+      record = await images.ingestImage(file);
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
+
+    // The message may have changed, or the edit ended, while the picker was open.
+    if (state.session.editingMessageIndex !== index) return;
+    const current = attachmentAt(index, at);
+    if (!current || current.hash !== target.hash) return;
+    await conversation.replaceAttachment(index, at, record);
+  },
+
+  /**
+   * A click on a placeholder (outside edit mode): pick files to bring back
+   * originals.
    *
    *   - Several files: each is matched to placeholders by hash, across every
    *     chat. Files that match nothing are ignored; if none match, nothing
@@ -351,7 +387,7 @@ export const commands = {
    *     becomes that image, for good.
    */
   'attachments.restore': async ({ index, attachment: at }) => {
-    const target = attachmentsOf(currentChat()?.messages[index])[at];
+    const target = attachmentAt(index, at);
     if (!target || images.imageUrlFor(target.hash)) return;
 
     const files = await pickFiles({ multiple: true, accept: 'image/*' });
@@ -395,7 +431,7 @@ export const commands = {
     }
 
     // The chat may have changed while the picker was open.
-    const current = attachmentsOf(currentChat()?.messages[index])[at];
+    const current = attachmentAt(index, at);
     if (!current || current.hash !== target.hash) return;
     await conversation.replaceAttachment(index, at, record);
   },

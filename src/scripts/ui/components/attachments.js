@@ -7,13 +7,19 @@ import { ICON_CHEVRON_DOWN, ICON_CHEVRON_UP, ICON_DELETE, ICON_CANCEL } from '..
 
 /**
  * A message's attachments: a drop-down at the bottom of the row, and inside it
- * one viewer per image, tiled in two columns.
+ * one square viewer per image, tiled in two columns.
  *
- * A viewer is as wide as its column. It takes the image's own aspect ratio,
- * except for an image taller than it is wide, which is held to a 1:1 square
- * and scrolls vertically. Zooming (`setAttachmentZoom`) scales the image
- * within the viewer. A placeholder is drawn pixelated under a text overlay,
- * and a click on it opens the file picker (`attachments.restore`).
+ * Every viewer is 1:1 and as wide as its column. The image fills the viewer's
+ * width: a landscape image sits centred in the square, a portrait one scrolls
+ * vertically. Zooming (`setAttachmentZoom`) scales the image within it.
+ *
+ * A click on an image means one of two things:
+ *
+ *   - while its message is being edited, replace it (`attachments.replace`);
+ *   - otherwise, if it is a placeholder, restore its original
+ *     (`attachments.restore`).
+ *
+ * A placeholder is drawn pixelated under a text overlay saying which.
  */
 
 const MAX_ZOOM = 8;
@@ -22,17 +28,11 @@ function sizeLabel(attachment) {
   return `${attachment.width}×${attachment.height}`;
 }
 
-function overlayText(status) {
+function overlayText(status, editing) {
+  if (editing) return status === 'original' ? 'Click to replace' : 'Placeholder · click to replace';
   return status === 'checking'
     ? 'Looking for the original…'
     : 'Placeholder · click to restore the original';
-}
-
-/** The viewer's shape: square for a portrait image, the image's own otherwise. */
-function viewerAspect(attachment) {
-  return attachment.height > attachment.width
-    ? '1 / 1'
-    : `${attachment.width} / ${attachment.height}`;
 }
 
 /** One image. Looks for its original the first time it is drawn. */
@@ -43,32 +43,50 @@ export function attachmentItemHTML(attachment, at, { editing = false } = {}) {
   const status = url ? 'original' : imageStatus(attachment.hash);
   const placeholder = !url;
 
-  // Zooming out stops when the whole image fits the viewer: for a portrait
-  // image that means narrower than the square, for any other it is full width.
+  // Zooming out stops when the whole image fits the square: narrower than it
+  // for a portrait image, full width for any other.
   const minZoom = Math.min(1, attachment.width / attachment.height);
-  const restore = placeholder
-    ? ' data-command="attachments.restore" title="Click to restore the original image"'
-    : '';
+
+  let command = '';
+  if (editing) {
+    command = ' data-command="attachments.replace" title="Click to replace this image"';
+  } else if (placeholder) {
+    command = ' data-command="attachments.restore" title="Click to restore the original image"';
+  }
 
   const image = `<img class="attachment-image${placeholder ? ' pixelated' : ''}"
       src="${escapeHTML(url || attachment.placeholder)}" alt="${escapeHTML(attachment.name)}"
-      style="aspect-ratio: ${attachment.width} / ${attachment.height}" draggable="false"${restore}>`;
+      style="aspect-ratio: ${attachment.width} / ${attachment.height}" draggable="false"${command}>`;
 
-  const overlay = placeholder
-    ? `<div class="attachment-overlay" aria-hidden="true"><span>${escapeHTML(overlayText(status))}</span></div>`
-    : '';
+  // A placeholder always says what it is; a real image only offers
+  // replacement, on hover, while editing.
+  const overlay =
+    placeholder || editing
+      ? `<div class="attachment-overlay${placeholder ? '' : ' on-hover'}" aria-hidden="true"><span>${escapeHTML(
+          overlayText(status, editing),
+        )}</span></div>`
+      : '';
 
   const remove = editing
     ? `<button class="attachment-remove" data-command="attachments.remove" title="Remove this image">${ICON_DELETE}</button>`
     : '';
 
+  const viewerHint = editing
+    ? 'Pinch or Ctrl+Scroll to zoom · click to replace'
+    : placeholder
+      ? 'Pinch or Ctrl+Scroll to zoom · click to restore'
+      : 'Pinch or Ctrl+Scroll to zoom · double-click to reset';
+
+  const classes = ['attachment'];
+  if (placeholder) classes.push('is-placeholder');
+  if (editing) classes.push('is-replaceable');
+
   return `
-    <figure class="attachment${placeholder ? ' is-placeholder' : ''}" data-attachment="${at}"
+    <figure class="${classes.join(' ')}" data-attachment="${at}"
             data-hash="${escapeHTML(attachment.hash)}">
       <div class="attachment-frame">
         <div class="attachment-viewer" data-zoom="1" data-min-zoom="${minZoom}"
-             style="aspect-ratio: ${viewerAspect(attachment)}"
-             title="Pinch or Ctrl+Scroll to zoom · double-click to reset">${image}</div>
+             title="${viewerHint}">${image}</div>
         ${overlay}
       </div>
       <figcaption class="attachment-caption">
