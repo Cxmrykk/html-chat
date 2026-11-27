@@ -3,10 +3,10 @@ import { state } from '../../store/state.js';
 import { GLOBAL_SETTINGS, PER_MODEL_KEYS } from '../../core/settings-schema.js';
 import { escapeHTML } from '../../core/format.js';
 import { mergeModelLists } from '../../core/models.js';
-import { hasOverrides, OMIT } from '../../core/model-params.js';
+import { hasOverrides } from '../../core/model-params.js';
 import { settingsListHTML } from '../components/settings-list.js';
 import { describeScopedSetting } from '../../services/settings.js';
-import { availableModels } from '../../services/models.js';
+import { availableModels, imageModels, imageToolModels } from '../../services/models.js';
 
 /**
  * The advanced settings screen: every setting on one page.
@@ -19,10 +19,14 @@ import { availableModels } from '../../services/models.js';
  * The selector is drawn as a setting row — the very same button — with a
  * transparent native `<select>` laid over it, so it has the rows' exact size,
  * font and hover, and still opens the browser's own list.
+ *
+ * Image Generation ends with a checklist of the known image models: ticking
+ * one lets the image tools use it (it writes Image Tool Models).
  */
 
 const ALL_MODELS_LABEL = 'All models (defaults)';
 const SELECT_ID = 'settings-model-select';
+const IMAGE_CATEGORY = GLOBAL_SETTINGS.imageToolModels.category;
 
 /** The categories that hold per-model settings, where the selector goes. */
 function perModelCategories() {
@@ -70,16 +74,56 @@ function modelSelectorHTML(selected) {
     </div>`;
 }
 
+/**
+ * One row per known image model (and per model still listed for the tools
+ * but no longer known), each with a checkbox for whether the tools may use it.
+ */
+function toolModelRowsHTML() {
+  const selected = imageToolModels();
+  const models = mergeModelLists(imageModels(), selected);
+  const heading = '<div class="settings-subheading">Models the image tools may use</div>';
+
+  if (!models.length) {
+    return (
+      heading +
+      '<p class="settings-note">No image models are known yet: none were reported by the endpoint, ' +
+      'and none are listed under Image Models.</p>'
+    );
+  }
+
+  const rows = models
+    .map((id) => {
+      const on = selected.includes(id);
+      const title = on ? `The image tools may use ${id}` : `Let the image tools use ${id}`;
+      return `
+        <label class="setting-row setting-toggle" title="${escapeHTML(title)}">
+          <span class="setting-toggle-name">
+            <input type="checkbox" data-command="settings.toggleImageToolModel"
+                   data-key="${escapeHTML(id)}"${on ? ' checked' : ''}>
+            <span>${escapeHTML(id)}</span>
+          </span>
+          <span class="setting-value">${on ? 'Tool' : 'Off'}</span>
+        </label>`;
+    })
+    .join('');
+
+  return heading + rows;
+}
+
 export function renderSettingsView() {
   const container = $('#chat-container');
   if (!container) return;
 
   const model = state.session.settingsModel;
   // Re-rendering replaces the selector; keep the keyboard where it was.
-  const selectorFocused = document.activeElement?.id === SELECT_ID;
+  const focused = document.activeElement;
+  const selectorFocused = focused?.id === SELECT_ID;
+  const toggleFocused =
+    focused?.dataset?.command === 'settings.toggleImageToolModel' ? focused.dataset.key : null;
 
   const selector = modelSelectorHTML(model);
   const leadRows = Object.fromEntries([...perModelCategories()].map((category) => [category, selector]));
+  const trailRows = { [IMAGE_CATEGORY]: toolModelRowsHTML() };
 
   container.innerHTML = `
     <div class="settings-panel">
@@ -97,8 +141,15 @@ export function renderSettingsView() {
         activeKey: state.session.activeSettingKey,
         describe: (key) => describeScopedSetting(key, model),
         leadRows,
+        trailRows,
       })}
     </div>`;
 
   if (selectorFocused) $(`#${SELECT_ID}`)?.focus({ preventScroll: true });
+  if (toggleFocused !== null) {
+    const toggle = [...container.querySelectorAll('[data-command="settings.toggleImageToolModel"]')].find(
+      (input) => input.dataset.key === toggleFocused,
+    );
+    toggle?.focus({ preventScroll: true });
+  }
 }

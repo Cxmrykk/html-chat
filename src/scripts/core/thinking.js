@@ -24,6 +24,18 @@ export function roundsOf(message) {
   return isThinking(message) && Array.isArray(message.rounds) ? message.rounds : [];
 }
 
+/**
+ * A call by its `"round.call"` position key, or null. Calls are addressed by
+ * position rather than id: some servers reuse ids like `call_0` in every
+ * request, so an id is only unique within its round.
+ */
+export function callAt(message, key) {
+  if (typeof key !== 'string') return null;
+  const [roundIndex, callIndex] = key.split('.').map((part) => Number.parseInt(part, 10));
+  if (!Number.isInteger(roundIndex) || !Number.isInteger(callIndex)) return null;
+  return roundsOf(message)[roundIndex]?.calls?.[callIndex] || null;
+}
+
 /** Whether a round holds anything the model produced. */
 export function roundHasOutput(round) {
   if (!round || typeof round !== 'object') return false;

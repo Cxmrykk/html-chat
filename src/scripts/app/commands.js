@@ -20,6 +20,7 @@ import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { sourceBlocks } from '../ui/markdown.js';
 import { isSendable, isEditable, isThinking, isPreamble } from '../core/roles.js';
 import { attachmentsOf } from '../core/attachments.js';
+import { callAt } from '../core/thinking.js';
 import { isPerModel } from '../core/settings-schema.js';
 import { nextRange, sameRange, editSlice, applyEdit } from '../core/edit-range.js';
 import { ICON_CHECK } from '../ui/icons.js';
@@ -32,8 +33,8 @@ import { ICON_CHECK } from '../ui/icons.js';
  * Each command receives `{ event, element, id, index, key, call, block,
  * attachment, files }`, where `call` is the `"round.call"` position of a tool
  * call inside a thinking message, `block` the index of a markdown block inside
- * a message body, `attachment` the index of an image among a message's
- * attachments, and `files` the files of a paste or drop.
+ * a message body, `attachment` the index of an image among a message's (or a
+ * tool call's) attachments, and `files` the files of a paste or drop.
  */
 
 /* ------------------------------------------------------------------ *
@@ -193,9 +194,14 @@ async function confirmPlaceholders(messages) {
   return proceed;
 }
 
-/** The attachment at `at` of message `index`, if it still exists. */
-function attachmentAt(index, at) {
-  return attachmentsOf(currentChat()?.messages[index])[at] || null;
+/**
+ * The attachment at `at` of message `index` — or, with `call`, of that tool
+ * call inside it — if it still exists.
+ */
+function attachmentAt(index, at, call = null) {
+  const message = currentChat()?.messages[index];
+  const holder = call ? callAt(message, call) : message;
+  return attachmentsOf(holder)[at] || null;
 }
 
 /** Whether `index` and `at` address an image of the message being edited. */
@@ -338,8 +344,12 @@ export const commands = {
     if (!text.trim() && !pending.length) return;
 
     // Shift+Send never reaches the API, so nothing is sent as a placeholder.
+    // An image model is sent only the new message, whose images are fresh.
     const skipApi = Boolean(event?.shiftKey);
-    if (!skipApi && !(await confirmPlaceholders(currentChat()?.messages || []))) return;
+    const toImageModel = models.isImageModel(state.data.config.lastModel);
+    if (!skipApi && !toImageModel && !(await confirmPlaceholders(currentChat()?.messages || []))) {
+      return;
+    }
 
     input.value = '';
     setPendingAttachments([]);
@@ -429,17 +439,19 @@ export const commands = {
 
   /**
    * A click on a placeholder (outside edit mode): pick files to bring back
-   * originals.
+   * originals. The placeholder may be a message's image or one a tool call
+   * generated (`call`).
    *
    *   - Several files: each is matched to placeholders by hash, across every
    *     chat. Files that match nothing are ignored; if none match, nothing
    *     is replaced at all.
    *   - One file: if it is this placeholder's original, it is restored. If
    *     not, the user is warned, and may use it anyway: the attachment then
-   *     becomes that image, for good.
+   *     becomes that image, for good. A generated image is never swapped for
+   *     another: only its original restores it.
    */
-  'attachments.restore': async ({ index, attachment: at }) => {
-    const target = attachmentAt(index, at);
+  'attachments.restore': async ({ index, attachment: at, call }) => {
+    const target = attachmentAt(index, at, call);
     if (!target || images.imageUrlFor(target.hash)) return;
 
     const files = await pickFiles({ multiple: true, accept: 'image/*' });
@@ -465,6 +477,11 @@ export const commands = {
     const { matches } = await images.matchImageFiles([file], [target.hash]);
     if (matches.size) {
       images.restoreOriginals(matches);
+      return;
+    }
+
+    if (call) {
+      alert(`"${file.name}" is not the original of this image: its contents differ, so nothing was replaced.`);
       return;
     }
 
@@ -692,8 +709,12 @@ export const commands = {
     const message = chat?.messages[index];
     if (!isRetryable(message)) return;
 
-    // Everything up to and including this message is what gets sent.
-    if (!(await confirmPlaceholders(chat.messages.slice(0, index + 1)))) return;
+    // Everything up to and including this message is what gets sent; an
+    // image model is sent only the message itself.
+    const scope = models.isImageModel(state.data.config.lastModel)
+      ? [message]
+      : chat.messages.slice(0, index + 1);
+    if (!(await confirmPlaceholders(scope))) return;
 
     stopEditing();
 
@@ -747,6 +768,7 @@ export const commands = {
       url: $('#cfg-url').value.trim(),
       key: $('#cfg-key').value.trim(),
       jsExecution: $('#cfg-js-exec').checked,
+      imageGeneration: $('#cfg-image-gen')?.checked ?? false,
     });
     invalidateContext();
     await models.refreshModels();
@@ -795,6 +817,27 @@ export const commands = {
     const value = settings.readEditorValue(key, settingScope(key, model));
     setSession({ settingsModel: model, settingsDraft: value });
     setSettingsEditorValue(value);
+  },
+
+  /**
+   * Tick or untick an image model (`key`) for the image tools: the checkbox
+   * list under Image Generation, which writes Image Tool Models. If that
+   * setting is open in the editor, the editor follows.
+   */
+  'settings.toggleImageToolModel': async ({ key, element }) => {
+    if (!key) return;
+    const selected = models.imageToolModels();
+    const on = typeof element?.checked === 'boolean' ? element.checked : !selected.includes(key);
+    const next = on
+      ? [...selected.filter((id) => id !== key), key]
+      : selected.filter((id) => id !== key);
+    const value = next.join(', ');
+
+    await settings.saveSetting('imageToolModels', value);
+    if (state.session.activeSettingKey === 'imageToolModels') {
+      setSession({ settingsDraft: value }, { silent: true });
+      setSettingsEditorValue(value);
+    }
   },
 
   'settings.select': ({ key }) => {

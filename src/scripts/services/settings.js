@@ -14,7 +14,7 @@ import {
   withOverride,
   withoutModel,
 } from '../core/model-params.js';
-import { refreshModels } from './models.js';
+import { refreshModels, ensureActiveModel } from './models.js';
 import { trimImageCache } from './images.js';
 
 /**
@@ -28,6 +28,8 @@ import { trimImageCache } from './images.js';
 
 /** Settings that change what model discovery asks for, so the list is fetched again. */
 const DISCOVERY_KEYS = ['probeCapabilities'];
+/** Settings that change which models the dropdown offers. */
+const MODEL_LIST_KEYS = ['extraModels', 'imageModels', 'imageModelsInChat'];
 /** Settings that change how much the image cache may hold. */
 const IMAGE_CACHE_KEYS = ['imageCacheMB'];
 /** Settings that change how the chat list is drawn. */
@@ -76,6 +78,9 @@ export function readEditorValue(key, model = null) {
 }
 
 async function afterMutation(keys) {
+  // A model that is no longer offered (an image model, with Image Models in
+  // Chat switched off) must not stay selected.
+  if (keys.some((key) => MODEL_LIST_KEYS.includes(key))) ensureActiveModel();
   await persistConfig();
   // Extra models change the dropdown; tool settings change what every
   // request carries.
@@ -130,9 +135,14 @@ export async function resetAllSettings(model = null) {
   await afterMutation(Object.keys(GLOBAL_SETTINGS));
 }
 
-/** Save connection configuration options. */
-export async function saveConnectionConfig({ url, key, jsExecution }) {
-  Object.assign(state.data.config, { url, key, jsExecution });
+/** Save connection configuration options, and the sidebar's tool switches. */
+export async function saveConnectionConfig({ url, key, jsExecution, imageGeneration }) {
+  Object.assign(state.data.config, {
+    url,
+    key,
+    jsExecution: Boolean(jsExecution),
+    imageGeneration: Boolean(imageGeneration),
+  });
   await persistConfig();
   invalidateContext();
   emit(EVENTS.SESSION);

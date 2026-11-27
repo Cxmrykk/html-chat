@@ -81,3 +81,23 @@ export function coerceForStorage(rawValue, type) {
   }
   return rawValue;
 }
+
+/**
+ * A JSON object from a setting's text. Blank is the empty object; anything
+ * that does not parse to an object is reported, never thrown.
+ */
+export function parseJSONObject(value) {
+  if (isBlank(value)) return { ok: true, value: {} };
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ok: true, value: { ...value } };
+  }
+  try {
+    const parsed = JSON.parse(String(value));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, error: 'expected a JSON object, e.g. {"size": "1024x1024"}' };
+    }
+    return { ok: true, value: parsed };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}

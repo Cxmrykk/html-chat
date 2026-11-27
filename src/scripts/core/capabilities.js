@@ -3,7 +3,7 @@ import { formatCompactCount } from './format.js';
 /**
  * What a model can do, as far as its endpoint is willing to say.
  *
- *   { source, chat, tools, vision, thinking, reasoningLevels, contextLength }
+ *   { source, chat, tools, vision, thinking, imageGeneration, reasoningLevels, contextLength }
  *
  * Every field is `null` when unknown, and unknown always means "behave as if
  * there were no capability data at all": tools are offered, and the user's
@@ -14,17 +14,22 @@ import { formatCompactCount } from './format.js';
  *
  *   - `/models` entries (`source: 'openai'`). The official API carries none,
  *     but several compatible servers do: OpenRouter's `supported_parameters`
- *     and `architecture.input_modalities`, a `capabilities` array or object,
- *     flat `supports_*` flags, a context length (`context_length`, vLLM's
- *     `max_model_len`, ...), and a list of reasoning efforts under any of
- *     `LEVEL_FIELDS`.
+ *     and `architecture.input_modalities` / `output_modalities`, a
+ *     `capabilities` array or object, flat `supports_*` flags, a `mode`, a
+ *     context length (`context_length`, vLLM's `max_model_len`, ...), and a
+ *     list of reasoning efforts under any of `LEVEL_FIELDS`.
  *   - LiteLLM's `/model/info` or `/model_group/info` (`source: 'litellm'`):
  *     `supports_function_calling`, `supports_vision`, `supports_reasoning`,
- *     `mode`, `max_input_tokens`, and `supports_<level>_reasoning_effort`
- *     flags for levels beyond low / medium / high.
+ *     `mode` (`image_generation` and `image_edit` make images),
+ *     `max_input_tokens`, and `supports_<level>_reasoning_effort` flags for
+ *     levels beyond low / medium / high.
  *   - Ollama's `/api/show` (`source: 'ollama'`): its `capabilities` list
- *     (`completion`, `tools`, `vision`, `thinking`, `embedding`, ...) and the
- *     context length in `model_info`.
+ *     (`completion`, `tools`, `vision`, `thinking`, `image`, `embedding`, ...)
+ *     and the context length in `model_info`.
+ *
+ * `imageGeneration` means the model makes images through the Images API
+ * (`/images/generations`). A model that makes images and does not chat is an
+ * image model (`generatesImagesOnly`).
  *
  * `reasoningLevels` are the `reasoning_effort` values the model accepts, in
  * increasing order. `none`, when listed, is a real request not to think and
@@ -53,14 +58,36 @@ const LEVEL_FIELDS = [
 /** Fields a `/models` entry may give its context length under. */
 const CONTEXT_FIELDS = ['context_length', 'context_window', 'max_model_len', 'max_input_tokens'];
 
-/** Names a capability goes by, across servers. */
+/**
+ * Names a capability goes by, across servers. A bare `image` means taking
+ * images in (vision) in these lists, so generating them has names of its own.
+ */
 const FEATURE_ALIASES = {
   tools: ['tools', 'tool_use', 'tool_calling', 'function_calling', 'functions'],
   thinking: ['thinking', 'reasoning'],
   vision: ['vision', 'image', 'images', 'image_input'],
+  imageGeneration: [
+    'image_generation',
+    'image-generation',
+    'imagegen',
+    'text_to_image',
+    'text-to-image',
+  ],
 };
 
-const FIELDS = ['source', 'chat', 'tools', 'vision', 'thinking', 'reasoningLevels', 'contextLength'];
+/** `mode` values (LiteLLM, and some `/models` entries) of a model that makes images. */
+const IMAGE_MODES = ['image_generation', 'image_edit'];
+
+const FIELDS = [
+  'source',
+  'chat',
+  'tools',
+  'vision',
+  'thinking',
+  'imageGeneration',
+  'reasoningLevels',
+  'contextLength',
+];
 
 export function emptyCapabilities() {
   return {
@@ -69,6 +96,7 @@ export function emptyCapabilities() {
     tools: null,
     vision: null,
     thinking: null,
+    imageGeneration: null,
     reasoningLevels: null,
     contextLength: null,
   };
@@ -126,6 +154,7 @@ export function normalizeCapabilities(value) {
     tools: bool(value.tools),
     vision: bool(value.vision),
     thinking: bool(value.thinking),
+    imageGeneration: bool(value.imageGeneration),
     reasoningLevels: normalizeLevels(value.reasoningLevels),
     contextLength: positiveInt(value.contextLength),
   });
@@ -145,6 +174,12 @@ export function normalizeCapabilityMap(value) {
 export function isKnown(caps) {
   const c = normalizeCapabilities(caps);
   return FIELDS.some((field) => field !== 'source' && c[field] !== null);
+}
+
+/** Whether the model makes images and is not known to chat: an image model. */
+export function generatesImagesOnly(caps) {
+  const c = normalizeCapabilities(caps);
+  return c.imageGeneration === true && c.chat !== true;
 }
 
 /** `base` with every field `override` knows replaced by its value. */
@@ -236,6 +271,20 @@ export function capabilitiesFromModelEntry(entry) {
   const modalities = entry.architecture?.input_modalities;
   if (Array.isArray(modalities)) assignKnown(caps, { vision: lowerNames(modalities).includes('image') });
 
+  // Only a model that outputs images and no text is an Images API model; one
+  // that also writes text makes its images through chat completions.
+  const outputs = entry.architecture?.output_modalities;
+  if (Array.isArray(outputs)) {
+    const names = lowerNames(outputs);
+    if (names.includes('image') && !names.includes('text')) {
+      assignKnown(caps, { imageGeneration: true, chat: false });
+    }
+  }
+
+  if (typeof entry.mode === 'string' && IMAGE_MODES.includes(entry.mode.toLowerCase())) {
+    assignKnown(caps, { imageGeneration: true, chat: false });
+  }
+
   assignKnown(caps, flagsFromObject(entry));
 
   caps.reasoningLevels = levelsFrom(entry, declared, entry.reasoning);
@@ -293,7 +342,9 @@ export function capabilitiesFromLiteLLM(info) {
     caps.tools = lowerNames(info.supported_openai_params).includes('tools');
   }
   if (typeof info.mode === 'string' && info.mode) {
-    caps.chat = LITELLM_CHAT_MODES.includes(info.mode.toLowerCase());
+    const mode = info.mode.toLowerCase();
+    caps.chat = LITELLM_CHAT_MODES.includes(mode);
+    caps.imageGeneration = IMAGE_MODES.includes(mode);
   }
   caps.contextLength = positiveInt(info.max_input_tokens);
   if (caps.thinking) caps.reasoningLevels = liteLLMLevels(info);
@@ -313,6 +364,12 @@ export function capabilitiesFromLiteLLM(info) {
  */
 const OLLAMA_LEVELED = ['low', 'medium', 'high'];
 const OLLAMA_SWITCHED = ['none', 'high'];
+
+/**
+ * Capability names of an Ollama model that makes images. Ollama calls taking
+ * images in `vision`, so a bare `image` is free to mean making them.
+ */
+const OLLAMA_IMAGE_NAMES = ['image', 'image_generation', 'imagegen'];
 
 function takesEffortLevels(payload, id) {
   const details = payload.details || {};
@@ -351,6 +408,7 @@ export function capabilitiesFromOllamaShow(payload, id = '') {
     caps.tools = names.includes('tools');
     caps.vision = names.includes('vision');
     caps.thinking = names.includes('thinking');
+    caps.imageGeneration = names.some((name) => OLLAMA_IMAGE_NAMES.includes(name));
   }
   if (caps.thinking) {
     caps.reasoningLevels = takesEffortLevels(payload, id) ? OLLAMA_LEVELED : OLLAMA_SWITCHED;
@@ -426,7 +484,8 @@ export function describeCapabilities(caps) {
   if (!isKnown(c)) return '';
 
   const parts = [];
-  if (c.chat === false) parts.push('not a chat model');
+  if (c.chat === false && !c.imageGeneration) parts.push('not a chat model');
+  if (c.imageGeneration) parts.push('image generation');
   if (c.tools !== null) parts.push(c.tools ? 'tools' : 'no tools');
   if (c.thinking !== null) {
     if (!c.thinking) parts.push('no thinking');

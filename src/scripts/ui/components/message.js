@@ -22,7 +22,7 @@ import {
   codeCollapseState,
   restoreCodeCollapseState,
 } from '../markdown.js';
-import { attachmentsHTML } from './attachments.js';
+import { attachmentsHTML, attachmentItemHTML } from './attachments.js';
 import {
   ICON_COPY,
   ICON_EDIT,
@@ -77,7 +77,7 @@ export function isCollapsed(message, { editing = false } = {}) {
 /**
  * The markdown for a thinking message, round by round: the reasoning (unless
  * left out), the text written alongside the calls, then every call with its
- * result.
+ * result and the images it made.
  */
 function thinkingMarkdown(message, includeReasoning) {
   return roundsOf(message)
@@ -239,9 +239,23 @@ function toolCallBodyHTML(call, status) {
 }
 
 /**
- * One call: a header row reading what the call does (the search query, or the
- * first line of the code), its status and its time. Clicking the header opens
- * the details; a closed call renders no details at all.
+ * The images a call made, open or closed: they are what the call was for, so
+ * they never hide behind its details. Never editable.
+ */
+function toolCallImagesHTML(call) {
+  const list = attachmentsOf(call);
+  if (!list.length) return '';
+  const items = list
+    .map((attachment, at) => attachmentItemHTML(attachment, at, { count: list.length }))
+    .join('');
+  return `<div class="tool-call-images">${items}</div>`;
+}
+
+/**
+ * One call: a header row reading what the call does (the first line of the
+ * code, or of the image prompt), its status and its time. Clicking the header
+ * opens the details; a closed call renders no details at all, but still
+ * shows any images it made.
  */
 function toolCallHTML(call, key) {
   const status = callStatusOf(call);
@@ -268,6 +282,7 @@ function toolCallHTML(call, key) {
     <div class="tool-call status-${status}${collapsed ? ' collapsed' : ''}" data-call="${escapeHTML(key)}">
       ${header}
       ${body}
+      ${toolCallImagesHTML(call)}
     </div>`;
 }
 

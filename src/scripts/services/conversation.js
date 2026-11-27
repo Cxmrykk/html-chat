@@ -13,8 +13,10 @@ import {
 } from '../store/state.js';
 import * as chatsRepo from '../data/chats-repo.js';
 import { requestCompletion } from './api/completions.js';
-import { toolSchemasFor, runToolCall } from './tools/index.js';
-import { wireImages } from './images.js';
+import { toolSchemasFor, runToolCall, offersImageTools } from './tools/index.js';
+import { wireImages, sendsGeneratedImages, uploadBlob } from './images.js';
+import { createImages, imageRequestParams } from './image-generation.js';
+import { isImageModel } from './models.js';
 import { buildApiMessages } from '../core/tool-calls.js';
 import { normalizeRoundReasoning } from '../core/reasoning.js';
 import { normalizeChat } from '../core/chats.js';
@@ -23,6 +25,7 @@ import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 import { isThinking, THINKING_ROLE } from '../core/roles.js';
 import {
   roundsOf,
+  callAt,
   roundHasOutput,
   hasOutput,
   isCollapsible,
@@ -31,7 +34,7 @@ import {
 import { pickInteger, pickBoolean } from '../core/values.js';
 import { truncate } from '../core/format.js';
 
-/** Chat lifecycle and the send / tool-call loop. */
+/** Chat lifecycle, the send / tool-call loop, and turns with an image model. */
 
 const IDLE = { active: false, phase: 'idle', tool: null, loop: 0, maxLoops: 0 };
 
@@ -145,22 +148,13 @@ export async function setCollapsed(index, collapsed) {
   await persistChat();
 }
 
-/** A call inside a thinking message, by its `"round.call"` position key. */
-function findCall(message, key) {
-  if (!isThinking(message) || typeof key !== 'string') return null;
-  const [roundIndex, callIndex] = key.split('.').map((part) => Number.parseInt(part, 10));
-  if (!Number.isInteger(roundIndex) || !Number.isInteger(callIndex)) return null;
-  return roundsOf(message)[roundIndex]?.calls?.[callIndex] || null;
-}
-
 /**
- * Expand or collapse one call in a thinking message. Calls are addressed by
- * position rather than id: some servers reuse ids like `call_0` in every
- * request, so an id is only unique within its round.
+ * Expand or collapse one call in a thinking message, by its `"round.call"`
+ * position (`core/thinking.js`).
  */
 export async function toggleCallCollapsed(index, key) {
   const chat = currentChat();
-  const call = findCall(chat?.messages[index], key);
+  const call = callAt(chat?.messages[index], key);
   if (!call) return;
   // Collapsed unless explicitly opened, so anything but `false` opens.
   call.collapsed = call.collapsed === false;
@@ -620,8 +614,9 @@ function createTurn(chat, chatId, { resume = null } = {}) {
 
     /**
      * Run one call of the current round. `execute` resolves with
-     * `{ content, failed }` and rejects only on the user's abort, which leaves
-     * the call running for `finish` to mark as stopped.
+     * `{ content, failed, attachments }` and rejects only on the user's
+     * abort, which leaves the call running for `finish` to mark as stopped.
+     * Images the call made are kept on it.
      */
     async runCall(call, execute) {
       const holder = () =>
@@ -639,6 +634,9 @@ function createTurn(chat, chatId, { resume = null } = {}) {
       call.result = outcome.content;
       call.status = outcome.failed ? 'error' : 'done';
       call.seconds = (Date.now() - call.startedAt) / 1000;
+      const images = normalizeAttachments(outcome.attachments);
+      if (images.length) call.attachments = images;
+      else delete call.attachments;
       invalidateContext();
       const after = holder();
       if (after) repaint(after, false);
@@ -712,19 +710,36 @@ function appendStopped(chatId) {
 }
 
 /**
+ * Hand the runtime back once a run is over. A stop followed at once by a new
+ * send may already own it, and then it is left alone.
+ */
+function releaseRuntime(controller) {
+  const current = state.runtime.completionAbort;
+  if (current === controller || current === null) {
+    state.runtime.completionAbort = null;
+    setGeneration(IDLE);
+  }
+  invalidateContext();
+}
+
+/**
  * The wire messages for a request to `model`: reasoning from the turn in
  * progress is replayed to the model that wrote it, plain text only under the
  * configured field, reasoning carried by a retry rides on the latest user
  * message, and every image goes out as its original or, failing that, its
- * upscaled placeholder.
+ * upscaled placeholder. Images carry their ids when the image tools are
+ * offered, and the model's own images go back with Send Generated Images on.
  */
 async function apiMessagesFor(chat, model, carriedReasoning = '') {
-  const images = await wireImages(chat.messages);
+  const sendGenerated = sendsGeneratedImages();
+  const images = await wireImages(chat.messages, { generated: sendGenerated });
   return buildApiMessages(chat.messages, {
     model,
     echoField: String(state.data.config.reasoningEchoField ?? '').trim(),
     images,
     carriedReasoning,
+    sendGenerated,
+    labelImages: offersImageTools(model),
   });
 }
 
@@ -748,7 +763,7 @@ async function requestRound({ turn, chat, chatId, signal, forceAnswer, carriedRe
       config: state.data.config,
       model,
       messages: await apiMessagesFor(chat, model, carriedReasoning),
-      tools: toolSchemasFor(),
+      tools: toolSchemasFor(model),
       forceAnswer,
       signal,
       onDelta: turn.apply,
@@ -778,10 +793,11 @@ async function requestRound({ turn, chat, chatId, signal, forceAnswer, carriedRe
  *
  * Each round is one request. If the reply carries tool calls they are run in
  * order — never in parallel, since JavaScript calls share `window` and may
- * depend on each other — each result is stored on its call, and the
- * transcript is sent again, with each earlier round's reasoning replayed as
- * the provider requires. After `maxToolRounds` of that the model is asked to
- * answer without tools; if it still calls one, the turn ends with an error.
+ * depend on each other, and an edit may name an image the call before it
+ * made — each result is stored on its call, and the transcript is sent
+ * again, with each earlier round's reasoning replayed as the provider
+ * requires. After `maxToolRounds` of that the model is asked to answer
+ * without tools; if it still calls one, the turn ends with an error.
  *
  * If the transcript ends with a thinking message (a retried turn), that
  * message is resumed rather than a new one started. With `carryReasoning`
@@ -862,7 +878,7 @@ async function runTurns(chatId, { carryReasoning = false } = {}) {
 
       for (const call of calls) {
         setGeneration({ phase: 'tool', tool: call.name });
-        await turn.runCall(call, () => runToolCall(call, { signal }));
+        await turn.runCall(call, () => runToolCall(call, { signal, chatId }));
         // Running code cannot be interrupted, but the loop can stop after it.
         if (signal.aborted) {
           outcome = 'stopped';
@@ -890,15 +906,94 @@ async function runTurns(chatId, { carryReasoning = false } = {}) {
     } catch (error) {
       console.error('Could not settle the turn:', error);
     }
-
-    // A stop followed at once by a new send may already own the runtime state.
-    const current = state.runtime.completionAbort;
-    if (current === controller || current === null) {
-      state.runtime.completionAbort = null;
-      setGeneration(IDLE);
-    }
-    invalidateContext();
+    releaseRuntime(controller);
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Image models
+ * ------------------------------------------------------------------ */
+
+function latestUserMessage(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'user') return messages[i];
+  }
+  return null;
+}
+
+/**
+ * The images a user message gives an image model to start from. The user
+ * was already asked before a placeholder goes out, so one may be sent.
+ */
+async function sourcesOf(message) {
+  const sources = [];
+  for (const attachment of attachmentsOf(message)) {
+    const blob = await uploadBlob(attachment, { allowPlaceholder: true });
+    if (blob) sources.push({ blob, name: attachment.name });
+  }
+  return sources;
+}
+
+/**
+ * A turn with an image model: the latest user message is the prompt, its
+ * images (if any) are what to edit, and nothing else in the chat is sent.
+ * The reply is an assistant message carrying the images, opened so they show.
+ */
+async function runImageTurn(chatId) {
+  const chat = findChat(chatId);
+  if (!chat) return;
+
+  const controller = new AbortController();
+  const { signal } = controller;
+  state.runtime.completionAbort = controller;
+  const model = state.data.config.lastModel;
+  setGeneration({ active: true, phase: 'image', tool: null, loop: 0, maxLoops: 0 });
+
+  try {
+    const source = latestUserMessage(chat.messages);
+    const prompt = (source?.content || '').trim();
+    if (!prompt) {
+      throw new Error(
+        source && attachmentsOf(source).length
+          ? 'Describe what to do with the attached images: an image model needs a prompt.'
+          : 'There is no prompt to make an image from.',
+      );
+    }
+
+    const { records, revisedPrompt } = await createImages({
+      model,
+      prompt,
+      sources: await sourcesOf(source),
+      params: imageRequestParams(),
+      signal,
+    });
+
+    await appendMessage(
+      {
+        role: 'assistant',
+        content: revisedPrompt ? `*Revised prompt:* ${revisedPrompt}` : '',
+        attachments: records,
+        attachmentsOpen: true,
+      },
+      { chatId },
+    );
+  } catch (error) {
+    if (error.name === 'AbortError' || signal.aborted) {
+      await appendStopped(chatId);
+    } else {
+      await appendMessage(
+        { role: 'error', content: `**Error:**\n\n${error.message}` },
+        { chatId },
+      );
+    }
+  } finally {
+    releaseRuntime(controller);
+  }
+}
+
+/** Run the selected model's turn: the Images API for an image model, chat completions otherwise. */
+function runModel(chatId, options = {}) {
+  return isImageModel(state.data.config.lastModel) ? runImageTurn(chatId) : runTurns(chatId, options);
 }
 
 /**
@@ -932,7 +1027,7 @@ export async function sendMessage({ text = '', attachments = [], skipApi = false
   });
   if (skipApi) return;
 
-  await runTurns(state.data.currentChatId);
+  await runModel(state.data.currentChatId);
 }
 
 /**
@@ -950,5 +1045,5 @@ export async function regenerate({ carryReasoning = false } = {}) {
   }
   if (!state.data.currentChatId) return;
 
-  await runTurns(state.data.currentChatId, { carryReasoning });
+  await runModel(state.data.currentChatId, { carryReasoning });
 }

@@ -1,8 +1,8 @@
 import { EVENTS } from '../store/events.js';
 import { state, emit } from '../store/state.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
-import { pickNumber, pickInteger } from '../core/values.js';
-import { attachmentsOf, sendsImages, normalizeAttachment } from '../core/attachments.js';
+import { pickNumber, pickInteger, pickBoolean } from '../core/values.js';
+import { allImagesOf, imagesToSend, normalizeAttachment } from '../core/attachments.js';
 import * as imageCache from '../data/image-cache.js';
 
 /**
@@ -14,7 +14,8 @@ import * as imageCache from '../data/image-cache.js';
  * original is held here by hash, in memory as an object URL, and copied into
  * the Cache API (`data/image-cache.js`) while it fits. An image found in
  * neither is a placeholder: shown pixelated, and sent scaled up to the
- * original's size, since endpoints refuse images that small.
+ * original's size, since endpoints refuse images that small. Images the model
+ * generated are held exactly the same way.
  *
  * The user is warned before placeholders are sent, once per set: hashes they
  * have agreed to send as placeholders are remembered for the session, and
@@ -56,6 +57,15 @@ const acknowledged = new Set();
 
 function announce(hash) {
   emit(EVENTS.IMAGES, { hash });
+}
+
+/** Whether Send Generated Images is on: images the model made go back to it. */
+export function sendsGeneratedImages() {
+  return pickBoolean(
+    false,
+    state.data.config.sendGeneratedImages,
+    GLOBAL_SETTINGS.sendGeneratedImages.default,
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -285,9 +295,12 @@ async function decode(blob, name) {
   }
 }
 
-/** Hash, measure and hold one image file, and resolve with its attachment record. */
-export async function ingestImage(file) {
-  const name = file.name || 'image';
+/**
+ * Hash, measure and hold one image — a file, or any blob given a `name` — and
+ * resolve with its attachment record.
+ */
+export async function ingestImage(file, { name: givenName } = {}) {
+  const name = givenName || file.name || 'image';
   const buffer = await file.arrayBuffer();
   const bitmap = await decode(file, name);
 
@@ -334,7 +347,7 @@ export function placeholderHashes() {
   const hashes = new Set();
   for (const chat of state.data.chats) {
     for (const message of chat.messages) {
-      for (const attachment of attachmentsOf(message)) {
+      for (const attachment of allImagesOf(message)) {
         if (!originals.has(attachment.hash)) hashes.add(attachment.hash);
       }
     }
@@ -380,12 +393,15 @@ export function restoreOriginals(matches) {
  * Sending
  * ------------------------------------------------------------------ */
 
-/** The attachments a request built from `messages` would send as placeholders. */
+/**
+ * The attachments a request built from `messages` would send as placeholders:
+ * user images, and with Send Generated Images on, those the model made.
+ */
 export async function missingImages(messages) {
+  const generated = sendsGeneratedImages();
   const missing = [];
   for (const message of messages || []) {
-    if (!sendsImages(message)) continue;
-    for (const attachment of attachmentsOf(message)) {
+    for (const attachment of imagesToSend(message, { generated })) {
       if (!(await originalBlob(attachment.hash))) missing.push(attachment);
     }
   }
@@ -421,6 +437,15 @@ function readDataURL(blob) {
   });
 }
 
+function dataURLBlob(url) {
+  const [head, data] = String(url).split(',');
+  const type = /^data:([^;,]+)/.exec(head)?.[1] || 'image/png';
+  const binary = atob(data || '');
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type });
+}
+
 async function originalDataURL(hash, blob, type) {
   if (!wireOriginals.has(hash)) {
     const typed = blob.type.startsWith('image/') ? blob : new Blob([blob], { type });
@@ -448,12 +473,28 @@ async function upscaledPlaceholder(attachment) {
   return wirePlaceholders.get(key);
 }
 
-/** `Map<hash, data URL>` for every image a request built from `messages` sends. */
-export async function wireImages(messages) {
+/**
+ * The image to upload for an attachment (an edit's source): the original, or
+ * with `allowPlaceholder`, the upscaled placeholder. Null when neither may be
+ * used.
+ */
+export async function uploadBlob(attachment, { allowPlaceholder = false } = {}) {
+  const blob = await originalBlob(attachment.hash);
+  if (blob) {
+    return blob.type.startsWith('image/') ? blob : new Blob([blob], { type: attachment.type });
+  }
+  if (!allowPlaceholder) return null;
+  return dataURLBlob(await upscaledPlaceholder(attachment));
+}
+
+/**
+ * `Map<hash, data URL>` for every image a request built from `messages`
+ * sends: user images, and with `generated`, those the model made.
+ */
+export async function wireImages(messages, { generated = sendsGeneratedImages() } = {}) {
   const images = new Map();
   for (const message of messages || []) {
-    if (!sendsImages(message)) continue;
-    for (const attachment of attachmentsOf(message)) {
+    for (const attachment of imagesToSend(message, { generated })) {
       if (images.has(attachment.hash)) continue;
       const blob = await originalBlob(attachment.hash);
       images.set(

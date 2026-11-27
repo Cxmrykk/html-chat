@@ -16,6 +16,7 @@ function hydrateConnectionForm() {
   if ($('#cfg-url')) $('#cfg-url').value = config.url;
   if ($('#cfg-key')) $('#cfg-key').value = config.key;
   if ($('#cfg-js-exec')) $('#cfg-js-exec').checked = Boolean(config.jsExecution);
+  if ($('#cfg-image-gen')) $('#cfg-image-gen').checked = Boolean(config.imageGeneration);
 }
 
 async function init() {

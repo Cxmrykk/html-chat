@@ -2,7 +2,7 @@ import { estimateTokens } from './tokens.js';
 import { isSendable, isThinking, isPreamble } from './roles.js';
 import { roundsOf } from './thinking.js';
 import { REASONING_FIELDS, isReasoningField, replayableBlocks } from './reasoning.js';
-import { attachmentsOf, sendsImages } from './attachments.js';
+import { attachmentsOf, sendsImages, imageLabel } from './attachments.js';
 
 /**
  * Tool calls on the wire: assembling them from streamed fragments, parsing
@@ -12,14 +12,16 @@ import { attachmentsOf, sendsImages } from './attachments.js';
  * grouped by round — one round per request (see `core/thinking.js`):
  *
  *   { role: 'thinking', rounds: [{ thinking, text?, continues?, reasoning?,
- *       calls: [{ id, name, arguments, result?, status, startedAt?, seconds?, collapsed }] }] }
+ *       calls: [{ id, name, arguments, result?, status, startedAt?, seconds?,
+ *                 collapsed, attachments? }] }] }
  *
  * `arguments` is the raw JSON string the model wrote and `result` the text
- * that was sent back. `status` is described in `core/tools.js`, `reasoning` in
- * `core/reasoning.js`. On the wire, each round with an answered call is one
- * assistant message carrying the round's text as its content, its answered
- * calls, and (within the current turn) its reasoning, followed by one `tool`
- * message per answered call. A round's `thinking` is display only.
+ * that was sent back. `attachments` are the images an image tool made
+ * (`core/attachments.js`). `status` is described in `core/tools.js`,
+ * `reasoning` in `core/reasoning.js`. On the wire, each round with an answered
+ * call is one assistant message carrying the round's text as its content, its
+ * answered calls, and (within the current turn) its reasoning, followed by one
+ * `tool` message per answered call. A round's `thinking` is display only.
  *
  * Text written before a round's calls is a preamble message just before the
  * thinking message, whose first round `continues` it: the two are sent as the
@@ -154,14 +156,48 @@ function reasoningFields(reasoning, replay) {
   return fields;
 }
 
+/* ------------------------------------------------------------------ *
+ * Images
+ * ------------------------------------------------------------------ */
+
+/**
+ * Image parts for `list`, from `images` (`Map<hash, url>`). With `label`, each
+ * image is introduced by a text part naming its id, so the model can refer to
+ * it. An image with no url is left out.
+ */
+function imageParts(list, images, label) {
+  const parts = [];
+  if (!images) return parts;
+  for (const attachment of list) {
+    const url = images.get(attachment.hash);
+    if (!url) continue;
+    if (label) parts.push({ type: 'text', text: imageLabel(attachment) });
+    parts.push({ type: 'image_url', image_url: { url } });
+  }
+  return parts;
+}
+
+const GENERATED_NOTE = 'The images generated just above, sent back so you can check them:';
+
+/**
+ * Images the model made, as the user message that carries them back: the
+ * API takes image parts only from users. Null when there are none to send.
+ */
+function generatedMessage(list, images) {
+  const parts = imageParts(list, images, true);
+  if (!parts.length) return null;
+  return { role: 'user', content: [{ type: 'text', text: GENERATED_NOTE }, ...parts] };
+}
+
 /**
  * The wire messages for one thinking message: per round, the text and the
- * answered calls with their reasoning, then the results. A round whose calls
+ * answered calls with their reasoning, then the results, then (when
+ * generated images go back) the images the calls made. A round whose calls
  * were never answered sends its text alone, if it wrote any; its reasoning is
  * dropped with the calls it belonged to. `lead` is the preamble before the
  * message, which is the text of a first round that continues it.
  */
-function wireRounds(message, replay, lead = '') {
+function wireRounds(message, replay, lead, wire) {
   const payload = [];
   const rounds = roundsOf(message);
 
@@ -185,6 +221,11 @@ function wireRounds(message, replay, lead = '') {
       },
       ...answered.map((call) => ({ role: 'tool', tool_call_id: call.id, content: call.result })),
     );
+
+    if (wire.sendGenerated) {
+      const extra = generatedMessage(answered.flatMap(attachmentsOf), wire.images);
+      if (extra) payload.push(extra);
+    }
   }
 
   return payload;
@@ -201,19 +242,15 @@ function withCarried(text, carried) {
 
 /**
  * A message's wire content: its text (with `carried` reasoning after it), or
- * with `images` (`Map<hash, url>`) and a role that may carry them, a text part
- * followed by one image part per attachment. An attachment with no url is
- * left out.
+ * with images and a role that may carry them, a text part followed by the
+ * image parts of its attachments (each labelled with its id when
+ * `wire.labelImages`).
  */
-function wireContent(message, images, carried = '') {
+function wireContent(message, wire, carried = '') {
   const text = withCarried(message.content || '', carried);
-  if (!images || !sendsImages(message)) return text;
+  if (!wire.images || !sendsImages(message)) return text;
 
-  const parts = [];
-  for (const attachment of attachmentsOf(message)) {
-    const url = images.get(attachment.hash);
-    if (url) parts.push({ type: 'image_url', image_url: { url } });
-  }
+  const parts = imageParts(attachmentsOf(message), wire.images, wire.labelImages);
   if (!parts.length) return text;
   return text ? [{ type: 'text', text }, ...parts] : parts;
 }
@@ -248,33 +285,49 @@ function lastUserIndex(messages) {
  *   - `carriedReasoning`, from a retry, is appended to the latest user
  *     message's text;
  *   - user messages carry their images as content parts when `images` maps
- *     each attachment's hash to a url. Without `images`, only text is built
- *     (the context estimate does that).
+ *     each attachment's hash to a url, each introduced by its id when
+ *     `labelImages` (the image tools are offered). Without `images`, only
+ *     text is built (the context estimate does that);
+ *   - with `sendGenerated`, images the model made — by an image tool call,
+ *     or as an image model's reply — follow in a user message of their own,
+ *     right after the tool results or the reply.
  *
  * Everything is reduced to wire fields, so presentational ones never leave.
  */
 export function buildApiMessages(
   messages,
-  { model = '', echoField = '', images = null, carriedReasoning = '' } = {},
+  {
+    model = '',
+    echoField = '',
+    images = null,
+    carriedReasoning = '',
+    sendGenerated = false,
+    labelImages = false,
+  } = {},
 ) {
   const sendable = (messages || []).filter(isSendable);
   const userAt = lastUserIndex(sendable);
   const turnStart = userAt + 1;
   const replayFor = (i) => (model && i >= turnStart ? { model, echoField } : null);
+  const wire = {
+    images,
+    sendGenerated: Boolean(images) && Boolean(sendGenerated),
+    labelImages: Boolean(labelImages),
+  };
   const payload = [];
 
   for (let i = 0; i < sendable.length; i++) {
     const message = sendable[i];
 
     if (isThinking(message)) {
-      payload.push(...wireRounds(message, replayFor(i)));
+      payload.push(...wireRounds(message, replayFor(i), '', wire));
       continue;
     }
 
     if (isPreamble(message)) {
       const next = sendable[i + 1];
       if (isThinking(next) && roundsOf(next)[0]?.continues) {
-        payload.push(...wireRounds(next, replayFor(i + 1), message.content || ''));
+        payload.push(...wireRounds(next, replayFor(i + 1), message.content || '', wire));
         i++;
         continue;
       }
@@ -283,7 +336,12 @@ export function buildApiMessages(
     }
 
     const carried = i === userAt ? carriedReasoning : '';
-    payload.push({ role: message.role, content: wireContent(message, images, carried) });
+    payload.push({ role: message.role, content: wireContent(message, wire, carried) });
+
+    if (wire.sendGenerated && message.role === 'assistant') {
+      const extra = generatedMessage(attachmentsOf(message), images);
+      if (extra) payload.push(extra);
+    }
   }
 
   return payload;

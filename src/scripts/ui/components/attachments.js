@@ -2,6 +2,7 @@ import { $, fromHTML } from '../dom.js';
 import { state, currentChat } from '../../store/state.js';
 import { escapeHTML } from '../../core/format.js';
 import { attachmentsOf } from '../../core/attachments.js';
+import { callAt } from '../../core/thinking.js';
 import { imageUrlFor, imageStatus, requestImage } from '../../services/images.js';
 import {
   ICON_CHEVRON_DOWN,
@@ -13,7 +14,9 @@ import {
 
 /**
  * A message's attachments: a drop-down at the bottom of the row, and inside it
- * one square viewer per image, tiled in two columns.
+ * one square viewer per image, tiled in two columns. A tool call that made
+ * images shows them the same way, in a strip of its own
+ * (`components/message.js`).
  *
  * Every viewer is 1:1 and as wide as its column. The image fills the viewer's
  * width: a landscape image sits centred in the square, a portrait one scrolls
@@ -154,7 +157,8 @@ export function attachmentsHTML(message, { editing = false } = {}) {
 
 /**
  * Redraw every shown image with this hash, after its original was found,
- * found missing, or restored. Only the image itself is replaced.
+ * found missing, or restored. Only the image itself is replaced. An image a
+ * tool call made is looked up on that call, and is never editable.
  */
 export function syncAttachmentImages(hash) {
   const container = $('#chat-container');
@@ -166,10 +170,12 @@ export function syncAttachmentImages(hash) {
     const row = figure.closest('.msg[data-index]');
     const index = Number.parseInt(row?.dataset.index, 10);
     const at = Number.parseInt(figure.dataset.attachment, 10);
-    const list = attachmentsOf(messages[index]);
+    const callKey = figure.closest('[data-call]')?.dataset.call;
+    const holder = callKey ? callAt(messages[index], callKey) : messages[index];
+    const list = attachmentsOf(holder);
     const attachment = list[at];
     if (!attachment) continue;
-    const editing = state.session.editingMessageIndex === index;
+    const editing = !callKey && state.session.editingMessageIndex === index;
     figure.replaceWith(
       fromHTML(attachmentItemHTML(attachment, at, { editing, count: list.length })),
     );

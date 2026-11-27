@@ -42,7 +42,7 @@ import { normalizeAttachments } from './attachments.js';
  *
  * Image attachments (`core/attachments.js`) are validated the same way, and
  * an attachment that cannot be shown is dropped. A thinking message never
- * carries any.
+ * carries any itself; its tool calls may (the images an image tool made).
  *
  * Nothing can be running when a record is read, so a thinking message that
  * never stopped counting, or a call that never returned, was cut off (a
@@ -73,6 +73,11 @@ function normalizeCall(call) {
   if (!copy.status || UNSETTLED_STATUSES.includes(copy.status)) {
     copy.status = typeof copy.result === 'string' ? 'done' : 'interrupted';
   }
+
+  const images = normalizeAttachments(copy.attachments);
+  if (images.length) copy.attachments = images;
+  else delete copy.attachments;
+
   return copy;
 }
 

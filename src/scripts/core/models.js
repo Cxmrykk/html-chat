@@ -11,6 +11,12 @@ export function normalizeModelList(value) {
   return [...ids];
 }
 
+/** Model names typed into a setting: separated by commas, new lines, or both. */
+export function modelNamesFrom(value) {
+  if (Array.isArray(value)) return normalizeModelList(value);
+  return normalizeModelList(String(value ?? '').split(/[,\n]/));
+}
+
 /** Union of several lists, first occurrence wins the position. */
 export function mergeModelLists(...lists) {
   return normalizeModelList(lists.flatMap(normalizeModelList));

@@ -14,6 +14,8 @@ const BASE_CONFIG = {
   /** `{ [modelId]: { [settingKey]: value } }`, per-model LLM parameters (core/model-params.js). */
   modelParams: {},
   jsExecution: false,
+  /** The sidebar's Generate Images switch: whether the image tools may be offered. */
+  imageGeneration: false,
   lastModel: '',
   reasoningEffort: DEFAULT_EFFORT,
   availableReasoningLevels: 'none\nlow\nmedium\nhigh',
@@ -83,6 +85,7 @@ export async function loadConfig() {
   config.models = normalizeModelList(config.models);
   config.modelCapabilities = normalizeCapabilityMap(config.modelCapabilities);
   config.modelParams = normalizeModelParams(config.modelParams);
+  config.imageGeneration = Boolean(config.imageGeneration);
   return config;
 }
 

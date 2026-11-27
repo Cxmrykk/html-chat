@@ -84,6 +84,19 @@
   border-top: 1px dashed var(--border-soft);
 }
 
+/*
+ * The images a tool call made, under its header (and its details, when
+ * open): the same tiling as an attachments drop-down, always shown.
+ */
+.tool-call-images {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+  padding: 8px;
+  border-top: 1px dashed var(--border-soft);
+}
+
 .attachment {
   margin: 0;
   min-width: 0;

@@ -1,5 +1,6 @@
 import { parseToolArguments } from './tool-calls.js';
 import { truncate } from './format.js';
+import { attachmentsOf, attachmentNote } from './attachments.js';
 
 /**
  * The tools this app can offer a model: their wire schemas, the wording that
@@ -12,7 +13,16 @@ import { truncate } from './format.js';
 
 export const TOOL_NAMES = {
   javascript: 'run_javascript',
+  listImageModels: 'list_image_models',
+  generateImage: 'generate_image',
+  editImage: 'edit_image',
 };
+
+const IMAGE_TOOL_NAMES = [TOOL_NAMES.listImageModels, TOOL_NAMES.generateImage, TOOL_NAMES.editImage];
+
+export function isImageToolName(name) {
+  return IMAGE_TOOL_NAMES.includes(name);
+}
 
 export const DEFAULT_JS_TOOL_DESCRIPTION = [
   "Execute JavaScript in the user's web browser, inside the page that is running this chat, and get the result back.",
@@ -42,14 +52,115 @@ export function javascriptToolSchema(description) {
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * Image tools
+ * ------------------------------------------------------------------ */
+
+/** Per-call options the model may set on an image request, on top of Image Parameters. */
+const IMAGE_OPTION_PROPERTIES = {
+  size: {
+    type: 'string',
+    description:
+      'Optional size, e.g. "1024x1024". Leave it out unless the user asks for one: models differ in what they accept.',
+  },
+  quality: {
+    type: 'string',
+    description: 'Optional quality, e.g. "low", "medium" or "high", for models that take one.',
+  },
+  background: {
+    type: 'string',
+    description: 'Optional background, e.g. "transparent" or "opaque", for models that take one.',
+  },
+};
+
+export const TOOL_IMAGE_OPTIONS = Object.keys(IMAGE_OPTION_PROPERTIES);
+
+const IMAGE_MODEL_PROPERTY = {
+  type: 'string',
+  description: `An image model returned by ${TOOL_NAMES.listImageModels}.`,
+};
+
+const IMAGE_PROMPT_PROPERTY = {
+  type: 'string',
+  description:
+    'What the image should show. Make it complete and self-contained: the image model sees nothing of this conversation.',
+};
+
+/** The three image tools, offered together. */
+export function imageToolSchemas() {
+  return [
+    {
+      type: 'function',
+      function: {
+        name: TOOL_NAMES.listImageModels,
+        description: `List the image models you may use with ${TOOL_NAMES.generateImage} and ${TOOL_NAMES.editImage}. Call it before picking a model.`,
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: TOOL_NAMES.generateImage,
+        description:
+          `Generate images from a text prompt with an image model from ${TOOL_NAMES.listImageModels}. ` +
+          'The user sees the images. You get back an id for each (like img_1a2b3c4d5e6f), which ' +
+          `${TOOL_NAMES.editImage} takes. If the result is not what was asked for, adjust the prompt or try another model.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            model: IMAGE_MODEL_PROPERTY,
+            prompt: IMAGE_PROMPT_PROPERTY,
+            ...IMAGE_OPTION_PROPERTIES,
+          },
+          required: ['model', 'prompt'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: TOOL_NAMES.editImage,
+        description:
+          `Edit existing images, or make a new image from them, with an image model from ${TOOL_NAMES.listImageModels}. ` +
+          'Images in this conversation are labelled with their ids ([img_...]), and the image tools return the ids of what they make. ' +
+          'Not every image model can edit: if one fails, try another.',
+        parameters: {
+          type: 'object',
+          properties: {
+            model: IMAGE_MODEL_PROPERTY,
+            prompt: {
+              type: 'string',
+              description: 'The change to make, or what to make from the images. Self-contained, as for generating.',
+            },
+            images: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'The ids of the images to start from, e.g. ["img_1a2b3c4d5e6f"].',
+            },
+            ...IMAGE_OPTION_PROPERTIES,
+          },
+          required: ['model', 'prompt', 'images'],
+        },
+      },
+    },
+  ];
+}
+
 /** Characters the tool definitions add to every request, for the context estimate. */
 export function toolSchemaChars(tools) {
   return tools.length ? JSON.stringify(tools).length : 0;
 }
 
+const ACTIVITY_LABELS = {
+  [TOOL_NAMES.javascript]: 'Running JavaScript',
+  [TOOL_NAMES.listImageModels]: 'Listing image models',
+  [TOOL_NAMES.generateImage]: 'Generating image',
+  [TOOL_NAMES.editImage]: 'Editing image',
+};
+
 /** Send-button wording while a tool runs. */
 export function toolActivityLabel(name) {
-  return name === TOOL_NAMES.javascript ? 'Running JavaScript' : 'Running tool';
+  return ACTIVITY_LABELS[name] || 'Running tool';
 }
 
 /* ------------------------------------------------------------------ *
@@ -168,10 +279,21 @@ function tenseOf(call) {
 
 const JAVASCRIPT_VERBS = { active: 'Running JavaScript', past: 'Ran JavaScript', none: 'JavaScript' };
 
+const IMAGE_VERBS = {
+  [TOOL_NAMES.listImageModels]: {
+    active: 'Listing image models',
+    past: 'Listed image models',
+    none: 'List image models',
+  },
+  [TOOL_NAMES.generateImage]: { active: 'Generating image', past: 'Generated image', none: 'Image generation' },
+  [TOOL_NAMES.editImage]: { active: 'Editing image', past: 'Edited image', none: 'Image edit' },
+};
+
 /**
  * The one-line header of a call: what it does, in the tense of its status
- * (`verb`), and what it was given (`detail`: the first line of the code).
- * `scope` is always empty now that no tool is limited to a set of files.
+ * (`verb`), and what it was given (`detail`: the first line of the code, or
+ * of the image prompt). `scope` is always empty now that no tool is limited
+ * to a set of files.
  */
 export function toolCallHeadline(call) {
   const tense = tenseOf(call);
@@ -180,6 +302,16 @@ export function toolCallHeadline(call) {
     return {
       verb: JAVASCRIPT_VERBS[tense],
       detail: truncate(firstLine(stringArgument(call, 'code')), MAX_HEADLINE_CODE),
+      scope: '',
+    };
+  }
+
+  if (IMAGE_VERBS[call?.name]) {
+    const model = stringArgument(call, 'model').trim();
+    const verb = IMAGE_VERBS[call.name][tense];
+    return {
+      verb: model ? `${verb} with ${model}` : verb,
+      detail: truncate(firstLine(stringArgument(call, 'prompt')), MAX_HEADLINE_CODE),
       scope: '',
     };
   }
@@ -200,15 +332,21 @@ function fenced(text, language = '') {
   return `${fence}${language}\n${text}\n${fence}`;
 }
 
-/** What an opened call shows above its result, as markdown: the code, or the raw arguments. */
+/**
+ * What an opened call shows above its result, as markdown: the code, or the
+ * arguments (pretty-printed once they are complete JSON).
+ */
 export function toolCallRequestMarkdown(call) {
   if (call?.name === TOOL_NAMES.javascript) {
     return fenced(stringArgument(call, 'code').trim(), 'javascript');
   }
-  return fenced(call?.arguments || '{}', 'json');
+  const raw = typeof call?.arguments === 'string' ? call.arguments : '';
+  const parsed = parseToolArguments(raw);
+  const text = parsed.ok && raw.trim() ? JSON.stringify(parsed.value, null, 2) : raw || '{}';
+  return fenced(text, 'json');
 }
 
-/** One call, request and result, as markdown: what copy and the transcript export use. */
+/** One call, request, result and images, as markdown: what copy and the transcript export use. */
 export function toolCallMarkdown(call) {
   const { verb } = toolCallHeadline(call);
   const title = `**${verb}:**`;
@@ -217,5 +355,6 @@ export function toolCallMarkdown(call) {
     typeof call?.result === 'string'
       ? `**Result:**\n${call.result || '*(empty)*'}`
       : `*(${callStatusNote(callStatusOf(call))})*`;
-  return `${title}\n${request}\n\n${outcome}`;
+  const images = attachmentsOf(call).map(attachmentNote);
+  return [`${title}\n${request}`, outcome, ...images].join('\n\n');
 }

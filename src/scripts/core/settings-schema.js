@@ -1,6 +1,7 @@
-import { isBlank, pickBoolean, pickNumber, pickInteger } from './values.js';
+import { isBlank, pickBoolean, pickNumber, pickInteger, parseJSONObject } from './values.js';
 import { DEFAULT_JS_TOOL_DESCRIPTION } from './tools.js';
 import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
+import { modelNamesFrom } from './models.js';
 
 /**
  * The single description of every configurable global setting.
@@ -21,6 +22,21 @@ const showCustomOrDefault = (value, entry) =>
   isBlank(value) || value === entry.default ? 'Default' : 'Custom';
 const showOnOff = (value, entry) =>
   pickBoolean(pickBoolean(false, entry.default), value) ? 'On' : 'Off';
+
+/** A list of model names, comma-separated or one per line. */
+const showModelNames = (value) => {
+  const names = modelNamesFrom(value);
+  return names.length ? names.join(', ') : 'None';
+};
+
+/** The keys a JSON object of request fields sets, or why it is not one. */
+const showJSONFields = (value) => {
+  if (isBlank(value)) return 'API Default';
+  const parsed = parseJSONObject(value);
+  if (!parsed.ok) return 'Invalid JSON';
+  const keys = Object.keys(parsed.value);
+  return keys.length ? keys.join(', ') : 'API Default';
+};
 
 /** An unknown field name is ignored when sending, so the list says so. */
 const showEchoField = (value) => {
@@ -114,7 +130,7 @@ export const GLOBAL_SETTINGS = {
     category: 'Tools',
     type: 'number',
     default: '4000',
-    tooltip: 'Estimated-token cap on a JavaScript result. Longer results are truncated. 0 disables the cap.',
+    tooltip: 'Estimated-token cap on a tool result. Longer results are truncated. 0 disables the cap.',
     display: showValueOrDefault,
   },
   reasoningEchoField: {
@@ -159,7 +175,7 @@ export const GLOBAL_SETTINGS = {
     type: 'boolean',
     default: 'true',
     tooltip:
-      'When fetching models, also ask LiteLLM (/model/info) and Ollama (/api/show) what each model supports: tools, thinking and its levels, vision, context length. ' +
+      'When fetching models, also ask LiteLLM (/model/info) and Ollama (/api/show) what each model supports: tools, thinking and its levels, vision, image generation, context length. ' +
       'Off reads /models alone. A model reported without tool support is not offered tools.',
     display: showOnOff,
   },
@@ -169,7 +185,7 @@ export const GLOBAL_SETTINGS = {
     type: 'number',
     default: '100',
     tooltip:
-      'How much browser storage original images may use so they survive a reload. The oldest are removed first once it is full. ' +
+      'How much browser storage original images (pasted or generated) may use so they survive a reload. The oldest are removed first once it is full. ' +
       '0 keeps originals in memory only. Chats themselves only ever store a pixelated placeholder.',
     display: showCacheSize,
   },
@@ -192,6 +208,56 @@ export const GLOBAL_SETTINGS = {
       'The most pixels (width × height) a placeholder may hold. While it holds more, its width is halved. ' +
       'Placeholders are stored in the chat, so larger values make chats larger. Applies to images added from now on.',
     display: showPixelBudget,
+  },
+  imageModels: {
+    label: 'Image Models',
+    category: 'Image Generation',
+    type: 'text',
+    default: '',
+    tooltip:
+      'Models to treat as image generation models (they are sent to /images/generations), comma-separated or one per line. ' +
+      'Models the endpoint reports as image models (LiteLLM, Ollama) need not be listed: this is for servers that report nothing, such as stable-diffusion.cpp.',
+    display: showModelNames,
+  },
+  imageModelsInChat: {
+    label: 'Image Models in Chat',
+    category: 'Image Generation',
+    type: 'boolean',
+    default: 'false',
+    tooltip:
+      'Offer image models in the model dropdown. Sending to one takes the latest user message as the prompt: text alone calls /images/generations, ' +
+      'and a message with images calls /images/edits with them. The reply is the generated images. true or false.',
+    display: showOnOff,
+  },
+  imageToolModels: {
+    label: 'Image Tool Models',
+    category: 'Image Generation',
+    type: 'text',
+    default: '',
+    tooltip:
+      'The image models the image tools may use, comma-separated or one per line: tick them in the list below, or type them here. ' +
+      'The tools (list_image_models, generate_image, edit_image) are offered when Generate Images is on in the sidebar and at least one model is listed.',
+    display: showModelNames,
+  },
+  imageParams: {
+    label: 'Image Parameters',
+    category: 'Image Generation',
+    type: 'code',
+    default: '',
+    tooltip:
+      'A JSON object of extra fields sent with every image request, e.g. {"size": "1024x1024", "quality": "high", "response_format": "b64_json"}. ' +
+      'The model may still choose size, quality and background in a tool call. Empty sends none.',
+    display: showJSONFields,
+  },
+  sendGeneratedImages: {
+    label: 'Send Generated Images',
+    category: 'Image Generation',
+    type: 'boolean',
+    default: 'false',
+    tooltip:
+      'Send the images the model made back to it, in a user message right after the tool results (or after an image model’s reply), so it can check them and adjust. ' +
+      'Off, a tool result carries only the images’ ids and sizes, and an image model’s reply sends nothing. true or false.',
+    display: showOnOff,
   },
   chatDateGroups: {
     label: 'Chat Date Groups',

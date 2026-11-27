@@ -11,7 +11,12 @@ import {
   capabilitySourceLabel,
   DEFAULT_EFFORT,
 } from '../../core/capabilities.js';
-import { availableModels, capabilitiesFor, reasoningChoicesFor } from '../../services/models.js';
+import {
+  availableModels,
+  capabilitiesFor,
+  reasoningChoicesFor,
+  imageModels,
+} from '../../services/models.js';
 import { toolSchemasFor } from '../../services/tools/index.js';
 import { composerAttachmentsHTML } from './attachments.js';
 import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
@@ -25,6 +30,9 @@ const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
 
 const CLOSE_TITLE = 'Close the settings';
 const CLOSE_BLOCKED_TITLE = 'Save, reset or cancel the setting being edited first';
+
+/** Settings whose editor also lists the image models known right now. */
+const IMAGE_MODEL_KEYS = ['imageModels', 'imageToolModels'];
 
 /** How close to the bottom still counts as "following along" (see `chat-view.js`). */
 const STICK_THRESHOLD_PX = 48;
@@ -57,10 +65,11 @@ function renderReasoningDropdown(select) {
 
 /**
  * The model dropdown, driven by whatever `services/models.js` last
- * discovered (plus any manually configured extras). When editing thinking,
- * the options flip to the reasoning levels. A name too long for the dropdown
- * scrolls (see `ui/marquee.js`). Hovering it says what the selected model
- * can do, when its endpoint said.
+ * discovered (plus any manually configured extras, and image models when they
+ * are allowed in chat). When editing thinking, the options flip to the
+ * reasoning levels. A name too long for the dropdown scrolls (see
+ * `ui/marquee.js`). Hovering it says what the selected model can do, when its
+ * endpoint said.
  */
 export function updateModelDropdown() {
   const select = $('#model-select');
@@ -122,7 +131,13 @@ function contextChars() {
 function generationLabel({ phase, tool, loop, maxLoops }) {
   const suffix = loop > 0 ? ` (Round ${loop}/${maxLoops})` : '';
   const verb =
-    phase === 'tool' ? toolActivityLabel(tool) : phase === 'generating' ? 'Generating' : 'Thinking';
+    phase === 'image'
+      ? 'Generating image'
+      : phase === 'tool'
+        ? toolActivityLabel(tool)
+        : phase === 'generating'
+          ? 'Generating'
+          : 'Thinking';
   return `${verb}${suffix}...`;
 }
 
@@ -253,11 +268,18 @@ export function renderInputArea() {
 }
 
 /**
- * What the empty editor says: the setting's description, and for a model's
- * override, what an empty value inherits and how to send nothing.
+ * What the empty editor says: the setting's description; for a model's
+ * override, what an empty value inherits and how to send nothing; and for the
+ * image model lists, which image models are known right now.
  */
 function settingPlaceholder(key) {
   const tooltip = GLOBAL_SETTINGS[key]?.tooltip || '';
+
+  if (IMAGE_MODEL_KEYS.includes(key)) {
+    const known = imageModels();
+    return `${tooltip}\n\nImage models known now: ${known.length ? known.join(', ') : 'none'}.`;
+  }
+
   const model = state.session.settingsModel;
   if (!model || !isPerModel(key)) return tooltip;
 

@@ -5,9 +5,10 @@ import { groupByCategory } from '../../core/settings-schema.js';
  * The category-grouped list of settings buttons. `describe(key)` gives the
  * summary shown on the right. `leadRows` maps a category to markup placed at
  * the top of its group, before its settings (the model selector of LLM
- * Behavior, say).
+ * Behavior, say); `trailRows` to markup placed after them (the image tool
+ * model checklist of Image Generation).
  */
-export function settingsListHTML({ schema, activeKey, describe, leadRows = {} }) {
+export function settingsListHTML({ schema, activeKey, describe, leadRows = {}, trailRows = {} }) {
   const groups = groupByCategory(schema);
   let html = '';
 
@@ -33,6 +34,8 @@ export function settingsListHTML({ schema, activeKey, describe, leadRows = {} })
           </button>`;
       })
       .join('');
+
+    html += trailRows[category] || '';
 
     html += '</div>';
   }
