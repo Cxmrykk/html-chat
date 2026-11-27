@@ -119,7 +119,8 @@ function installEditSelection() {
 
 /**
  * A click on a collapsible code block opens or closes it, keeping its code
- * where it is on screen (`ui/code-collapse.js`). Not inside the message being
+ * where it is on screen; a collapsing block's preview lands where the click
+ * was, room permitting (`ui/code-collapse.js`). Not inside the message being
  * edited: there a click picks the block to edit, and the view must stay
  * exactly as it was.
  *
@@ -140,7 +141,7 @@ function installCodeCollapseDelegation() {
     if (!pre) return;
     if (isOnScrollbar(pre, event) || scrolledJustNow(pre)) return;
 
-    toggleCodeBlock(pre);
+    toggleCodeBlock(pre, { clientY: event.clientY });
   });
 
   const noteGesture = (event) => noteCodeScrollGesture(event.target);
