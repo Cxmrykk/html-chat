@@ -3,10 +3,11 @@ import { groupByCategory } from '../../core/settings-schema.js';
 
 /**
  * The category-grouped list of settings buttons. `describe(key)` gives the
- * summary shown on the right, so the same list serves the defaults and a
- * model's overrides.
+ * summary shown on the right. `leadRows` maps a category to markup placed at
+ * the top of its group, before its settings (the model selector of LLM
+ * Behavior, say).
  */
-export function settingsListHTML({ schema, activeKey, describe }) {
+export function settingsListHTML({ schema, activeKey, describe, leadRows = {} }) {
   const groups = groupByCategory(schema);
   let html = '';
 
@@ -16,6 +17,8 @@ export function settingsListHTML({ schema, activeKey, describe }) {
         <h3>${escapeHTML(category)}</h3>
       </div>
       <div class="settings-group">`;
+
+    html += leadRows[category] || '';
 
     html += keys
       .map((key) => {

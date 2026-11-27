@@ -8,28 +8,6 @@
   margin: 0;
 }
 
-/* Whose LLM parameters the list edits: the defaults, or one model. */
-.settings-scope {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 15px;
-}
-
-.settings-scope label {
-  flex-shrink: 0;
-  font-size: 0.85em;
-  font-weight: bold;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.settings-scope select {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin-bottom: 0;
-}
-
 .settings-subtitle {
   margin-top: 5px;
   font-size: 0.85em;
@@ -82,4 +60,42 @@
   background: var(--bg-hover) !important;
   border-color: var(--border) !important;
   font-weight: bold;
+}
+
+/*
+ * The model selector of LLM Behavior: a real setting row, with a transparent
+ * native select over it that takes every click and key. The row only shows
+ * what the select holds, so it never reacts by itself; its hover and focus
+ * follow the select's.
+ */
+.setting-select {
+  position: relative;
+  margin-bottom: 5px;
+}
+
+.setting-select > .setting-row {
+  margin-bottom: 0;
+  pointer-events: none;
+}
+
+.setting-select > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+  appearance: none;
+}
+
+.setting-select:hover > .setting-row {
+  background: var(--bg-hover);
+}
+
+.setting-select:has(> select:focus-visible) > .setting-row {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }

@@ -55,8 +55,7 @@ function leaveSettings(patch = {}) {
  * The model a setting is edited for: the one picked in the settings view,
  * if the setting may be overridden per model; otherwise null, the global value.
  */
-function settingScope(key) {
-  const model = state.session.settingsModel;
+function settingScope(key, model = state.session.settingsModel) {
   return model && isPerModel(key) ? model : null;
 }
 
@@ -768,14 +767,34 @@ export const commands = {
   },
 
   /**
-   * Pick whose LLM parameters the settings view edits: a model, or nothing
-   * for the defaults every model inherits. A setting open in the editor is
-   * closed, since its value belongs to the previous choice.
+   * Pick which model the LLM Behavior values are for: a model, or nothing for
+   * the defaults every model inherits. The list shows that model's values at
+   * once. An LLM Behavior setting open in the editor is reloaded with its
+   * value for the new choice (after asking, if it holds unsaved changes);
+   * any other open setting is shared by every model and stays as it is.
    */
   'settings.selectModel': ({ element }) => {
     const model = element?.value || null;
-    if (model === state.session.settingsModel) return;
-    setSession({ settingsModel: model, activeSettingKey: null, settingsDraft: null });
+    const previous = state.session.settingsModel;
+    if (model === previous) return;
+
+    const { activeSettingKey: key, settingsDraft: draft } = state.session;
+    if (!key || !isPerModel(key)) {
+      setSession({ settingsModel: model });
+      return;
+    }
+
+    const loaded = settings.readEditorValue(key, settingScope(key, previous));
+    const unsaved = (draft ?? loaded) !== loaded;
+    if (unsaved && !confirm('Discard your unsaved change to this setting?')) {
+      // Redraw, so the selector shows the model still being edited.
+      setSession({});
+      return;
+    }
+
+    const value = settings.readEditorValue(key, settingScope(key, model));
+    setSession({ settingsModel: model, settingsDraft: value });
+    setSettingsEditorValue(value);
   },
 
   'settings.select': ({ key }) => {
@@ -807,7 +826,7 @@ export const commands = {
   'settings.resetAll': async () => {
     const model = state.session.settingsModel;
     const question = model
-      ? `Remove every parameter override for "${model}"? It will use the defaults again.`
+      ? `Remove every LLM Behavior override for "${model}"? It will use the defaults again. Other settings are not changed.`
       : 'Reset ALL Advanced parameters to default? Per-model overrides are kept.';
     if (!confirm(question)) return;
     await settings.resetAllSettings(model);
