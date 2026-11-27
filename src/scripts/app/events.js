@@ -7,6 +7,13 @@ import {
   zoomAttachment,
   resetAttachmentZoom,
 } from '../ui/components/attachments.js';
+import {
+  toggleCodeBlock,
+  syncCodeOverlay,
+  noteCodeScrollGesture,
+  scrolledJustNow,
+  isOnScrollbar,
+} from '../ui/code-collapse.js';
 import { isImageFile } from '../services/images.js';
 
 /**
@@ -111,9 +118,14 @@ function installEditSelection() {
 }
 
 /**
- * A click on a collapsible code block opens or closes it. Not inside the
- * message being edited: there a click picks the block to edit, and the view
- * must stay exactly as it was.
+ * A click on a collapsible code block opens or closes it, keeping its code
+ * where it is on screen (`ui/code-collapse.js`). Not inside the message being
+ * edited: there a click picks the block to edit, and the view must stay
+ * exactly as it was.
+ *
+ * A collapsed block scrolls on its own, so a click is not a toggle when it
+ * lands on the block's scrollbar, or comes right after a wheel or touch
+ * scroll of it (a trackpad tap that only stopped the scroll).
  */
 function installCodeCollapseDelegation() {
   document.addEventListener('click', (event) => {
@@ -126,9 +138,27 @@ function installCodeCollapseDelegation() {
 
     const pre = event.target.closest('pre.collapsible-code');
     if (!pre) return;
+    if (isOnScrollbar(pre, event) || scrolledJustNow(pre)) return;
 
-    pre.classList.toggle('collapsed');
+    toggleCodeBlock(pre);
   });
+
+  const noteGesture = (event) => noteCodeScrollGesture(event.target);
+  document.addEventListener('wheel', noteGesture, { passive: true });
+  document.addEventListener('touchmove', noteGesture, { passive: true });
+
+  // `scroll` does not bubble, so it is caught on the way down. Keeps a
+  // preview's fade in step with how far it is scrolled.
+  document.addEventListener(
+    'scroll',
+    (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.matches('pre.collapsible-code')) {
+        syncCodeOverlay(target);
+      }
+    },
+    { capture: true, passive: true },
+  );
 }
 
 /** Ctrl/Alt-click affordances: copy code and math blocks. */

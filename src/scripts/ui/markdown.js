@@ -4,13 +4,20 @@ import { fenceFor } from '../core/tools.js';
 import { state } from '../store/state.js';
 import { pickBoolean, pickInteger } from '../core/values.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
-import { ICON_CHEVRON_DOWN } from './icons.js';
+import { setupCollapsibleCode } from './code-collapse.js';
 
 /**
  * Markdown rendering plus the KaTeX/Prism post-pass.
  *
  * See AGENT.md §5: output is not sanitised, deliberately.
  */
+
+/*
+ * Rows are rebuilt through `components/message.js`, which reads the collapse
+ * state of their code blocks from here; the blocks themselves are
+ * `code-collapse.js`.
+ */
+export { codeCollapseState, restoreCodeCollapseState } from './code-collapse.js';
 
 // Switch to 'mathml' to drop the KaTeX font payload entirely.
 const MATH_OUTPUT = 'htmlAndMathml';
@@ -185,47 +192,12 @@ export function renderMarkdownBlocks(content) {
 }
 
 /* ------------------------------------------------------------------ *
- * Collapsible code state
+ * Post-pass
  * ------------------------------------------------------------------ */
 
 /**
- * The open/closed state of every collapsible code block inside `element`,
- * keyed by its code text. Taken before a row is rebuilt (entering or leaving
- * an edit, say), so the rebuilt row can look exactly as the old one did
- * instead of falling back to the auto-collapse default.
- */
-export function codeCollapseState(element) {
-  if (!element) return [];
-  return [...element.querySelectorAll('pre[data-collapsible]')].map((pre) => ({
-    text: pre.textContent || '',
-    collapsed: pre.classList.contains('collapsed'),
-  }));
-}
-
-/**
- * Re-apply a state taken by `codeCollapseState` to freshly enhanced blocks.
- * Blocks are matched by their code text, in order, so a block whose code
- * changed (an edit was saved) simply keeps the default, and the others keep
- * their state even if blocks before them were added or removed.
- */
-export function restoreCodeCollapseState(element, saved) {
-  if (!element || !Array.isArray(saved) || !saved.length) return;
-
-  const byText = new Map();
-  for (const entry of saved) {
-    if (!byText.has(entry.text)) byText.set(entry.text, []);
-    byText.get(entry.text).push(entry.collapsed);
-  }
-
-  for (const pre of element.querySelectorAll('pre[data-collapsible]')) {
-    const queue = byText.get(pre.textContent || '');
-    if (!queue || !queue.length) continue;
-    pre.classList.toggle('collapsed', queue.shift());
-  }
-}
-
-/**
- * Typeset math and highlight code inside an already-rendered element.
+ * Typeset math, highlight code, and make long code blocks collapsible inside
+ * an already-rendered element.
  *
  * A message being edited is enhanced exactly like any other: editing must not
  * change how the transcript looks, so long code blocks stay collapsible (and
@@ -242,48 +214,28 @@ export function enhance(element) {
     Prism.highlightAllUnder(element);
 
     const config = state.data.config;
-    const autoCollapse = pickBoolean(true, config.autoCollapseCode, GLOBAL_SETTINGS.autoCollapseCode.default);
-    const collapseThreshold = pickInteger(20, config.codeCollapseThreshold, GLOBAL_SETTINGS.codeCollapseThreshold.default);
-    const previewLines = pickInteger(5, config.codeCollapsePreviewLines, GLOBAL_SETTINGS.codeCollapsePreviewLines.default);
-    const showHint = pickBoolean(true, config.showCodeCollapseHint, GLOBAL_SETTINGS.showCodeCollapseHint.default);
-
-    const pres = element.querySelectorAll('pre');
-    for (const pre of pres) {
-      const lines = (pre.textContent || '').replace(/\s+$/, '').split('\n').length;
-      if (lines > collapseThreshold) {
-        pre.classList.add('collapsible-code');
-        pre.style.setProperty('--preview-lines', previewLines);
-        
-        // Let the user's manual toggling persist until the DOM node is physically recreated
-        if (!pre.hasAttribute('data-collapsible')) {
-          pre.setAttribute('data-collapsible', 'true');
-          if (autoCollapse) pre.classList.add('collapsed');
-        }
-
-        // Overlay that acts as both the gradient fade and the hint text
-        let overlay = pre.querySelector('.code-collapse-overlay');
-        if (!overlay) {
-          overlay = document.createElement('div');
-          overlay.className = 'code-collapse-overlay';
-          pre.appendChild(overlay);
-        }
-
-        if (showHint) {
-          if (!overlay.innerHTML) {
-            overlay.innerHTML = `${ICON_CHEVRON_DOWN}`;
-          }
-        } else {
-          if (overlay.innerHTML) {
-            overlay.innerHTML = '';
-          }
-        }
-      } else {
-        pre.classList.remove('collapsible-code', 'collapsed');
-        pre.removeAttribute('data-collapsible');
-        const overlay = pre.querySelector('.code-collapse-overlay');
-        if (overlay) overlay.remove();
-      }
-    }
+    setupCollapsibleCode(element, {
+      autoCollapse: pickBoolean(
+        true,
+        config.autoCollapseCode,
+        GLOBAL_SETTINGS.autoCollapseCode.default,
+      ),
+      threshold: pickInteger(
+        20,
+        config.codeCollapseThreshold,
+        GLOBAL_SETTINGS.codeCollapseThreshold.default,
+      ),
+      previewLines: pickInteger(
+        5,
+        config.codeCollapsePreviewLines,
+        GLOBAL_SETTINGS.codeCollapsePreviewLines.default,
+      ),
+      showHint: pickBoolean(
+        true,
+        config.showCodeCollapseHint,
+        GLOBAL_SETTINGS.showCodeCollapseHint.default,
+      ),
+    });
   } catch (error) {
     console.warn('Failed to enhance markdown (math/highlighting/collapsible):', error);
   }

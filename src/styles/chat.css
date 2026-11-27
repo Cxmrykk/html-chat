@@ -470,32 +470,56 @@
   max-height: none;
 }
 
-.msg-content pre.collapsible-code {
+/*
+ * A collapsible block sits in a frame that also holds its fade overlay
+ * (`ui/code-collapse.js`). The frame takes the block's outer margin, so the
+ * layout is the same as for a plain block.
+ */
+.code-collapse-frame {
   position: relative;
+  margin: 0.5em 0;
+}
+
+.msg-content .code-collapse-frame > pre,
+.msg-content .code-collapse-frame > pre[class*='language-'] {
+  margin: 0;
+}
+
+.msg-content pre.collapsible-code {
   cursor: pointer;
 }
 
+/*
+ * Collapsed, the block is a scroll area of its own, `--preview-lines` tall.
+ * Scrolling past either end hands the gesture back to the transcript.
+ */
 .msg-content pre.collapsible-code.collapsed {
   /* Line-height (1.6) * lines + top padding (10px) + bottom padding (10px) */
   max-height: calc(var(--preview-lines, 5) * 1.6em + 20px);
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .code-collapse-overlay {
   display: none;
 }
 
-.msg-content pre.collapsible-code.collapsed .code-collapse-overlay {
+/*
+ * The fade and the hint, over the bottom of the preview. Its insets are set
+ * from the block's borders and scrollbars, so the scrollbars stay clear; it
+ * fades out once the preview shows the last line.
+ */
+.msg-content pre.collapsible-code.collapsed + .code-collapse-overlay {
   display: flex;
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: 1px;
+  left: 1px;
+  right: 1px;
   height: 5em;
   background: linear-gradient(to bottom, transparent, var(--bg-code) 85%);
   align-items: flex-end;
   justify-content: center;
   padding-bottom: 8px;
+  box-sizing: border-box;
   gap: 6px;
   color: var(--text-muted);
   font-family: sans-serif;
@@ -503,6 +527,18 @@
   font-weight: 600;
   pointer-events: none;
   user-select: none;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.msg-content pre.collapsible-code.collapsed + .code-collapse-overlay.at-end {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-content pre.collapsible-code.collapsed + .code-collapse-overlay {
+    transition: none;
+  }
 }
 
 .code-collapse-overlay .icon {
