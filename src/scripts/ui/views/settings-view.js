@@ -70,14 +70,6 @@ function modelSelectorHTML(selected) {
     </div>`;
 }
 
-function subtitleHTML() {
-  return (
-    'Advanced engine parameters. Hover over a setting to see its description. ' +
-    'The LLM Behavior values are for the model picked under that heading: All models sets the defaults; ' +
-    `for one model, blank inherits the default and <code>${OMIT}</code> sends nothing for it.`
-  );
-}
-
 export function renderSettingsView() {
   const container = $('#chat-container');
   if (!container) return;
@@ -100,7 +92,6 @@ export function renderSettingsView() {
                     : 'Reset every setting to its default (per-model overrides are kept)'
                 }">Reset All</button>
       </div>
-      <p class="settings-subtitle">${subtitleHTML()}</p>
       ${settingsListHTML({
         schema: GLOBAL_SETTINGS,
         activeKey: state.session.activeSettingKey,
