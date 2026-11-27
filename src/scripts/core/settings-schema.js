@@ -127,6 +127,16 @@ export const GLOBAL_SETTINGS = {
       'Empty sends none. Signed thinking blocks (Claude via LiteLLM) are always sent back regardless.',
     display: showEchoField,
   },
+  retryKeepsThinking: {
+    label: 'Retry Keeps Thinking',
+    category: 'Tools',
+    type: 'boolean',
+    default: 'true',
+    tooltip:
+      'When Retry on a thinking box (or on the Assistant text before its tool calls) resumes a turn, append the reasoning shown so far in that turn to the latest user message as it is sent, so the model can pick up from it instead of losing it. ' +
+      'The stored message is not changed. true or false.',
+    display: showOnOff,
+  },
   jsToolDescription: {
     label: 'JavaScript Tool Description',
     category: 'Tools',

@@ -23,6 +23,16 @@ export function isThinking(message) {
 }
 
 /**
+ * Text the model wrote before calling tools in the same round: an assistant
+ * message marked `preamble`. It is part of the model's work rather than an
+ * answer, so it is shown like a thinking box, and on the wire it travels with
+ * the calls in the thinking message right after it (`core/tool-calls.js`).
+ */
+export function isPreamble(message) {
+  return message?.role === 'assistant' && message.preamble === true;
+}
+
+/**
  * Anything the model's turn produced — its work or its reply — as opposed to
  * anything the user put there.
  */
@@ -34,7 +44,7 @@ export function isModelOutput(message) {
  * True when a message may contribute to the request sent to the API. A
  * thinking message contributes only its calls that have a result, and the
  * text written alongside them; `core/tool-calls.js` decides that. Its
- * reasoning is never sent as text.
+ * reasoning is never sent as text, except when a retry carries it.
  */
 export function isSendable(message) {
   return Boolean(message) && !COSMETIC_ROLES.includes(message.role);
@@ -42,10 +52,11 @@ export function isSendable(message) {
 
 /**
  * Whether the message is plain text the composer can edit. A thinking message
- * is structured (and its replayed reasoning is signed), so it is not.
+ * is structured (and its replayed reasoning is signed), and a preamble belongs
+ * to the calls after it, so neither is.
  */
 export function isEditable(message) {
-  return Boolean(message) && !isThinking(message);
+  return Boolean(message) && !isThinking(message) && !isPreamble(message);
 }
 
 /**

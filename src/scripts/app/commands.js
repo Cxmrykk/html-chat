@@ -18,7 +18,7 @@ import { pickJSONText, pickFiles } from '../services/file-io.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { sourceBlocks } from '../ui/markdown.js';
-import { isSendable, isEditable, isThinking } from '../core/roles.js';
+import { isSendable, isEditable, isThinking, isPreamble } from '../core/roles.js';
 import { attachmentsOf } from '../core/attachments.js';
 import { isPerModel } from '../core/settings-schema.js';
 import { nextRange, sameRange, editSlice, applyEdit } from '../core/edit-range.js';
@@ -525,7 +525,8 @@ export const commands = {
   'message.edit': ({ index }) => {
     const chat = currentChat();
     const message = chat?.messages[index];
-    // A thinking message is structured rounds, not text the composer could hold.
+    // A thinking message is structured rounds, and a preamble belongs to the
+    // calls after it: neither is text the composer could hold.
     if (!message || !isEditable(message)) return;
 
     const previous = state.session.editingMessageIndex;
@@ -697,7 +698,7 @@ export const commands = {
 
     stopEditing();
 
-    if (message.role === 'user') {
+    if (message.role === 'user' && !isPreamble(message)) {
       const input = $('#chat-input');
       const text = message.content || '';
       const attachments = attachmentsOf(message);
@@ -711,12 +712,13 @@ export const commands = {
         if (attachments.length) setPendingAttachments(attachments);
         alert(error.message);
       }
-    } else if (isThinking(message)) {
-      // A thinking message continues where it left off: it is kept, everything
-      // AFTER it is dropped, and the turn resumes it.
+    } else if (isThinking(message) || isPreamble(message)) {
+      // The model's work continues where it left off: this message is kept,
+      // everything AFTER it is dropped, and the turn resumes. With Retry Keeps
+      // Thinking on, the reasoning shown so far goes along with it.
       await conversation.truncateMessages(index + 1);
       try {
-        await conversation.regenerate();
+        await conversation.regenerate({ carryReasoning: true });
       } catch (error) {
         alert(error.message);
       }

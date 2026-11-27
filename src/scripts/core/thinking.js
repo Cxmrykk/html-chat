@@ -5,14 +5,19 @@ import { isThinking } from './roles.js';
  * record holds:
  *
  *   { role: 'thinking', startedAt?, seconds?, outcome?, collapsed?, active?,
- *     rounds: [{ thinking, text?, calls, reasoning?, outcome? }] }
+ *     rounds: [{ thinking, text?, trailing?, continues?, calls, reasoning?, outcome? }] }
  *
- * One round per request. `thinking` is the reasoning shown for it; `text` is
- * what the model wrote alongside its calls; `calls` are described in
- * `core/tool-calls.js` and `reasoning` in `core/reasoning.js`. A round's
- * `outcome` ('stopped' or 'failed') marks the round a turn ended in, while
- * the message's own `outcome` is how the wait ended. `active` is set only
- * while the turn that owns the message is running.
+ * One round per request. `thinking` is the reasoning shown for it; `calls`
+ * are described in `core/tool-calls.js` and `reasoning` in
+ * `core/reasoning.js`. A round's `outcome` ('stopped' or 'failed') marks the
+ * round a turn ended in, while the message's own `outcome` is how the wait
+ * ended. `active` is set only while the turn that owns the message is running.
+ *
+ * Text the model wrote before its calls is not part of the round: it is the
+ * preamble message right before this one (`core/roles.js`), and the round
+ * whose calls it introduced is marked `continues`. Only text written after a
+ * round's calls stays in the round, as `text` with `trailing` set. Chats from
+ * before preambles kept that text in the round; `core/chats.js` splits them.
  */
 
 export function roundsOf(message) {
@@ -41,4 +46,26 @@ export function hasReasoning(message) {
  */
 export function isCollapsible(message) {
   return hasOutput(message);
+}
+
+/**
+ * The reasoning shown so far in the turn the transcript ends with: every
+ * thinking message after the latest user message, round by round. What a
+ * retry carries along when Retry Keeps Thinking is on.
+ */
+export function turnReasoning(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  let start = 0;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]?.role === 'user') {
+      start = i + 1;
+      break;
+    }
+  }
+  return list
+    .slice(start)
+    .flatMap(roundsOf)
+    .map((round) => (typeof round?.thinking === 'string' ? round.thinking.trim() : ''))
+    .filter(Boolean)
+    .join('\n\n');
 }

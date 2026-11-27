@@ -14,9 +14,9 @@ import { normalizeAttachments } from './attachments.js';
  * user message), so it is dropped. Later, chats carried `fileIds`, the files
  * they could search; file search no longer exists, so those are dropped too.
  *
- * Everything the model does before its answer now lives in one thinking
- * message per turn, grouped by round (`core/thinking.js`). Two older shapes
- * are folded into it:
+ * Everything the model does before its answer lives in thinking messages,
+ * grouped by round (`core/thinking.js`). Two older shapes are folded into
+ * them:
  *
  *   - one thinking box per round, holding only reasoning in `content`, with
  *     the round's calls in a separate `tools` message after it and any text
@@ -30,6 +30,12 @@ import { normalizeAttachments } from './attachments.js';
  * added up. An assistant message not followed by calls is the answer and
  * closes the turn, as does anything else that is not the model's work. A
  * legacy result with no call is dropped: it was never sent.
+ *
+ * Text written before a round's calls is then split out of its thinking
+ * message into a preamble (`core/roles.js`): the reasoning before it stays in
+ * one box, the preamble follows, and the round's calls start the next box,
+ * marked as continuing it. On the wire nothing changes. The first box keeps
+ * the old clock, the last one how the wait ended.
  *
  * A round's stored reasoning is validated rather than trusted: an import can
  * carry anything, and a malformed block sent back would fail the request.
@@ -78,7 +84,11 @@ function normalizeRound(round) {
     thinking: typeof round.thinking === 'string' ? round.thinking : '',
     calls: (Array.isArray(round.calls) ? round.calls : []).map(normalizeCall).filter(Boolean),
   };
-  if (typeof round.text === 'string' && round.text) normalized.text = round.text;
+  if (typeof round.text === 'string' && round.text) {
+    normalized.text = round.text;
+    if (round.trailing === true) normalized.trailing = true;
+  }
+  if (round.continues === true && normalized.calls.length) normalized.continues = true;
 
   const reasoning = normalizeRoundReasoning(round.reasoning);
   if (reasoning && normalized.calls.length) normalized.reasoning = reasoning;
@@ -114,6 +124,53 @@ function normalizeWork(message) {
   return work;
 }
 
+/** A round whose text came before its calls: what a preamble is made of. */
+function isPreambleRound(round) {
+  return Boolean(round.text) && !round.trailing && !round.continues;
+}
+
+/**
+ * A thinking message with text written before a round's calls, split into
+ * the boxes and preambles a turn makes now. Anything else comes back as it is.
+ */
+function splitWork(work) {
+  if (!work.rounds.some(isPreambleRound)) return [work];
+
+  const { rounds, startedAt, seconds, outcome, ...meta } = work;
+  const pieces = [];
+  let box = { ...meta, rounds: [] };
+
+  const flush = () => {
+    if (box.rounds.length) pieces.push(box);
+    box = { ...meta, rounds: [] };
+  };
+
+  for (const round of rounds) {
+    if (!isPreambleRound(round)) {
+      box.rounds.push(round);
+      continue;
+    }
+    const { thinking, text, ...rest } = round;
+    if (thinking) box.rounds.push({ thinking, calls: [] });
+    flush();
+    pieces.push({ role: 'assistant', content: text, preamble: true });
+    if (rest.calls.length) box.rounds.push({ ...rest, thinking: '', continues: true });
+  }
+  flush();
+
+  const boxes = pieces.filter(isThinking);
+  if (boxes.length) {
+    // A clock that never stopped would count forever in the first box once
+    // the outcome that settled it has moved to the last one.
+    if (Number.isFinite(seconds)) {
+      if (Number.isFinite(startedAt)) boxes[0].startedAt = startedAt;
+      boxes[0].seconds = seconds;
+    }
+    if (outcome) boxes[boxes.length - 1].outcome = outcome;
+  }
+  return pieces;
+}
+
 /** Any other message: its attachments validated, the fields dropped when none survive. */
 function normalizeAttached(message) {
   if (!('attachments' in message) && !('attachmentsOpen' in message)) return message;
@@ -121,6 +178,16 @@ function normalizeAttached(message) {
   const list = normalizeAttachments(attachments);
   if (!list.length) return rest;
   return { ...rest, attachments: list, ...(attachmentsOpen === true ? { attachmentsOpen: true } : {}) };
+}
+
+/**
+ * Any message but a thinking one: no turn is running, so nothing is active,
+ * and only an assistant message can be a preamble.
+ */
+function normalizeOther(message) {
+  const { active: _active, preamble, ...base } = message;
+  const kept = preamble === true && base.role === 'assistant' ? { ...base, preamble: true } : base;
+  return normalizeAttached(kept);
 }
 
 /** One legacy round: the calls of an assistant message, paired with the results after it. */
@@ -279,8 +346,8 @@ function foldMessages(messages) {
 }
 
 function normalizeMessages(messages) {
-  return foldMessages(messages).map((message) =>
-    isThinking(message) ? normalizeWork(message) : normalizeAttached(message),
+  return foldMessages(messages).flatMap((message) =>
+    isThinking(message) ? splitWork(normalizeWork(message)) : [normalizeOther(message)],
   );
 }
 

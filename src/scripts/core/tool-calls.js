@@ -1,5 +1,5 @@
 import { estimateTokens } from './tokens.js';
-import { isSendable, isThinking } from './roles.js';
+import { isSendable, isThinking, isPreamble } from './roles.js';
 import { roundsOf } from './thinking.js';
 import { REASONING_FIELDS, isReasoningField, replayableBlocks } from './reasoning.js';
 import { attachmentsOf, sendsImages } from './attachments.js';
@@ -8,18 +8,22 @@ import { attachmentsOf, sendsImages } from './attachments.js';
  * Tool calls on the wire: assembling them from streamed fragments, parsing
  * their arguments, and turning a transcript into a request the API will accept.
  *
- * In the transcript, every call a turn makes lives in its thinking message,
+ * In the transcript, every call a turn makes lives in a thinking message,
  * grouped by round — one round per request (see `core/thinking.js`):
  *
- *   { role: 'thinking', rounds: [{ thinking, text?, reasoning?,
+ *   { role: 'thinking', rounds: [{ thinking, text?, continues?, reasoning?,
  *       calls: [{ id, name, arguments, result?, status, startedAt?, seconds?, collapsed }] }] }
  *
  * `arguments` is the raw JSON string the model wrote and `result` the text
  * that was sent back. `status` is described in `core/tools.js`, `reasoning` in
  * `core/reasoning.js`. On the wire, each round with an answered call is one
- * assistant message carrying the round's `text` as its content, its answered
+ * assistant message carrying the round's text as its content, its answered
  * calls, and (within the current turn) its reasoning, followed by one `tool`
  * message per answered call. A round's `thinking` is display only.
+ *
+ * Text written before a round's calls is a preamble message just before the
+ * thinking message, whose first round `continues` it: the two are sent as the
+ * one assistant message the model produced.
  */
 
 /**
@@ -154,13 +158,17 @@ function reasoningFields(reasoning, replay) {
  * The wire messages for one thinking message: per round, the text and the
  * answered calls with their reasoning, then the results. A round whose calls
  * were never answered sends its text alone, if it wrote any; its reasoning is
- * dropped with the calls it belonged to.
+ * dropped with the calls it belonged to. `lead` is the preamble before the
+ * message, which is the text of a first round that continues it.
  */
-function wireRounds(message, replay) {
+function wireRounds(message, replay, lead = '') {
   const payload = [];
+  const rounds = roundsOf(message);
 
-  for (const round of roundsOf(message)) {
-    const text = typeof round?.text === 'string' ? round.text : '';
+  for (let k = 0; k < rounds.length; k++) {
+    const round = rounds[k];
+    const own = typeof round?.text === 'string' ? round.text : '';
+    const text = k === 0 && round?.continues ? [lead, own].filter(Boolean).join('\n\n') : own;
     const answered = (Array.isArray(round?.calls) ? round.calls : []).filter(hasResult);
 
     if (!answered.length) {
@@ -182,13 +190,23 @@ function wireRounds(message, replay) {
   return payload;
 }
 
+/** What precedes reasoning carried into a user message by a retry. */
+const CARRIED_NOTE = 'Your reasoning from an earlier attempt at this reply, kept so it is not lost:';
+
+function withCarried(text, carried) {
+  if (!carried) return text;
+  const block = `${CARRIED_NOTE}\n<previous_reasoning>\n${carried}\n</previous_reasoning>`;
+  return text ? `${text}\n\n${block}` : block;
+}
+
 /**
- * A message's wire content: its text, or with `images` (`Map<hash, url>`) and
- * a role that may carry them, a text part followed by one image part per
- * attachment. An attachment with no url is left out.
+ * A message's wire content: its text (with `carried` reasoning after it), or
+ * with `images` (`Map<hash, url>`) and a role that may carry them, a text part
+ * followed by one image part per attachment. An attachment with no url is
+ * left out.
  */
-function wireContent(message, images) {
-  const text = message.content || '';
+function wireContent(message, images, carried = '') {
+  const text = withCarried(message.content || '', carried);
   if (!images || !sendsImages(message)) return text;
 
   const parts = [];
@@ -219,32 +237,53 @@ function lastUserIndex(messages) {
  *     message's reasoning text;
  *   - each round of a thinking message becomes an assistant message carrying
  *     the calls that have a result, followed by those results;
+ *   - a preamble is the text of the round right after it that continues it,
+ *     so the two become that one assistant message; a preamble with nothing
+ *     after it is plain assistant text;
  *   - a call with no result is left out, and a round left with none is
  *     reduced to its text, or dropped if it has none;
  *   - reasoning is replayed only for rounds after the latest user message —
  *     the turn in progress, which is all any provider requires — and only to
  *     `model`. With no `model`, nothing is replayed;
+ *   - `carriedReasoning`, from a retry, is appended to the latest user
+ *     message's text;
  *   - user messages carry their images as content parts when `images` maps
  *     each attachment's hash to a url. Without `images`, only text is built
  *     (the context estimate does that).
  *
  * Everything is reduced to wire fields, so presentational ones never leave.
  */
-export function buildApiMessages(messages, { model = '', echoField = '', images = null } = {}) {
+export function buildApiMessages(
+  messages,
+  { model = '', echoField = '', images = null, carriedReasoning = '' } = {},
+) {
   const sendable = (messages || []).filter(isSendable);
-  const turnStart = lastUserIndex(sendable) + 1;
+  const userAt = lastUserIndex(sendable);
+  const turnStart = userAt + 1;
+  const replayFor = (i) => (model && i >= turnStart ? { model, echoField } : null);
   const payload = [];
 
   for (let i = 0; i < sendable.length; i++) {
     const message = sendable[i];
 
     if (isThinking(message)) {
-      const replay = model && i >= turnStart ? { model, echoField } : null;
-      payload.push(...wireRounds(message, replay));
+      payload.push(...wireRounds(message, replayFor(i)));
       continue;
     }
 
-    payload.push({ role: message.role, content: wireContent(message, images) });
+    if (isPreamble(message)) {
+      const next = sendable[i + 1];
+      if (isThinking(next) && roundsOf(next)[0]?.continues) {
+        payload.push(...wireRounds(next, replayFor(i + 1), message.content || ''));
+        i++;
+        continue;
+      }
+      payload.push({ role: 'assistant', content: message.content || '' });
+      continue;
+    }
+
+    const carried = i === userAt ? carriedReasoning : '';
+    payload.push({ role: message.role, content: wireContent(message, images, carried) });
   }
 
   return payload;

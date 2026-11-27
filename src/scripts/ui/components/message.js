@@ -1,5 +1,5 @@
 import { escapeHTML, formatElapsed } from '../../core/format.js';
-import { isThinking, isEditable, roleOptionsFor } from '../../core/roles.js';
+import { isThinking, isPreamble, isEditable, roleOptionsFor } from '../../core/roles.js';
 import {
   roundsOf,
   roundHasOutput,
@@ -46,9 +46,9 @@ import {
 /** A single message row: its markup and its in-place updates. */
 
 /**
- * Whether the thinking message's own turn is still running. Its buttons are
- * hidden until then: retrying or deleting it would cut the transcript out
- * from under the loop.
+ * Whether the turn that made this message (a thinking box or a preamble) is
+ * still running. Its buttons are hidden until then: retrying or deleting it
+ * would cut the transcript out from under the loop.
  */
 function isActive(message) {
   return Boolean(message?.active);
@@ -56,10 +56,12 @@ function isActive(message) {
 
 /**
  * Retrying resends and regenerates what comes after, so it means something
- * for the role that starts a turn, and for a finished thinking message with
- * something in it, which the turn then resumes.
+ * for the role that starts a turn, and for the model's finished work — a
+ * thinking message with something in it, or a preamble — which the turn then
+ * resumes.
  */
 export function isRetryable(message) {
+  if (isPreamble(message)) return !isActive(message);
   if (message?.role === 'user') return true;
   return isThinking(message) && hasOutput(message) && !isActive(message);
 }
@@ -375,11 +377,32 @@ function thinkingHTML(message, index) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Preamble
+ * ------------------------------------------------------------------ */
+
+/**
+ * Text the model wrote before calling tools: drawn like a thinking box, with
+ * "Assistant" as its header and its text always shown. Its buttons are a
+ * thinking box's (retry, copy, fork, delete; no edit), and like a thinking
+ * box's they appear once its turn is over.
+ */
+function preambleHTML(message, index) {
+  const actions = isActive(message) ? '' : actionsBarHTML(message, false);
+  return `
+    <div class="msg thinking preamble" data-index="${index}">
+      ${actions}
+      <div class="msg-meta"><span>Assistant</span></div>
+      <div class="msg-content">${bodyHTML(message)}</div>
+    </div>`;
+}
+
+/* ------------------------------------------------------------------ *
  * Public API
  * ------------------------------------------------------------------ */
 
 export function messageHTML(message, index, { editing = false } = {}) {
   if (isThinking(message)) return thinkingHTML(message, index);
+  if (isPreamble(message)) return preambleHTML(message, index);
 
   return `
     <div class="msg ${escapeHTML(message.role)}${editing ? ' editing' : ''}" data-index="${index}">

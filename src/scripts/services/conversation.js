@@ -21,7 +21,13 @@ import { normalizeChat } from '../core/chats.js';
 import { attachmentsOf, normalizeAttachment, normalizeAttachments } from '../core/attachments.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 import { isThinking, THINKING_ROLE } from '../core/roles.js';
-import { roundsOf, roundHasOutput, hasOutput, isCollapsible } from '../core/thinking.js';
+import {
+  roundsOf,
+  roundHasOutput,
+  hasOutput,
+  isCollapsible,
+  turnReasoning,
+} from '../core/thinking.js';
 import { pickInteger, pickBoolean } from '../core/values.js';
 import { truncate } from '../core/format.js';
 
@@ -266,25 +272,28 @@ export async function setAttachmentsOpen(index, open) {
 /**
  * The transcript side of one submission, across all of its tool rounds.
  *
- * Everything the model does before its answer lives in one thinking message:
- * one round per request, each holding the reasoning streamed during it, the
- * text written alongside its calls, and the calls themselves with their
- * results. The message is mounted the moment the first request goes out, and
- * its header counts how long the user has been waiting — across every round
- * and every tool run — until the answer starts. A retried turn resumes the
+ * Everything the model does before its answer lives in thinking messages:
+ * one round per request, each holding the reasoning streamed during it and
+ * the calls themselves with their results. A thinking message is mounted the
+ * moment the first request goes out, and its header counts how long the user
+ * has been waiting until the model starts writing. A retried turn resumes the
  * thinking message the transcript ends with: new rounds follow the old ones,
  * and its clock continues from where it stopped.
  *
  * Text in a round cannot be told apart from the answer until the round either
  * calls a tool or ends. It is shown as an assistant message straight away,
- * because the answer is the common case; if calls follow, it moves into the
- * round (`round.text`) and the clock resumes.
+ * because the answer is the common case. If calls follow, the text stays
+ * where it is and becomes the round's preamble (shown like part of the
+ * model's work), and the calls start a new thinking message after it, with a
+ * clock of its own. Later rounds go into that message, and a preamble of
+ * theirs starts the next one. Text that arrives after a round's calls stays
+ * with them, in the round.
  *
  * A thinking message that never received anything — no reasoning, text or
  * calls — only timed the wait, and is removed when the answer starts or the
  * turn ends. So its buttons, which act on what the model produced, only ever
- * appear on a box with something in it. While its turn runs the message is
- * marked `active`, which keeps them hidden.
+ * appear on a box with something in it. Every box and preamble the turn makes
+ * is marked `active` until the turn ends, which keeps their buttons hidden.
  *
  * When a round's request settles, the reasoning the provider may need back —
  * signed thinking blocks, or the raw reasoning field — is attached to the
@@ -317,6 +326,8 @@ function createTurn(chat, chatId, { resume = null } = {}) {
   let detached = false;
   /** Every round this turn started, for settling calls that never returned. */
   const turnRounds = [];
+  /** Every box and preamble this turn marked active, to release when it ends. */
+  const owned = new Set();
 
   // Per-round state, reset by `startRound`.
   let round = null;
@@ -325,6 +336,11 @@ function createTurn(chat, chatId, { resume = null } = {}) {
   /** The model this round's request went to, and the reasoning it may need back. */
   let roundModel = '';
   let replay = null;
+  /**
+   * The reasoning this round showed before its text became a preamble. It
+   * stays in the box it is in; only reasoning after it is shown again.
+   */
+  let shownThought = '';
 
   const repaint = (message, streaming) => {
     const index = chat.messages.indexOf(message);
@@ -345,13 +361,17 @@ function createTurn(chat, chatId, { resume = null } = {}) {
     persistChat(chatId);
   };
 
-  const freshWork = (rounds = []) => ({
-    role: THINKING_ROLE,
-    rounds,
-    startedAt: Date.now(),
-    collapsed: collapseByDefault,
-    active: true,
-  });
+  const freshWork = (rounds = []) => {
+    const box = {
+      role: THINKING_ROLE,
+      rounds,
+      startedAt: Date.now(),
+      collapsed: collapseByDefault,
+      active: true,
+    };
+    owned.add(box);
+    return box;
+  };
 
   const isWaiting = () => Boolean(work) && !Number.isFinite(work.seconds);
 
@@ -369,6 +389,7 @@ function createTurn(chat, chatId, { resume = null } = {}) {
    */
   const reclaimWork = () => {
     if (!detached) work = freshWork([round]);
+    else owned.add(work);
     detached = false;
   };
 
@@ -407,44 +428,62 @@ function createTurn(chat, chatId, { resume = null } = {}) {
   };
 
   const applyReasoning = (thought) => {
-    if (!thought || round.thinking === thought) return;
+    let text = thought;
+    if (shownThought && thought) {
+      text = thought.startsWith(shownThought) ? thought.slice(shownThought.length).trim() : thought;
+    }
+    if (!text || round.thinking === text) return;
     // Going from empty to something turns a plain header into an expandable
     // box, so the whole row is re-rendered; after that only the body changes.
     const wasCollapsible = isCollapsible(work);
-    round.thinking = thought;
+    round.thinking = text;
     repaint(work, wasCollapsible);
   };
 
   /**
-   * The round's text turned out to belong with its calls: move it off the
-   * transcript and into the round, and start the clock again.
+   * The round's text turned out to come before its calls. It stays where it
+   * is, now the round's preamble, and the calls start a new thinking message
+   * after it with a clock of its own. What the round reasoned before the text
+   * stays in the box it is in.
    */
-  const moveAnswerIntoRound = () => {
-    round.text = assistant.content;
-    const answerIndex = chat.messages.indexOf(assistant);
-    const mounted = isMounted(work);
-    if (!mounted) reclaimWork();
+  const startAfterPreamble = (toolCalls) => {
+    stampWait();
+    assistant.preamble = true;
+    assistant.active = true;
+    owned.add(assistant);
+    repaint(assistant, false);
 
-    if (answerIndex !== -1) {
-      if (mounted) chat.messages.splice(answerIndex, 1);
-      else chat.messages.splice(answerIndex, 1, work);
-    } else if (!mounted) {
-      chat.messages.push(work);
+    shownThought = round.thinking;
+    if (work && !roundHasOutput(round)) {
+      const at = work.rounds.indexOf(round);
+      if (at !== -1) work.rounds.splice(at, 1);
     }
 
-    assistant = null;
-    delete work.seconds;
-    refresh();
+    round = { thinking: '', calls: [], continues: true };
+    turnRounds.push(round);
+    work = freshWork([round]);
+    detached = false;
+    mergeCalls(toolCalls);
+    append(work);
   };
 
   const applyContent = (content) => {
     if (!content) return;
 
-    // Text after this round's calls belongs with them.
     if (round.calls.length) {
+      // The preamble of these calls grew: it is still this round's text.
+      if (assistant) {
+        if (assistant.content !== content) {
+          assistant.content = content;
+          repaint(assistant, true);
+        }
+        return;
+      }
+      // Text after this round's calls belongs with them.
       if (round.text !== content) {
         const wasCollapsible = isCollapsible(work);
         round.text = content;
+        round.trailing = true;
         repaint(work, wasCollapsible);
       }
       return;
@@ -460,6 +499,7 @@ function createTurn(chat, chatId, { resume = null } = {}) {
         // The box only timed the wait; the answer takes its place.
         chat.messages.splice(index, 1);
         detached = true;
+        owned.delete(work);
         chat.messages.push(assistant);
         refresh();
         return;
@@ -482,12 +522,13 @@ function createTurn(chat, chatId, { resume = null } = {}) {
       return;
     }
 
-    mergeCalls(toolCalls);
-
     if (assistant) {
-      moveAnswerIntoRound();
+      startAfterPreamble(toolCalls);
       return;
     }
+
+    mergeCalls(toolCalls);
+
     if (!isMounted(work)) {
       reclaimWork();
       append(work);
@@ -514,6 +555,7 @@ function createTurn(chat, chatId, { resume = null } = {}) {
         delete work.seconds;
         delete work.outcome;
         work.active = true;
+        owned.add(work);
         repaint(work, false);
       }
 
@@ -525,6 +567,7 @@ function createTurn(chat, chatId, { resume = null } = {}) {
       replying = false;
       roundModel = model;
       replay = null;
+      shownThought = '';
     },
 
     /** Apply everything accumulated so far this round. Safe to call repeatedly with the same reply. */
@@ -600,8 +643,9 @@ function createTurn(chat, chatId, { resume = null } = {}) {
      * Close the turn: calls that never returned are marked stopped (the user
      * stopped the turn) or skipped (it ended any other way). If the turn ended
      * before an answer started, the wait is stamped with how it ended, and so
-     * is the round it ended in. The message stops being active, which shows
-     * its buttons — or, if it never received anything, it is removed.
+     * is the round it ended in. Every box and preamble the turn made stops
+     * being active, which shows their buttons — and a box that never received
+     * anything is removed.
      */
     async finish(outcome = null) {
       const now = Date.now();
@@ -621,15 +665,22 @@ function createTurn(chat, chatId, { resume = null } = {}) {
         if (outcome && endedWaiting && roundHasOutput(round)) round.outcome = outcome;
         stampWait();
         if (outcome && endedWaiting) work.outcome = outcome;
-        delete work.active;
+      }
 
-        const index = chat.messages.indexOf(work);
-        if (index !== -1 && !hasOutput(work)) {
+      let removed = false;
+      for (const message of owned) {
+        delete message.active;
+        const index = chat.messages.indexOf(message);
+        if (index !== -1 && isThinking(message) && !hasOutput(message)) {
           chat.messages.splice(index, 1);
-          if (isVisible()) emit(EVENTS.MESSAGES);
-        } else {
-          repaint(work, false);
+          removed = true;
         }
+      }
+
+      if (removed) {
+        if (isVisible()) emit(EVENTS.MESSAGES);
+      } else {
+        for (const message of owned) repaint(message, false);
       }
 
       invalidateContext();
@@ -657,15 +708,17 @@ function appendStopped(chatId) {
 /**
  * The wire messages for a request to `model`: reasoning from the turn in
  * progress is replayed to the model that wrote it, plain text only under the
- * configured field, and every image goes out as its original or, failing
- * that, its upscaled placeholder.
+ * configured field, reasoning carried by a retry rides on the latest user
+ * message, and every image goes out as its original or, failing that, its
+ * upscaled placeholder.
  */
-async function apiMessagesFor(chat, model) {
+async function apiMessagesFor(chat, model, carriedReasoning = '') {
   const images = await wireImages(chat.messages);
   return buildApiMessages(chat.messages, {
     model,
     echoField: String(state.data.config.reasoningEchoField ?? '').trim(),
     images,
+    carriedReasoning,
   });
 }
 
@@ -674,7 +727,7 @@ async function apiMessagesFor(chat, model) {
  * user stopped it; the round is given its final render and saved before any
  * failure is rethrown.
  */
-async function requestRound({ turn, chat, chatId, signal, forceAnswer }) {
+async function requestRound({ turn, chat, chatId, signal, forceAnswer, carriedReasoning }) {
   // Read once: the same model receives the request, the replayed reasoning,
   // and the tag on whatever reasoning comes back.
   const model = state.data.config.lastModel;
@@ -688,7 +741,7 @@ async function requestRound({ turn, chat, chatId, signal, forceAnswer }) {
     reply = await requestCompletion({
       config: state.data.config,
       model,
-      messages: await apiMessagesFor(chat, model),
+      messages: await apiMessagesFor(chat, model, carriedReasoning),
       tools: toolSchemasFor(),
       forceAnswer,
       signal,
@@ -725,7 +778,10 @@ async function requestRound({ turn, chat, chatId, signal, forceAnswer }) {
  * answer without tools; if it still calls one, the turn ends with an error.
  *
  * If the transcript ends with a thinking message (a retried turn), that
- * message is resumed rather than a new one started.
+ * message is resumed rather than a new one started. With `carryReasoning`
+ * (a retry) and Retry Keeps Thinking on, the reasoning shown so far in the
+ * turn is read once, before anything new arrives, and every request of the
+ * run carries it on the latest user message.
  *
  * This is a loop, not recursion, so there is exactly one abort controller and
  * one cleanup for the whole turn. The turn is pinned to `chatId`, so switching
@@ -734,7 +790,7 @@ async function requestRound({ turn, chat, chatId, signal, forceAnswer }) {
  * Stopping can leave a call with no result. That is fine: `buildApiMessages`
  * leaves unanswered calls out of the next request.
  */
-async function runTurns(chatId) {
+async function runTurns(chatId, { carryReasoning = false } = {}) {
   const chat = findChat(chatId);
   if (!chat) return;
 
@@ -742,10 +798,15 @@ async function runTurns(chatId) {
   const { signal } = controller;
   state.runtime.completionAbort = controller;
 
+  const config = state.data.config;
   const maxRounds = Math.max(
     1,
-    pickInteger(10, state.data.config.maxToolRounds, GLOBAL_SETTINGS.maxToolRounds.default),
+    pickInteger(10, config.maxToolRounds, GLOBAL_SETTINGS.maxToolRounds.default),
   );
+  const keepThinking =
+    carryReasoning &&
+    pickBoolean(true, config.retryKeepsThinking, GLOBAL_SETTINGS.retryKeepsThinking.default);
+  const carriedReasoning = keepThinking ? turnReasoning(chat.messages) : '';
 
   const last = chat.messages[chat.messages.length - 1];
   const turn = createTurn(chat, chatId, { resume: isThinking(last) ? last : null });
@@ -769,6 +830,7 @@ async function runTurns(chatId) {
         chatId,
         signal,
         forceAnswer: lastRound,
+        carriedReasoning,
       });
 
       if (aborted) {
@@ -869,9 +931,11 @@ export async function sendMessage({ text = '', attachments = [], skipApi = false
 
 /**
  * Run the model's turn again from the end of the transcript. If that end is a
- * thinking message, the turn picks up where it left off.
+ * thinking message, the turn picks up where it left off. `carryReasoning`
+ * (a retry of the model's work) lets the turn's reasoning so far go along,
+ * when Retry Keeps Thinking is on.
  */
-export async function regenerate() {
+export async function regenerate({ carryReasoning = false } = {}) {
   if (!state.data.config.key) {
     throw new Error('Please enter your API key in the settings first.');
   }
@@ -880,5 +944,5 @@ export async function regenerate() {
   }
   if (!state.data.currentChatId) return;
 
-  await runTurns(state.data.currentChatId);
+  await runTurns(state.data.currentChatId, { carryReasoning });
 }
