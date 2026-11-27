@@ -276,18 +276,20 @@ export async function setAttachmentsOpen(index, open) {
  * one round per request, each holding the reasoning streamed during it and
  * the calls themselves with their results. A thinking message is mounted the
  * moment the first request goes out, and its header counts how long the user
- * has been waiting until the model starts writing. A retried turn resumes the
- * thinking message the transcript ends with: new rounds follow the old ones,
- * and its clock continues from where it stopped.
+ * has been waiting until the model starts writing. The moment the first word
+ * of text arrives, the count stops and the header settles on how long it
+ * took: nothing counts while text is being written. A retried turn resumes
+ * the thinking message the transcript ends with: new rounds follow the old
+ * ones, and its clock continues from where it stopped.
  *
  * Text in a round cannot be told apart from the answer until the round either
  * calls a tool or ends. It is shown as an assistant message straight away,
  * because the answer is the common case. If calls follow, the text stays
  * where it is and becomes the round's preamble (shown like part of the
- * model's work), and the calls start a new thinking message after it, with a
- * clock of its own. Later rounds go into that message, and a preamble of
- * theirs starts the next one. Text that arrives after a round's calls stays
- * with them, in the round.
+ * model's work), and only then do the calls start a new thinking message
+ * after it, with a clock of its own from zero. Later rounds go into that
+ * message, and a preamble of theirs starts the next one. Text that arrives
+ * after a round's calls stays with them, in the round.
  *
  * A thinking message that never received anything — no reasoning, text or
  * calls — only timed the wait, and is removed when the answer starts or the
@@ -504,6 +506,10 @@ function createTurn(chat, chatId, { resume = null } = {}) {
         refresh();
         return;
       }
+
+      // Its header stops counting now, not when the request ends: nothing
+      // counts while the text is being written.
+      if (index !== -1) repaint(work, false);
       append(assistant);
       return;
     }
