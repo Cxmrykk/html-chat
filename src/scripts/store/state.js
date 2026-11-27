@@ -25,6 +25,11 @@ export const state = {
   session: {
     /** 'chat' | 'settings' */
     view: 'chat',
+    /**
+     * Which page the settings view shows: 'main' (every setting), or one of
+     * the model pickers, 'imageModels' or 'imageToolModels'.
+     */
+    settingsPage: 'main',
     sidebarHidden: false,
     titleHidden: false,
     promptHeight: '',

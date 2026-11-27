@@ -1,7 +1,7 @@
 import * as idb from './idb.js';
 import { KEYS } from './keys.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
-import { normalizeModelList } from '../core/models.js';
+import { normalizeModelList, modelNamesFrom, mergeModelLists } from '../core/models.js';
 import { normalizeCapabilityMap, DEFAULT_EFFORT } from '../core/capabilities.js';
 import { normalizeModelParams } from '../core/model-params.js';
 
@@ -13,6 +13,10 @@ const BASE_CONFIG = {
   modelCapabilities: {},
   /** `{ [modelId]: { [settingKey]: value } }`, per-model LLM parameters (core/model-params.js). */
   modelParams: {},
+  /** The models picked by hand as image models (Select Image Models). */
+  imageModels: [],
+  /** Image models the image tools may not use (Image Tool Models). Every other one they may. */
+  imageToolExcluded: [],
   jsExecution: false,
   /** The sidebar's Generate Images switch: whether the image tools may be offered. */
   imageGeneration: false,
@@ -51,6 +55,23 @@ const RETIRED_FIELDS = [
 ];
 
 /**
+ * Image models used to be typed into a text setting (Image Models), on top of
+ * those the endpoint reported, and the image tools were given an allow-list
+ * (Image Tool Models). Both lists become the hand-picked image models, and
+ * every one of them the old allow-list did not name is excluded from the
+ * tools, so the tools keep offering exactly what they did. Models that were
+ * only reported as image models are not carried over: nothing records them.
+ */
+function migrateImageModels(stored, config) {
+  if (stored.imageToolExcluded !== undefined) return;
+  if (stored.imageModels === undefined && stored.imageToolModels === undefined) return;
+  const manual = modelNamesFrom(stored.imageModels);
+  const allowed = modelNamesFrom(stored.imageToolModels);
+  config.imageModels = mergeModelLists(manual, allowed);
+  config.imageToolExcluded = config.imageModels.filter((id) => !allowed.includes(id));
+}
+
+/**
  * Fields from before JavaScript execution became a tool: the switch carries
  * over under its new name, and the system prompt that used to drive the
  * feature has no successor (the tool's description does that job now).
@@ -71,6 +92,9 @@ function migrateLegacyFields(stored) {
   if (stored.modelCapabilities === undefined && stored.reasoningEffort === 'none') {
     config.reasoningEffort = DEFAULT_EFFORT;
   }
+
+  migrateImageModels(stored, config);
+  delete config.imageToolModels;
   return config;
 }
 
@@ -85,6 +109,8 @@ export async function loadConfig() {
   config.models = normalizeModelList(config.models);
   config.modelCapabilities = normalizeCapabilityMap(config.modelCapabilities);
   config.modelParams = normalizeModelParams(config.modelParams);
+  config.imageModels = modelNamesFrom(config.imageModels);
+  config.imageToolExcluded = modelNamesFrom(config.imageToolExcluded);
   config.imageGeneration = Boolean(config.imageGeneration);
   return config;
 }

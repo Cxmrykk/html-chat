@@ -4,6 +4,7 @@ import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 import { pickNumber, pickInteger, pickBoolean } from '../core/values.js';
 import { allImagesOf, imagesToSend, normalizeAttachment } from '../core/attachments.js';
 import * as imageCache from '../data/image-cache.js';
+import { visionScaling, scalingKey, scaledSize, scaleImageBlob } from './image-scaling.js';
 
 /**
  * Original images: taking them in, keeping them for the session (and, within
@@ -16,6 +17,9 @@ import * as imageCache from '../data/image-cache.js';
  * neither is a placeholder: shown pixelated, and sent scaled up to the
  * original's size, since endpoints refuse images that small. Images the model
  * generated are held exactly the same way.
+ *
+ * What a chat model is sent is scaled down to Vision Max Pixels first
+ * (`services/image-scaling.js`), placeholders included.
  *
  * The user is warned before placeholders are sent, once per set: hashes they
  * have agreed to send as placeholders are remembered for the session, and
@@ -48,7 +52,7 @@ const originals = new Map();
 const lookups = new Map();
 /** hash -> Promise of the cache lookup in flight. */
 const pendingLookups = new Map();
-/** hash -> data URL of an original, as sent. */
+/** hash -> Map<scaling key, data URL of the original, as sent>. */
 const wireOriginals = new Map();
 /** `${width}x${height}:${placeholder}` -> data URL of the upscaled placeholder. */
 const wirePlaceholders = new Map();
@@ -446,28 +450,42 @@ function dataURLBlob(url) {
   return new Blob([bytes], { type });
 }
 
-async function originalDataURL(hash, blob, type) {
-  if (!wireOriginals.has(hash)) {
-    const typed = blob.type.startsWith('image/') ? blob : new Blob([blob], { type });
-    wireOriginals.set(hash, await readDataURL(typed));
+/** The original as a chat model is sent it: scaled to `scaling`, as a data URL. */
+async function originalDataURL(attachment, blob, scaling) {
+  const key = scalingKey(scaling);
+  let byScaling = wireOriginals.get(attachment.hash);
+  if (!byScaling) {
+    byScaling = new Map();
+    wireOriginals.set(attachment.hash, byScaling);
   }
-  return wireOriginals.get(hash);
+  if (!byScaling.has(key)) {
+    const typed = blob.type.startsWith('image/') ? blob : new Blob([blob], { type: attachment.type });
+    const sent = await scaleImageBlob(typed, scaling, attachment);
+    byScaling.set(key, await readDataURL(sent));
+  }
+  return byScaling.get(key);
 }
 
-/** The placeholder at the original's pixel size, blocks kept sharp. */
-async function upscaledPlaceholder(attachment) {
-  const key = `${attachment.width}x${attachment.height}:${attachment.placeholder}`;
+/**
+ * The placeholder at `size` (the original's pixel size unless told
+ * otherwise), blocks kept sharp.
+ */
+async function upscaledPlaceholder(
+  attachment,
+  size = { width: attachment.width, height: attachment.height },
+) {
+  const key = `${size.width}x${size.height}:${attachment.placeholder}`;
   if (!wirePlaceholders.has(key)) {
     const image = new Image();
     image.src = attachment.placeholder;
     await image.decode();
 
     const canvas = document.createElement('canvas');
-    canvas.width = attachment.width;
-    canvas.height = attachment.height;
+    canvas.width = size.width;
+    canvas.height = size.height;
     const context = canvas.getContext('2d');
     context.imageSmoothingEnabled = false;
-    context.drawImage(image, 0, 0, attachment.width, attachment.height);
+    context.drawImage(image, 0, 0, size.width, size.height);
     wirePlaceholders.set(key, canvas.toDataURL('image/png'));
   }
   return wirePlaceholders.get(key);
@@ -476,7 +494,7 @@ async function upscaledPlaceholder(attachment) {
 /**
  * The image to upload for an attachment (an edit's source): the original, or
  * with `allowPlaceholder`, the upscaled placeholder. Null when neither may be
- * used.
+ * used. Not scaled here: an edit scales its sources itself.
  */
 export async function uploadBlob(attachment, { allowPlaceholder = false } = {}) {
   const blob = await originalBlob(attachment.hash);
@@ -489,9 +507,12 @@ export async function uploadBlob(attachment, { allowPlaceholder = false } = {}) 
 
 /**
  * `Map<hash, data URL>` for every image a request built from `messages`
- * sends: user images, and with `generated`, those the model made.
+ * sends: user images, and with `generated`, those the model made. Each is
+ * scaled down to Vision Max Pixels; a placeholder is drawn straight at that
+ * size.
  */
 export async function wireImages(messages, { generated = sendsGeneratedImages() } = {}) {
+  const scaling = visionScaling();
   const images = new Map();
   for (const message of messages || []) {
     for (const attachment of imagesToSend(message, { generated })) {
@@ -500,8 +521,11 @@ export async function wireImages(messages, { generated = sendsGeneratedImages() 
       images.set(
         attachment.hash,
         blob
-          ? await originalDataURL(attachment.hash, blob, attachment.type)
-          : await upscaledPlaceholder(attachment),
+          ? await originalDataURL(attachment, blob, scaling)
+          : await upscaledPlaceholder(
+              attachment,
+              scaledSize(attachment.width, attachment.height, scaling.maxPixels),
+            ),
       );
     }
   }

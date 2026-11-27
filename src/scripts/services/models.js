@@ -5,7 +5,6 @@ import {
   normalizeCapabilities,
   reasoningChoices,
   reasoningEffortToSend,
-  generatesImagesOnly,
 } from '../core/capabilities.js';
 import { pickBoolean } from '../core/values.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
@@ -13,15 +12,17 @@ import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 /** Model discovery: the cached server list and capabilities, refreshed on demand. */
 
 /**
- * Every image model: the ones the endpoint reported as making images (and
- * not chatting), and the ones listed under Image Models.
+ * Every model there is to pick from: the last list the server gave us and
+ * the manual extras, whatever they can do. What Select Image Models lists.
  */
+export function listedModels() {
+  const { models, extraModels } = state.data.config;
+  return mergeModelLists(normalizeModelList(models), normalizeModelList(extraModels));
+}
+
+/** The image models: picked by hand under Select Image Models, never detected. */
 export function imageModels() {
-  const { models, modelCapabilities, imageModels: manual } = state.data.config;
-  const discovered = normalizeModelList(models).filter((id) =>
-    generatesImagesOnly(modelCapabilities?.[id]),
-  );
-  return mergeModelLists(discovered, modelNamesFrom(manual));
+  return modelNamesFrom(state.data.config.imageModels);
 }
 
 /** Whether requests to `model` go to the Images API rather than chat completions. */
@@ -29,9 +30,13 @@ export function isImageModel(model = state.data.config.lastModel) {
   return Boolean(model) && imageModels().includes(model);
 }
 
-/** The image models the image tools may use (Image Tool Models). */
+/**
+ * The image models the image tools may use: every image model, except those
+ * switched off under Image Tool Models.
+ */
 export function imageToolModels() {
-  return modelNamesFrom(state.data.config.imageToolModels);
+  const excluded = new Set(modelNamesFrom(state.data.config.imageToolExcluded));
+  return imageModels().filter((id) => !excluded.has(id));
 }
 
 function imageModelsInChat() {

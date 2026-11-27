@@ -56,6 +56,11 @@
   opacity: 0.7;
 }
 
+/* A greyed-out row (Image Tool Models with no image models): its value reads plainly. */
+.setting-row:disabled .setting-value {
+  opacity: 1;
+}
+
 .active-setting {
   background: var(--bg-hover) !important;
   border-color: var(--border) !important;
@@ -63,10 +68,10 @@
 }
 
 /*
- * The model selector of LLM Behavior: a real setting row, with a transparent
- * native select over it that takes every click and key. The row only shows
- * what the select holds, so it never reacts by itself; its hover and focus
- * follow the select's.
+ * A dropdown row (the model selector of LLM Behavior, and every `select`
+ * setting): a real setting row, with a transparent native select over it that
+ * takes every click and key. The row only shows what the select holds, so it
+ * never reacts by itself; its hover and focus follow the select's.
  */
 .setting-select {
   position: relative;
@@ -101,8 +106,7 @@
 }
 
 /*
- * A sub-list inside a group, under its settings: the image tool models of
- * Image Generation.
+ * A sub-list inside a group, under its settings.
  */
 .settings-subheading {
   margin: 10px 0 5px;
@@ -118,35 +122,32 @@
   color: var(--text-muted);
 }
 
+.settings-header + .settings-note {
+  margin-top: 15px;
+}
+
 /*
- * A setting row that is a label around a checkbox rather than a button: it
- * takes the look of a button row itself, since it gets no button styling.
+ * A model in one of the model pickers (Select Image Models, Image Tool
+ * Models): a button that toggles it. One that is on is outlined in the accent
+ * colour, and says so on the right.
  */
-.setting-toggle {
-  box-sizing: border-box;
+.setting-choice {
   align-items: center;
   gap: 10px;
-  padding: 5px 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-inset);
-  color: var(--text);
-  cursor: pointer;
 }
 
-.setting-toggle:hover {
-  background: var(--bg-hover);
-}
-
-.setting-toggle-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.setting-choice-name {
   min-width: 0;
   overflow-wrap: anywhere;
+  text-align: left;
 }
 
-.setting-toggle input {
-  flex-shrink: 0;
-  margin: 0;
-  cursor: pointer;
+.setting-choice.is-on {
+  border-color: var(--accent);
+}
+
+.setting-choice.is-on .setting-value {
+  opacity: 1;
+  font-weight: bold;
+  color: var(--accent);
 }

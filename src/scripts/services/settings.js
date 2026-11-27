@@ -7,6 +7,7 @@ import {
   describeSetting,
 } from '../core/settings-schema.js';
 import { coerceForStorage } from '../core/values.js';
+import { modelNamesFrom } from '../core/models.js';
 import {
   coerceOverride,
   modelOverride,
@@ -14,21 +15,21 @@ import {
   withOverride,
   withoutModel,
 } from '../core/model-params.js';
-import { refreshModels, ensureActiveModel } from './models.js';
+import { refreshModels, ensureActiveModel, imageModels } from './models.js';
 import { trimImageCache } from './images.js';
 
 /**
- * The global advanced settings, and the per-model overrides of the LLM
- * parameters among them.
+ * The global advanced settings, the per-model overrides of the LLM
+ * parameters among them, and the hand-picked image model lists.
  *
- * Every function takes an optional `model`. Without one (or for a setting
- * that is not per-model) it works on the global value, which is the default
- * for every model; with one it works on that model's override.
+ * Every setting function takes an optional `model`. Without one (or for a
+ * setting that is not per-model) it works on the global value, which is the
+ * default for every model; with one it works on that model's override.
  */
 
 /** Settings that change what model discovery asks for, so the list is fetched again. */
 const DISCOVERY_KEYS = ['probeCapabilities'];
-/** Settings that change which models the dropdown offers. */
+/** Settings (and lists) that change which models the dropdown offers. */
 const MODEL_LIST_KEYS = ['extraModels', 'imageModels', 'imageModelsInChat'];
 /** Settings that change how much the image cache may hold. */
 const IMAGE_CACHE_KEYS = ['imageCacheMB'];
@@ -120,7 +121,8 @@ export async function resetSetting(key, model = null) {
 
 /**
  * With a model: remove every override it has. Without one: reset every
- * global setting. Per-model overrides are kept either way for other models.
+ * global setting. Per-model overrides are kept either way for other models,
+ * and the image model lists are not settings, so they are kept too.
  */
 export async function resetAllSettings(model = null) {
   const config = state.data.config;
@@ -134,6 +136,44 @@ export async function resetAllSettings(model = null) {
   }
   await afterMutation(Object.keys(GLOBAL_SETTINGS));
 }
+
+/* ------------------------------------------------------------------ *
+ * Image models
+ * ------------------------------------------------------------------ */
+
+/**
+ * Mark `id` as an image model, or unmark it. An unmarked model also leaves
+ * the tools' exclusions, so marking it again allows it, like any new one.
+ */
+export async function toggleImageModel(id) {
+  if (!id) return;
+  const config = state.data.config;
+  const selected = modelNamesFrom(config.imageModels);
+  if (selected.includes(id)) {
+    config.imageModels = selected.filter((entry) => entry !== id);
+    config.imageToolExcluded = modelNamesFrom(config.imageToolExcluded).filter(
+      (entry) => entry !== id,
+    );
+  } else {
+    config.imageModels = [...selected, id];
+  }
+  await afterMutation(['imageModels']);
+}
+
+/** Let the image tools use image model `id`, or stop them. */
+export async function toggleImageToolModel(id) {
+  if (!id || !imageModels().includes(id)) return;
+  const config = state.data.config;
+  const excluded = modelNamesFrom(config.imageToolExcluded);
+  config.imageToolExcluded = excluded.includes(id)
+    ? excluded.filter((entry) => entry !== id)
+    : [...excluded, id];
+  await afterMutation(['imageToolExcluded']);
+}
+
+/* ------------------------------------------------------------------ *
+ * Connection
+ * ------------------------------------------------------------------ */
 
 /** Save connection configuration options, and the sidebar's tool switches. */
 export async function saveConnectionConfig({ url, key, jsExecution, imageGeneration }) {

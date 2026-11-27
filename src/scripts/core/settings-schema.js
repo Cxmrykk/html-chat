@@ -1,7 +1,6 @@
 import { isBlank, pickBoolean, pickNumber, pickInteger, parseJSONObject } from './values.js';
 import { DEFAULT_JS_TOOL_DESCRIPTION } from './tools.js';
 import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
-import { modelNamesFrom } from './models.js';
 
 /**
  * The single description of every configurable global setting.
@@ -10,10 +9,27 @@ import { modelNamesFrom } from './models.js';
  * how to store it (`type`), what to call it (`label`) and what to show in the
  * list (`display`). Nothing else should maintain parallel lists of keys.
  *
+ * A `select` entry also lists its `options` (`{ value, label }`); it is shown
+ * in the list as a dropdown and saved as soon as a choice is made, instead of
+ * being edited in the textarea.
+ *
  * Entries marked `perModel` are the LLM parameters sent with each request.
  * Their global value is the default for every model; a model may override it
  * (see `core/model-params.js`).
+ *
+ * Which models are image models, and which of them the image tools may use,
+ * are not entries here: they are lists picked on their own settings pages
+ * (`config.imageModels`, `config.imageToolExcluded`).
  */
+
+/** How an image is scaled down to a pixel budget (`services/image-scaling.js`). */
+export const SCALING_METHODS = [
+  { value: 'high', label: 'Smooth, high quality' },
+  { value: 'medium', label: 'Smooth, medium quality' },
+  { value: 'low', label: 'Smooth, low quality (fastest)' },
+  { value: 'stepped', label: 'Progressive halving' },
+  { value: 'nearest', label: 'Nearest neighbour (pixelated)' },
+];
 
 /** Display helpers shared by several entries. */
 const showApiDefault = (value) => (isBlank(value) ? 'API Default' : String(value));
@@ -23,10 +39,13 @@ const showCustomOrDefault = (value, entry) =>
 const showOnOff = (value, entry) =>
   pickBoolean(pickBoolean(false, entry.default), value) ? 'On' : 'Off';
 
-/** A list of model names, comma-separated or one per line. */
-const showModelNames = (value) => {
-  const names = modelNamesFrom(value);
-  return names.length ? names.join(', ') : 'None';
+/** The label of the chosen option, or of the default when the value is not one. */
+const showOption = (value, entry) => {
+  const options = entry.options || [];
+  const match =
+    options.find((option) => option.value === value) ||
+    options.find((option) => option.value === entry.default);
+  return match ? match.label : String(value ?? '');
 };
 
 /** The keys a JSON object of request fields sets, or why it is not one. */
@@ -56,12 +75,19 @@ const positivePixels = (value, entry) => {
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : Number(entry.default);
 };
 
-const showPixels = (value, entry) => `${positivePixels(value, entry)} px`;
-
-const showPixelBudget = (value, entry) => {
-  const pixels = positivePixels(value, entry);
+const describePixels = (pixels) => {
   const side = Math.sqrt(pixels);
   return Number.isInteger(side) ? `${pixels} px (${side}×${side})` : `${pixels} px`;
+};
+
+const showPixels = (value, entry) => `${positivePixels(value, entry)} px`;
+
+const showPixelBudget = (value, entry) => describePixels(positivePixels(value, entry));
+
+/** A scaling budget: 0 (or less) means images go out at full size. */
+const showScaleBudget = (value, entry) => {
+  const pixels = pickInteger(Number(entry.default), value);
+  return pixels > 0 ? describePixels(pixels) : 'Off (full size)';
 };
 
 export const GLOBAL_SETTINGS = {
@@ -175,8 +201,8 @@ export const GLOBAL_SETTINGS = {
     type: 'boolean',
     default: 'true',
     tooltip:
-      'When fetching models, also ask LiteLLM (/model/info) and Ollama (/api/show) what each model supports: tools, thinking and its levels, vision, image generation, context length. ' +
-      'Off reads /models alone. A model reported without tool support is not offered tools.',
+      'When fetching models, also ask LiteLLM (/model/info) and Ollama (/api/show) what each model supports: tools, thinking and its levels, vision, context length. ' +
+      'Off reads /models alone. A model reported without tool support is not offered tools. Image models are never detected: select them under Image Generation.',
     display: showOnOff,
   },
   imageCacheMB: {
@@ -209,45 +235,24 @@ export const GLOBAL_SETTINGS = {
       'Placeholders are stored in the chat, so larger values make chats larger. Applies to images added from now on.',
     display: showPixelBudget,
   },
-  imageModels: {
-    label: 'Image Models',
-    category: 'Image Generation',
-    type: 'text',
-    default: '',
+  visionMaxPixels: {
+    label: 'Vision Max Pixels',
+    category: 'Images',
+    type: 'number',
+    default: '0',
     tooltip:
-      'Models to treat as image generation models (they are sent to /images/generations), comma-separated or one per line. ' +
-      'Models the endpoint reports as image models (LiteLLM, Ollama) need not be listed: this is for servers that report nothing, such as stable-diffusion.cpp.',
-    display: showModelNames,
+      'Images sent to a chat model to look at (pasted images, and generated ones with Send Generated Images on) that hold more than this many pixels (width × height) are scaled down to fit, keeping their aspect ratio. ' +
+      '0 sends them at full size. Only what is sent changes: the chat keeps the original. Image edits use Edit Max Pixels instead.',
+    display: showScaleBudget,
   },
-  imageModelsInChat: {
-    label: 'Image Models in Chat',
-    category: 'Image Generation',
-    type: 'boolean',
-    default: 'false',
-    tooltip:
-      'Offer image models in the model dropdown. Sending to one takes the latest user message as the prompt: text alone calls /images/generations, ' +
-      'and a message with images calls /images/edits with them. The reply is the generated images. true or false.',
-    display: showOnOff,
-  },
-  imageToolModels: {
-    label: 'Image Tool Models',
-    category: 'Image Generation',
-    type: 'text',
-    default: '',
-    tooltip:
-      'The image models the image tools may use, comma-separated or one per line: tick them in the list below, or type them here. ' +
-      'The tools (list_image_models, generate_image, edit_image) are offered when Generate Images is on in the sidebar and at least one model is listed.',
-    display: showModelNames,
-  },
-  imageParams: {
-    label: 'Image Parameters',
-    category: 'Image Generation',
-    type: 'code',
-    default: '',
-    tooltip:
-      'A JSON object of extra fields sent with every image request, e.g. {"size": "1024x1024", "quality": "high", "response_format": "b64_json"}. ' +
-      'The model may still choose size, quality and background in a tool call. Empty sends none.',
-    display: showJSONFields,
+  visionScalingMethod: {
+    label: 'Vision Scaling Method',
+    category: 'Images',
+    type: 'select',
+    options: SCALING_METHODS,
+    default: 'high',
+    tooltip: 'How images are scaled down to Vision Max Pixels.',
+    display: showOption,
   },
   sendGeneratedImages: {
     label: 'Send Generated Images',
@@ -258,6 +263,45 @@ export const GLOBAL_SETTINGS = {
       'Send the images the model made back to it, in a user message right after the tool results (or after an image model’s reply), so it can check them and adjust. ' +
       'Off, a tool result carries only the images’ ids and sizes, and an image model’s reply sends nothing. true or false.',
     display: showOnOff,
+  },
+  editMaxPixels: {
+    label: 'Edit Max Pixels',
+    category: 'Image Generation',
+    type: 'number',
+    default: '1048576',
+    tooltip:
+      'Images sent to an image model to edit (/images/edits, from the edit_image tool or a chat with an image model) that hold more than this many pixels (width × height) are scaled down to fit, keeping their aspect ratio. ' +
+      '0 sends them at full size. Only what is sent changes: the chat keeps the original.',
+    display: showScaleBudget,
+  },
+  editScalingMethod: {
+    label: 'Edit Scaling Method',
+    category: 'Image Generation',
+    type: 'select',
+    options: SCALING_METHODS,
+    default: 'high',
+    tooltip: 'How images are scaled down to Edit Max Pixels.',
+    display: showOption,
+  },
+  imageModelsInChat: {
+    label: 'Image Models in Chat',
+    category: 'Image Parameters',
+    type: 'boolean',
+    default: 'false',
+    tooltip:
+      'Offer the selected image models (Select Image Models, under Image Generation) in the model dropdown. Sending to one takes the latest user message as the prompt: text alone calls /images/generations, ' +
+      'and a message with images calls /images/edits with them. The reply is the generated images. true or false.',
+    display: showOnOff,
+  },
+  imageParams: {
+    label: 'Image Parameters',
+    category: 'Image Parameters',
+    type: 'code',
+    default: '',
+    tooltip:
+      'A JSON object of extra fields sent with every request to an image model chosen in chat (Image Models in Chat), e.g. {"size": "1024x1024", "quality": "high", "response_format": "b64_json"}. ' +
+      'Not sent by the image tools: there the model sets size, quality and background itself. Empty sends none.',
+    display: showJSONFields,
   },
   chatDateGroups: {
     label: 'Chat Date Groups',
@@ -318,6 +362,13 @@ export function isPerModel(key) {
 
 /** Every per-model key, in declaration order. */
 export const PER_MODEL_KEYS = Object.keys(GLOBAL_SETTINGS).filter(isPerModel);
+
+/** A `select` setting's value if it is one of its options, else its default. */
+export function optionValue(key, value) {
+  const entry = GLOBAL_SETTINGS[key];
+  const options = entry?.options || [];
+  return options.some((option) => option.value === value) ? value : entry?.default;
+}
 
 /** The entries of `schema` whose key passes `predicate`, in declaration order. */
 export function pickSchema(schema, predicate) {

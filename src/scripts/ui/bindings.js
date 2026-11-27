@@ -17,6 +17,7 @@ import {
   applyChromeState,
   updateModelDropdown,
 } from './components/input-area.js';
+import { renderConnectionForm } from './components/connection-form.js';
 import { syncAttachmentImages } from './components/attachments.js';
 import { syncEditSelection } from './components/edit-selection.js';
 import {
@@ -46,6 +47,7 @@ export function renderMainView({ preserveScroll = false } = {}) {
 
 export function renderAll() {
   updateModelDropdown();
+  renderConnectionForm();
   applyChromeState();
   renderChatList();
   renderMainView();
@@ -171,8 +173,10 @@ export function installBindings() {
 
   on(EVENTS.MODELS, () => {
     updateModelDropdown();
-    // The settings view lists the models parameters can be set for, and what
-    // each setting currently reads.
+    // The Generate Images switch shows only once an image model is selected.
+    renderConnectionForm();
+    // The settings view lists the models parameters can be set for, the
+    // image model pickers, and what each setting currently reads.
     if (state.session.view === 'settings') renderSettingsView();
   });
 

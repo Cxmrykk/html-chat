@@ -1,6 +1,6 @@
 import { findChat } from '../../store/state.js';
 import { imageToolModels } from '../models.js';
-import { createImages, imageRequestParams } from '../image-generation.js';
+import { createImages, toolImageParams } from '../image-generation.js';
 import { uploadBlob, sendsGeneratedImages } from '../images.js';
 import { allImagesOf, imageRef, findImageByRef } from '../../core/attachments.js';
 import { TOOL_NAMES } from '../../core/tools.js';
@@ -9,7 +9,8 @@ import { TOOL_NAMES } from '../../core/tools.js';
  * The image tools: listing the image models the user allowed, generating
  * from a prompt, and editing images already in the chat. A failure is a
  * result the model can read and act on (another model, a better prompt); only
- * the user's abort propagates.
+ * the user's abort propagates. Image Parameters are not sent from here: only
+ * the options the call itself set.
  */
 
 const failure = (content) => ({ content, failed: true });
@@ -71,7 +72,7 @@ export async function generateImage(args, { signal } = {}) {
   const { records, revisedPrompt } = await createImages({
     model,
     prompt: args.prompt.trim(),
-    params: imageRequestParams(args),
+    params: toolImageParams(args),
     signal,
   });
   return { content: report('Generated', model, records, revisedPrompt), failed: false, attachments: records };
@@ -114,7 +115,7 @@ export async function editImage(args, { signal, chatId } = {}) {
     model,
     prompt: args.prompt.trim(),
     sources,
-    params: imageRequestParams(args),
+    params: toolImageParams(args),
     signal,
   });
   return { content: report('Edited', model, records, revisedPrompt), failed: false, attachments: records };

@@ -37,6 +37,9 @@ import { ICON_CHECK } from '../ui/icons.js';
  * tool call's) attachments, and `files` the files of a paste or drop.
  */
 
+/** The pages of the settings view (`ui/views/settings-view.js`). */
+const SETTINGS_PAGES = ['main', 'imageModels', 'imageToolModels'];
+
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
@@ -45,6 +48,7 @@ import { ICON_CHECK } from '../ui/icons.js';
 function leaveSettings(patch = {}) {
   setSession({
     view: 'chat',
+    settingsPage: 'main',
     activeSettingKey: null,
     settingsDraft: null,
     editingThinking: false,
@@ -58,6 +62,14 @@ function leaveSettings(patch = {}) {
  */
 function settingScope(key, model = state.session.settingsModel) {
   return model && isPerModel(key) ? model : null;
+}
+
+/** Whether the setting open in the editor holds a change that was not saved. */
+function hasUnsavedSetting() {
+  const { activeSettingKey: key, settingsDraft: draft } = state.session;
+  if (!key) return false;
+  const loaded = settings.readEditorValue(key, settingScope(key));
+  return (draft ?? loaded) !== loaded;
 }
 
 /** The session fields of an edit's selected blocks, cleared. */
@@ -142,6 +154,7 @@ function toggleSettings() {
   stopEditing();
   setSession({
     view: 'settings',
+    settingsPage: 'main',
     activeSettingKey: null,
     settingsDraft: null,
     editingThinking: false,
@@ -789,6 +802,38 @@ export const commands = {
   },
 
   /**
+   * Show a page of the settings view (`key`): 'main', or one of the model
+   * pickers. Image Tool Models has nothing to show until an image model is
+   * selected. A setting open in the editor is closed (after asking, if it
+   * holds an unsaved change).
+   */
+  'settings.openPage': ({ key }) => {
+    const page = SETTINGS_PAGES.includes(key) ? key : 'main';
+    if (page === state.session.settingsPage) return;
+    if (page === 'imageToolModels' && !models.imageModels().length) return;
+    if (hasUnsavedSetting() && !confirm('Discard your unsaved change to this setting?')) return;
+    setSession({ settingsPage: page, activeSettingKey: null, settingsDraft: null });
+  },
+
+  /** Mark a model (`key`) as an image model, or unmark it: Select Image Models. */
+  'settings.toggleImageModel': async ({ key }) => {
+    if (!key) return;
+    await settings.toggleImageModel(key);
+  },
+
+  /** Let the image tools use an image model (`key`), or stop them: Image Tool Models. */
+  'settings.toggleImageToolModel': async ({ key }) => {
+    if (!key) return;
+    await settings.toggleImageToolModel(key);
+  },
+
+  /** A dropdown setting (`key`) changed: saved at once, as a global value. */
+  'settings.choose': async ({ key, element }) => {
+    if (!key || !element) return;
+    await settings.saveSetting(key, element.value);
+  },
+
+  /**
    * Pick which model the LLM Behavior values are for: a model, or nothing for
    * the defaults every model inherits. The list shows that model's values at
    * once. An LLM Behavior setting open in the editor is reloaded with its
@@ -817,27 +862,6 @@ export const commands = {
     const value = settings.readEditorValue(key, settingScope(key, model));
     setSession({ settingsModel: model, settingsDraft: value });
     setSettingsEditorValue(value);
-  },
-
-  /**
-   * Tick or untick an image model (`key`) for the image tools: the checkbox
-   * list under Image Generation, which writes Image Tool Models. If that
-   * setting is open in the editor, the editor follows.
-   */
-  'settings.toggleImageToolModel': async ({ key, element }) => {
-    if (!key) return;
-    const selected = models.imageToolModels();
-    const on = typeof element?.checked === 'boolean' ? element.checked : !selected.includes(key);
-    const next = on
-      ? [...selected.filter((id) => id !== key), key]
-      : selected.filter((id) => id !== key);
-    const value = next.join(', ');
-
-    await settings.saveSetting('imageToolModels', value);
-    if (state.session.activeSettingKey === 'imageToolModels') {
-      setSession({ settingsDraft: value }, { silent: true });
-      setSettingsEditorValue(value);
-    }
   },
 
   'settings.select': ({ key }) => {
@@ -870,7 +894,7 @@ export const commands = {
     const model = state.session.settingsModel;
     const question = model
       ? `Remove every LLM Behavior override for "${model}"? It will use the defaults again. Other settings are not changed.`
-      : 'Reset ALL Advanced parameters to default? Per-model overrides are kept.';
+      : 'Reset ALL Advanced parameters to default? Per-model overrides and the selected image models are kept.';
     if (!confirm(question)) return;
     await settings.resetAllSettings(model);
     setSession({ activeSettingKey: null, settingsDraft: null });
