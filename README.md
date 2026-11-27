@@ -1,25 +1,24 @@
 # HTML Chat
 
-A browser chat client for any OpenAI-compatible API, built into a single `index.html` file. It has no backend and no account. Everything, including your API key, is stored in your browser's IndexedDB.
+A browser chat client for any OpenAI-compatible API, built into a single `index.html`. No backend, no account. Everything, including your API key, is stored in your browser's IndexedDB.
 
 Features:
 
 - Streaming chat with reasoning display (`reasoning_content` / `reasoning` fields, inline `<think>` tags, LiteLLM `thinking_blocks`)
-- Model capabilities (tools, thinking and its levels, vision, context length) read from LiteLLM, Ollama and OpenAI-compatible `/models` responses
-- Per-model LLM parameters (temperature, top P, ...) on top of shared defaults
+- Model capabilities (tools, thinking levels, vision, context length) read from LiteLLM, Ollama and `/models`
+- Per-model LLM parameters on top of shared defaults
+- Image attachments, image models and image tools
 - Tool calling: JavaScript execution in the page
-- Editing, retrying, forking and deleting any message, and changing its role
+- Edit, retry, fork and delete any message, or change its role
 - Markdown, syntax highlighting and KaTeX math
-- Chat list grouped by date, import and export of chats
-- Light and dark themes, with keyboard-driven navigation
+- Chat list grouped by date, import and export
+- Light and dark themes, keyboard navigation
 
 ## Getting started
 
-### Use the prebuilt file
-
 Open `index.html` in a browser. That's it.
 
-### Build from source
+To build from source:
 
 ```sh
 npm install
@@ -27,165 +26,176 @@ npm run dev      # dev server with hot reload
 npm run build    # writes a self-contained index.html to the repo root
 ```
 
-### Connect
+To connect:
 
-1. In the sidebar, set **Base URL** (e.g. `https://api.openai.com/v1`, `http://localhost:11434/v1`, `http://localhost:4000`) and **API Key**.
-2. Models are fetched from `{Base URL}/models`. If your server doesn't implement that endpoint, add model ids under **Extra Models** (see [Advanced settings](#advanced-settings)).
-3. Pick a model and type your prompt. `Ctrl+Enter` sends.
+1. Set **Base URL** (e.g. `https://api.openai.com/v1`, `http://localhost:11434/v1`, `http://localhost:4000`) and **API Key** in the sidebar.
+2. Models are fetched from `{Base URL}/models`. If your server doesn't implement it, add ids under **Extra Models**.
+3. Pick a model, type, and press `Ctrl+Enter`.
 
-> The API server must allow cross-origin requests from the browser (CORS). Local servers often need this enabled explicitly.
+> The server must allow cross-origin requests (CORS).
 
 ### Model capabilities
 
-The OpenAI spec doesn't say what a model can do, so after fetching `/models` the app also asks the server directly. These requests go to the Base URL with any trailing `/v1` removed:
+After fetching `/models`, the app asks the server what each model supports. Requests go to the Base URL with any trailing `/v1` removed.
 
-| Server                       | Asked                                                    | Read                                                                                                             |
-| ---------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| LiteLLM                      | `GET /model/info`, falling back to `/model_group/info`   | `supports_function_calling`, `supports_reasoning`, `supports_vision`, `mode`, `max_input_tokens`, `supports_<level>_reasoning_effort` |
-| Ollama                       | `GET /api/version`, then `POST /api/show` for each model | `capabilities` (`completion`, `tools`, `thinking`, `vision`) and the context length                              |
-| Any OpenAI-compatible server | the `/models` response itself                            | `capabilities`, `supported_parameters` (OpenRouter), `supports_*` flags, context length, reasoning effort lists  |
+| Server  | Asked                                                    | Read                                                                                                          |
+| ------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| LiteLLM | `GET /model/info`, falling back to `/model_group/info`   | `supports_function_calling`, `supports_reasoning`, `supports_vision`, `mode`, `max_input_tokens`, effort flags |
+| Ollama  | `GET /api/version`, then `POST /api/show` per model      | `capabilities` and context length                                                                             |
+| Any     | the `/models` response                                   | `capabilities`, `supported_parameters`, `supports_*` flags, context length, effort lists                      |
 
-What it changes:
+- Models reported without tool support aren't offered tools.
+- Models reported as not chatting (embedding or image-only models) are left out of the dropdown.
+- Unreported capabilities count as unknown, and the app behaves as if there were no data. `api.openai.com` and `openrouter.ai` aren't probed.
+- **Image models are never detected.** Select them by hand (see [Images](#images)).
 
-- A model reported **without tool support** isn't offered tools.
-- A model reported as **not a chat model** (an embedding model) isn't listed. Extra Models are always listed.
-- **Thinking levels** come from the endpoint (see below).
-- Hovering the model dropdown shows what the selected model supports, and which server reported it.
-
-Anything not reported counts as unknown, and the app behaves as if there were no capability data. The official OpenAI API reports nothing, and the app doesn't probe `api.openai.com` or `openrouter.ai`. You can turn probing off with **Probe Capabilities**.
+Turn probing off with **Probe Capabilities**.
 
 ## Chatting
 
-| Action                                | How                                                                      |
-| ------------------------------------- | ------------------------------------------------------------------------ |
-| Send                                  | `Ctrl/Cmd+Enter` or **Send**                                             |
-| Add a message without calling the API | `Ctrl+Shift+Enter`, or Shift+Click **Send**                              |
-| Stop generation                       | Click the send button while it's running                                 |
-| Set reasoning effort                  | Ctrl+Click the model dropdown, then pick a level (see below)             |
+| Action                         | How                                         |
+| ------------------------------ | ------------------------------------------- |
+| Send                           | `Ctrl/Cmd+Enter` or **Send**                |
+| Add a message without the API  | `Ctrl+Shift+Enter`, or Shift+Click **Send** |
+| Stop                           | Click the send button while it's running    |
+| Set reasoning effort           | Ctrl+Click the model dropdown               |
 
-The **Send** button shows an estimate of the context size, at about 4 characters per token. It covers the full request, including tool definitions.
-
-### Chat list
-
-The chat list in the sidebar always fills the height left below the settings box, and scrolls on its own. Chats are grouped under date headings by when each chat was created: Today, Yesterday, one heading per day for the rest of the last 30 days (e.g. `Nov 24`), then Older.
-
-Click a heading, or the chevron beside it, to collapse or expand the group. A collapsed group still shows the chat that is open. Collapsed groups are not kept across reloads.
-
-Turn grouping off with **Chat Date Groups**.
+**Send** shows an estimated context size (4 characters per token), including tool definitions.
 
 ### Reasoning effort
 
-Ctrl+Click the model dropdown to choose the `reasoning_effort` sent with each request. The levels depend on what the endpoint reported for the selected model:
+The levels depend on what the endpoint reported for the selected model:
 
-- **Levels reported** (LiteLLM, Ollama, or a `/models` entry that lists them): you get `default` and then those levels. `default` sends nothing and leaves the choice to the server. A reported `none` is sent, and asks the model not to think.
-  - LiteLLM: `low`, `medium` and `high` for reasoning models, plus `none`, `minimal` or `xhigh` where LiteLLM's model map flags them.
-  - Ollama: gpt-oss takes `low`, `medium` and `high`, and can't be switched off. Other thinking models are only on or off, so they get `none` and `high`.
-- **Reported as not thinking**: only `default`.
-- **Nothing reported**: your own list, one level per line, edited in the textarea. Here `none` sends nothing.
+- **Levels reported**: `default` (sends nothing), then the reported levels. A reported `none` is sent and turns thinking off.
+- **Reported as not thinking**: `default` only.
+- **Nothing reported**: your own list, one level per line. Here `none` sends nothing.
 
-The chosen level is kept across models. If a model doesn't take it, nothing is sent for that model.
+A level the selected model doesn't take isn't sent.
 
 ### Message actions
 
-Hover a message to see its buttons:
-
-- **Retry**
-  - On a user message: resends it and discards everything after it.
-  - On a thinking box: resumes the turn from that point.
+- **Retry**: on a user message, resends it and drops everything after it. On a thinking box, resumes the turn.
 - **Copy**: copies the message as markdown.
-- **Edit**: edits part of the message (see below).
-- **Fork**: creates a new chat containing everything up to and including this message.
+- **Edit**: edits part of the message.
+- **Fork**: opens a new chat with everything up to this message.
 - **Delete**: removes the message.
-- **Role dropdown**: switches a message between `user`, `assistant` and `system`.
+- **Role dropdown**: switches between `user`, `assistant` and `system`.
 
-### Editing part of a message
+### Editing
 
-After clicking **Edit**, click the block (paragraph, list, code block, etc.) you want to change. Its source loads into the composer, and a dotted outline marks it. Shift+Click another block to select everything in between, or click **Select All** to select every block of the message at once.
+After **Edit**, click a block (paragraph, list, code block) to load it into the composer.
 
-- Clicking another block switches the selection to it.
+- Shift+Click another block to select the range; **Select All** selects every block.
 - Clicking the selected block again deselects it.
-- **Save** (`Ctrl+Enter`) writes the edit back. An empty composer deletes the selected part.
-- **Cancel** ends the edit without saving.
-- **Toggle Wrap** switches line wrapping in the composer.
-
-To regenerate from an edited message, save it, then use **Retry** on it.
+- **Save** (`Ctrl+Enter`) writes the edit back. An empty composer deletes the selection.
+- Paste or drop images to add them to the message. Use the corner buttons on an image to move or remove it, or click it to replace it.
 
 ### Thinking boxes
 
-Everything the model does before its answer is grouped into one collapsible box per turn: reasoning, text written alongside tool calls, and the tool calls with their results. The header shows how long you waited. Click any tool call to see its code and its result.
+Each turn's reasoning, the text written alongside tool calls, and the tool calls with their results sit in one collapsible box. Its header shows how long you waited.
+
+### Chat list
+
+Chats are grouped by creation date: Today, Yesterday, one heading per day for the last 30 days, then Older. Click a heading to collapse its group. Turn this off with **Chat Date Groups**.
+
+## Images
+
+### Attachments
+
+Paste or drop images into the chat. A chat only stores a small pixelated placeholder of each image. Originals are kept in memory and, up to **Image Cache (MB)**, in browser storage.
+
+If an original is gone, its tag turns red. Click the placeholder to restore it from the file. If you send anyway, you're warned first, and the placeholder is sent scaled up.
+
+**Vision Max Pixels** scales down images sent to chat models. It is off by default.
+
+### Image models
+
+1. Open the advanced settings, then **Image Generation → Select Image Models**.
+2. Click models to mark them as image models. Requests to image models go to `/images/generations` and `/images/edits`, not chat completions.
+
+There are two ways to use them:
+
+- **In chat**: turn on **Image Parameters → Image Models in Chat**. The image models appear in the dropdown. The latest user message is the prompt, and any images it has are edited. **Image Parameters** (a JSON object) is sent with these requests only.
+- **As tools**: tick **Generate Images** in the sidebar (shown once an image model is selected). The model gets `list_image_models`, `generate_image` and `edit_image`, and can use every image model except those you switch off under **Image Tool Models**.
+
+Images sent for editing are scaled down to **Edit Max Pixels** (default `1048576`, 1024×1024) using **Edit Scaling Method**. With **Send Generated Images** on, generated images are sent back to the model so it can check them.
 
 ## Tools
 
 ### JavaScript execution
 
-Tick **Execute JavaScript** to offer the model the `run_javascript` tool. The code runs **inside this page**, with full access to `window`, `document`, `fetch` and the app's own storage, which includes your API key. Only enable it with models and prompts you trust.
+Tick **Execute JavaScript** to offer the model `run_javascript`. The code runs **inside this page**, with full access to `window`, `document`, `fetch` and the app's storage, including your API key. Only enable it with models and prompts you trust.
 
-Calls run one at a time. Results are capped by **Max Tool Result Tokens**. The tool isn't offered to a model whose endpoint reports it can't call tools.
+Calls run one at a time. Results are capped by **Max Tool Result Tokens**.
 
 ## Advanced settings
 
-Open them by clicking the **Settings** heading in the sidebar, or with `Alt+I`. Click it again to close them.
+Open them by clicking the **Settings** heading or pressing `Alt+I`. Select a setting, edit it in the bottom textarea, and save with **Save** or `Ctrl+Enter`. Dropdown settings save as soon as you pick. A blank value uses the default.
 
-To change a setting, select it, edit the value in the bottom textarea, and save with **Save** or `Ctrl+Enter`. **Reset** restores one setting's default, **Cancel** discards your edit, and **Reset All** restores every default. Leaving a value blank uses the default. While a setting is being edited, **Close** is grayed out, so it can't be clicked by mistake instead of Save, Reset or Cancel.
+- **Reset** restores one setting.
+- **Reset All** restores every setting. It keeps per-model overrides and image model selections.
 
 ### Per-model parameters
 
-The **Parameters for** dropdown at the top of the settings picks whose LLM parameters you are editing (Temperature, Top P, Max Tokens, Frequency and Presence Penalty):
+The **Model** row at the top of LLM Behavior picks whose parameters you're editing:
 
-- **All models (defaults)**: every setting is shown. The LLM parameters set here apply to every model that doesn't override them.
-- **A model**: only the LLM parameters are shown, and what you set applies to that model alone.
-  - A blank value inherits the default, shown as `Inherit (...)`.
-  - `none` sends nothing for that model, even if a default is set. Use this for models that reject a parameter.
-  - **Reset** removes one override, and **Reset All** removes all of that model's overrides.
-  - Models with overrides are marked `(custom)` in the dropdown.
+- **All models (defaults)**: values apply to every model without an override.
+- **A model**: values apply to that model only.
+  - A blank value inherits the default.
+  - `none` sends nothing for that model.
+  - Models with overrides are marked `(custom)`.
 
-Reset All with no model selected restores the defaults and keeps every model's overrides.
+### Settings
 
-| Setting                                                        | Default           | Notes                                                                                                                                                        |
-| -------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Temperature, Top P, Max Tokens, Frequency and Presence Penalty | API default       | Sent only when set. Can be overridden per model                                                                                                              |
-| Max Tool Rounds                                                | 10                | After this many rounds, the model must answer without tools                                                                                                  |
-| Max Tool Result Tokens                                         | 4000              | Truncates JavaScript results. `0` disables the cap                                                                                                           |
-| Echo Reasoning Field                                           | off               | `reasoning_content` or `reasoning`. Sends plain-text reasoning back during a tool loop, for models that need it. Signed thinking blocks are always sent back |
-| JavaScript Tool Description                                    | built-in          | What the model is told about the JavaScript tool                                                                                                             |
-| Extra Models                                                   | —                 | Comma-separated. Always added to the model dropdown                                                                                                          |
-| Probe Capabilities                                             | true              | Ask LiteLLM and Ollama what each model supports. Changing it fetches the model list again                                                                   |
-| Image Cache (MB)                                               | 100               | Browser storage for original images, so they survive a reload. `0` keeps them in memory only                                                                |
-| Placeholder Width, Placeholder Max Pixels                      | 64, 4096          | Size of the pixelated placeholder a chat stores for each image                                                                                              |
-| Chat Date Groups                                               | true              | Group the sidebar's chat list under collapsible date headings                                                                                                |
-| Collapse Thinking                                              | true              | Whether new thinking boxes start closed                                                                                                                      |
-| Auto-Collapse Code, Threshold, Preview Lines, Hint             | true, 20, 5, true | Long code blocks fold. Click to toggle                                                                                                                       |
+| Setting                                                         | Default           | Notes                                                                    |
+| --------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------ |
+| Temperature, Top P, Max Tokens, Frequency and Presence Penalty  | API default       | Sent only when set. Per-model                                            |
+| Max Tool Rounds                                                 | 10                | After this, the model must answer without tools                          |
+| Max Tool Result Tokens                                          | 4000              | `0` disables the cap                                                     |
+| Echo Reasoning Field                                            | off               | `reasoning_content` or `reasoning`, sent back during tool loops          |
+| Retry Keeps Thinking                                            | true              | A resumed turn carries the reasoning shown so far                        |
+| JavaScript Tool Description                                     | built-in          | What the model is told about the tool                                    |
+| Extra Models                                                    | —                 | Comma-separated, always listed                                           |
+| Probe Capabilities                                              | true              | Ask LiteLLM and Ollama what each model supports                          |
+| Image Cache (MB)                                                | 100               | `0` keeps originals in memory only                                       |
+| Placeholder Width, Placeholder Max Pixels                       | 64, 4096          | Size of the stored placeholder                                           |
+| Vision Max Pixels, Vision Scaling Method                        | 0 (off), high     | Scales images sent to chat models                                        |
+| Select Image Models, Image Tool Models                          | none, all         | Pages for picking image models and which ones the tools may use          |
+| Send Generated Images                                           | false             | Send generated images back to the model                                  |
+| Edit Max Pixels, Edit Scaling Method                            | 1048576, high     | Scales images sent for editing. `0` sends full size                      |
+| Image Models in Chat                                            | false             | Offer image models in the dropdown                                       |
+| Image Parameters                                                | —                 | JSON fields for image-model chats only                                   |
+| Chat Date Groups                                                | true              | Group the chat list by date                                              |
+| Collapse Thinking                                               | true              | New thinking boxes start closed                                          |
+| Auto-Collapse Code, Threshold, Preview Lines, Hint              | true, 20, 5, true | Long code blocks fold                                                    |
+
+Scaling methods: smooth (high, medium or low quality), progressive halving, or nearest neighbour.
 
 ## Keyboard and mouse
 
-| Shortcut                             | Action                                              |
-| ------------------------------------ | --------------------------------------------------- |
-| `Alt+T`                              | New chat                                            |
-| `Alt+W`                              | Delete current chat                                 |
-| `Alt+R`                              | Rename current chat                                 |
-| `Alt+↑` / `Alt+↓`                    | Previous / next chat                                |
-| `Alt+P`                              | Toggle sidebar                                      |
-| `Alt+O`                              | Toggle title                                        |
-| `Alt+D`                              | Toggle dark mode                                    |
-| `Alt+I`                              | Advanced settings                                   |
-| `Shift+↑` / `Shift+↓`                | Jump between messages                               |
-| `↑` / `↓`                            | Scroll the chat (outside text fields)               |
-| Ctrl+Click code, inline code or math | Copy it. Math copies as LaTeX source                |
-| Ctrl+Click a chat                    | Copy its transcript as markdown (without reasoning) |
-| Alt+Click a chat                     | Export that chat as JSON                            |
-| Alt+Click **New**                    | Import chats                                        |
+| Shortcut                             | Action                               |
+| ------------------------------------ | ------------------------------------ |
+| `Alt+T` / `Alt+W` / `Alt+R`          | New / delete / rename chat           |
+| `Alt+↑` / `Alt+↓`                    | Previous / next chat                 |
+| `Alt+P` / `Alt+O` / `Alt+D`          | Toggle sidebar / title / dark mode   |
+| `Alt+I`                              | Advanced settings                    |
+| `Shift+↑` / `Shift+↓`                | Jump between messages                |
+| `↑` / `↓`                            | Scroll the chat (outside text fields)|
+| Ctrl+Click code, inline code or math | Copy it (math as LaTeX)              |
+| Ctrl+Click a chat                    | Copy its transcript as markdown      |
+| Alt+Click a chat                     | Export it as JSON                    |
+| Alt+Click **New**                    | Import chats                         |
+| Pinch or Ctrl+Scroll an image        | Zoom                                 |
 
-**Import** and **Export** in the sidebar handle all chats as a single JSON file. Import skips chats whose id already exists.
+**Import** and **Export** in the sidebar handle all chats as one JSON file. Import skips chats whose id already exists.
 
 ## Notes
 
-- Markdown output is **not sanitised**. HTML in model output renders as HTML.
-- All data lives in this browser's IndexedDB. Clearing site data deletes your chats and key. Use Export to back up chats.
-- Token counts are estimates, at 4 characters per token.
-- Ollama reports the context length a model was trained with, which can be larger than the context it actually runs with (`num_ctx`).
-- Chat date groups go by when a chat was created, not when it was last used.
-- Earlier versions could search uploaded files. That feature has been removed: the files, profiles and vectors it stored are deleted on first load, and old search calls in chats are shown by name with their raw arguments.
-- Earlier versions had a **Max Visible Chats** setting. The chat list now always fills the sidebar, so the setting is gone and its stored value is deleted on load.
+- Markdown output is **not sanitised**: HTML in model output renders as HTML.
+- Clearing site data deletes your chats and key. Export to back up.
+- Ollama reports the trained context length, which may exceed `num_ctx`.
+- Image models used to be detected automatically. They now have to be selected once by hand.
+- Old file-search data is deleted on load. Old search calls in chats are shown by name with their raw arguments.
 
 ## License
 
