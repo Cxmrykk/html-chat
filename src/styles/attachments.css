@@ -204,13 +204,23 @@
 
 /* ------------------------------------------------------------------ *
  * Images waiting in the composer
+ *
+ * A strip along the bottom edge of the chat frame, under the transcript and
+ * inside the frame's border. It never shrinks the transcript below a usable
+ * height: past a couple of rows of chips it scrolls on its own.
  * ------------------------------------------------------------------ */
 
 .composer-attachments {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 10px;
+  max-height: 96px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 8px 15px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-panel);
 }
 
 .composer-attachment {
@@ -248,7 +258,7 @@
 }
 
 /* Dragging image files over the chat. */
-.main.drop-target #chat-container {
+.main.drop-target .chat-frame {
   outline: 2px dashed var(--accent);
   outline-offset: -6px;
 }

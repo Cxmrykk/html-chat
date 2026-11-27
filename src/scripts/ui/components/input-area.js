@@ -18,13 +18,16 @@ import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
 
 /** Input area components: composer and settings editor bars. */
 
-const PROMPT_PLACEHOLDER = 'Type your prompt here... Paste or drop images to attach them.';
+const PROMPT_PLACEHOLDER = 'Type your prompt here...';
 const PICK_PLACEHOLDER =
   'Click the part of the message you want to edit, or Select All. Shift+Click another part to select everything in between. Paste or drop images to add them to the message.';
 const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
 
 const CLOSE_TITLE = 'Close the settings';
 const CLOSE_BLOCKED_TITLE = 'Save, reset or cancel the setting being edited first';
+
+/** How close to the bottom still counts as "following along" (see `chat-view.js`). */
+const STICK_THRESHOLD_PX = 48;
 
 function optionHTML(value, title = '') {
   const tip = title ? ` title="${escapeHTML(title)}"` : '';
@@ -160,12 +163,21 @@ function editingMessage() {
 }
 
 /**
- * The images waiting to be sent, above the prompt. Hidden while a message or
- * the thinking levels are being edited: images pasted then go to the message.
+ * The images waiting to be sent, in a strip at the bottom of the chat frame,
+ * under the transcript. Hidden while a message or the thinking levels are
+ * being edited: images pasted then go to the message.
+ *
+ * The strip takes its height out of the transcript, so a transcript that was
+ * following the bottom is kept there when the strip appears or goes away.
  */
 export function renderComposerAttachments() {
   const strip = $('#composer-attachments');
   if (!strip) return;
+
+  const container = $('#chat-container');
+  const wasPinned = container
+    ? container.scrollHeight - container.scrollTop - container.clientHeight <= STICK_THRESHOLD_PX
+    : false;
 
   const list = state.session.pendingAttachments || [];
   const show =
@@ -176,6 +188,8 @@ export function renderComposerAttachments() {
 
   setHidden(strip, !show);
   strip.innerHTML = show ? composerAttachmentsHTML(list) : '';
+
+  if (container && wasPinned) container.scrollTop = container.scrollHeight;
 }
 
 /**
@@ -200,6 +214,8 @@ export function renderInputArea() {
 
   if (view === 'settings') {
     renderSettingsEditor();
+    // The pending images belong to the composer: out of sight with it.
+    renderComposerAttachments();
     return;
   }
 

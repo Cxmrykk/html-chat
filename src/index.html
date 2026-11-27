@@ -93,7 +93,15 @@
       </aside>
 
       <main class="main">
-        <div id="chat-container"></div>
+        <!--
+          The framed chat panel. The transcript scrolls inside it; images
+          pasted or dropped, waiting to go out with the next message, sit in
+          a strip at its bottom edge, still inside the frame.
+        -->
+        <div class="chat-frame">
+          <div id="chat-container"></div>
+          <div id="composer-attachments" class="composer-attachments hidden"></div>
+        </div>
 
         <div id="input-area">
           <!-- Composer: prompt entry and message editing. -->
@@ -113,9 +121,7 @@
                       title="Save thinking levels (Ctrl+Enter / Cmd+Enter)">Save</button>
               <button id="cancel-thinking-btn" class="hidden" data-command="thinking.cancel">Cancel</button>
             </div>
-            <!-- Images pasted or dropped, waiting to go out with the next message. -->
-            <div id="composer-attachments" class="composer-attachments hidden"></div>
-            <textarea id="chat-input" placeholder="Type your prompt here... Paste or drop images to attach them."></textarea>
+            <textarea id="chat-input" placeholder="Type your prompt here..."></textarea>
             <textarea id="thinking-input" class="hidden" placeholder="none&#10;low&#10;medium&#10;high"></textarea>
           </div>
 

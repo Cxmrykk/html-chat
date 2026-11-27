@@ -1,12 +1,24 @@
-#chat-container {
-  position: relative;
+/*
+ * The framed chat panel: border, background and the gap below it live here,
+ * so the scrolling transcript and the strip of pending images (which sits at
+ * the bottom edge, inside the frame) share one box.
+ */
+.chat-frame {
   flex-grow: 1;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   border: 2px solid var(--border);
   background: var(--bg-panel);
-  padding: 15px;
   margin-bottom: 15px;
+}
+
+#chat-container {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 15px;
 }
 
 .chat-placeholder {
