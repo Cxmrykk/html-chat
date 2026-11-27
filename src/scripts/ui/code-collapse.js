@@ -6,28 +6,27 @@ import { ICON_CHEVRON_DOWN } from './icons.js';
  *
  * A collapsed block is a scroll container of its own, `--preview-lines` tall.
  * Its "origin" is where the top of its code sits on screen: the block's top
- * minus how far it is scrolled. Opening or closing keeps the origin still, by
- * scrolling the transcript by whatever the block's own scroll changed, so
- * every line stays where it was.
+ * minus how far it is scrolled.
  *
- * Expanding: the preview opens in place. How far it was scrolled is kept on
- * the block (`data-opened-at`): that is "where it was opened".
+ * Expanding keeps the origin still, by scrolling the transcript by however
+ * far the preview was scrolled, so the lines it showed do not move. That
+ * scroll is kept on the block (`data-opened-at`): it is "where it was opened".
  *
- * Collapsing picks how far the new preview is scrolled, which decides where
- * on screen it lands:
+ * Collapsing decides two things separately: where on screen the preview
+ * lands (the transcript's scroll), and which lines it shows (its own scroll).
  *
  *   1. A click inside the window the preview had when it was opened puts it
  *      back exactly there. Expanding and collapsing without moving the page
  *      is a pixel-perfect round trip.
- *   2. A click anywhere else centres the preview on the click (kept inside the
- *      visible area where it fits), showing the lines that were under it. The
- *      clicked line stays under the cursor.
- *   3. If the transcript cannot scroll far enough for that (not enough room
- *      above or below), the preview goes back to where it was opened, as
- *      near as the page allows.
+ *   2. A click anywhere else centres the preview on the click, kept inside
+ *      the visible area where it fits, showing the lines that were under it:
+ *      the clicked line stays under the cursor.
+ *   3. When the transcript cannot scroll far enough for either (a block near
+ *      the start or end of the chat), the preview lands as close to the click
+ *      as the page allows — always on screen — and shows where it was opened.
  *
- * A block never opened from a preview (one that started expanded) treats the
- * top of the visible area as where it was opened.
+ * A block never opened from a preview (one that started expanded) shows the
+ * lines that were clicked instead.
  *
  * The browser's own scroll anchoring is held off for the frames around a
  * toggle, so it cannot add a correction of its own on top of this one.
@@ -43,6 +42,9 @@ const OVERLAY_CLASS = 'code-collapse-overlay';
 
 /** A click this soon after scrolling a preview ended the scroll, and does not toggle. */
 const SCROLL_GRACE_MS = 150;
+
+/** Measurements disagree by fractions of a pixel; this much past a limit still fits. */
+const FIT_TOLERANCE_PX = 0.5;
 
 /** pre -> when the user last scrolled it by wheel or touch. */
 const lastUserScroll = new WeakMap();
@@ -186,27 +188,30 @@ function expand(pre, scroller) {
   if (scroller) scroller.scrollTop += originOf(pre) - before;
 }
 
-/**
- * Scroll the preview by `scroll` and move the transcript so the code's origin
- * is where it was (`before`). Resolves with whether the transcript could move
- * that far; with `force`, it moves as far as it can either way.
- */
-function place(pre, scroller, before, scroll, { force = false } = {}) {
-  pre.scrollTop = scroll;
-  if (!scroller) return true;
-
-  const target = scroller.scrollTop + (originOf(pre) - before);
-  const limit = scroller.scrollHeight - scroller.clientHeight;
-  const fits = target >= -0.5 && target <= limit + 0.5;
-  if (fits || force) scroller.scrollTop = target;
-  return fits;
-}
-
 /** Where a preview `height` tall would sit centred on a click, kept on screen where it fits. */
 function windowTopAround(clientY, height, view) {
   const top = clientY - height / 2;
   if (height > view.bottom - view.top) return top;
   return Math.min(Math.max(top, view.top), view.bottom - height);
+}
+
+/**
+ * Which lines the preview shows (`scroll`) and where on screen its top should
+ * land (`top`). With the code's origin kept still, a preview scrolled by `s`
+ * lands at `before + s`, so each choice of lines comes with its own place.
+ */
+function intendedPlacement({ before, clientY, height, view, original, hasOpened, clamp }) {
+  if (!Number.isFinite(clientY)) {
+    return { scroll: original, top: before + original };
+  }
+
+  const originalTop = before + original;
+  if (hasOpened && clientY >= originalTop && clientY < originalTop + height) {
+    return { scroll: original, top: originalTop };
+  }
+
+  const scroll = clamp(windowTopAround(clientY, height, view) - before);
+  return { scroll, top: before + scroll };
 }
 
 function collapse(pre, scroller, clientY) {
@@ -224,20 +229,38 @@ function collapse(pre, scroller, clientY) {
   // Where it was opened; for a block never opened from a preview, the lines
   // at the top of the visible area.
   const original = clamp(hasOpened ? opened : view.top - before);
+  const intended = intendedPlacement({
+    before,
+    clientY,
+    height,
+    view,
+    original,
+    hasOpened,
+    clamp,
+  });
 
-  const candidates = [];
-  if (Number.isFinite(clientY)) {
-    // With the origin kept still, a preview scrolled by `s` sits at `before + s`.
-    const originalTop = before + original;
-    const inOriginal = hasOpened && clientY >= originalTop && clientY < originalTop + height;
-    if (!inOriginal) candidates.push(clamp(windowTopAround(clientY, height, view) - before));
+  if (!scroller) {
+    pre.scrollTop = intended.scroll;
+    return;
   }
-  candidates.push(original);
 
-  for (const scroll of candidates) {
-    if (place(pre, scroller, before, scroll)) return;
+  // Where the block is now that it has shrunk, with the transcript not yet
+  // moved (the browser may already have pulled it back from the bottom), and
+  // the transcript scroll that puts the preview's top where it is meant to be.
+  const current = scroller.scrollTop;
+  const limit = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  const needed = current + (pre.getBoundingClientRect().top - intended.top);
+
+  if (needed >= -FIT_TOLERANCE_PX && needed <= limit + FIT_TOLERANCE_PX) {
+    pre.scrollTop = intended.scroll;
+    scroller.scrollTop = needed;
+    return;
   }
-  place(pre, scroller, before, original, { force: true });
+
+  // Not enough room above or below: land as close to the click as the page
+  // allows, which is always on screen, showing where the block was opened.
+  pre.scrollTop = hasOpened ? original : intended.scroll;
+  scroller.scrollTop = Math.min(limit, Math.max(0, needed));
 }
 
 /**
