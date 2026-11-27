@@ -12,8 +12,7 @@ import { ICON_CHEVRON_DOWN } from './icons.js';
  * far the preview was scrolled, so the lines it showed do not move. That
  * scroll is kept on the block (`data-opened-at`): it is "where it was opened".
  *
- * Collapsing decides two things separately: which lines the preview shows
- * (its own scroll), and where on screen it lands (the transcript's scroll).
+ * Collapsing first works out where the preview should land:
  *
  *   1. A click inside the window the preview had when it was opened puts it
  *      back exactly there. Expanding and collapsing without moving the page
@@ -22,11 +21,11 @@ import { ICON_CHEVRON_DOWN } from './icons.js';
  *      the visible area where it fits, showing the lines that were under it:
  *      the clicked line stays under the cursor.
  *
- * Either way, the lines the preview shows are kept. When the transcript
- * cannot scroll far enough to put the preview where it is meant to go (a
- * block near the start or end of the chat), only its position gives way: it
- * sits as close to that place as the page allows, at the very top or bottom
- * of the conversation, still showing the same lines.
+ * If the transcript can scroll far enough to put it there, it goes there.
+ * If not (a block near the start or end of the chat), the click no longer
+ * decides anything: the preview stops at that end of the conversation, and
+ * scrolls itself so the code's origin stays still, showing the lines that
+ * were already at that spot on screen. Nothing inside it jumps.
  *
  * The browser's own scroll anchoring is held off for the frames around a
  * toggle, so it cannot add a correction of its own on top of this one.
@@ -42,6 +41,9 @@ const OVERLAY_CLASS = 'code-collapse-overlay';
 
 /** A click this soon after scrolling a preview ended the scroll, and does not toggle. */
 const SCROLL_GRACE_MS = 150;
+
+/** Measurements disagree by fractions of a pixel; this much past a limit still fits. */
+const FIT_TOLERANCE_PX = 0.5;
 
 /** pre -> when the user last scrolled it by wheel or touch. */
 const lastUserScroll = new WeakMap();
@@ -236,22 +238,34 @@ function collapse(pre, scroller, clientY) {
     clamp,
   });
 
-  // The lines are kept whatever happens to the position.
-  pre.scrollTop = intended.scroll;
-  if (!scroller) return;
+  if (!scroller) {
+    pre.scrollTop = intended.scroll;
+    return;
+  }
 
   // Where the block is now that it has shrunk, with the transcript not yet
   // moved (the browser may already have pulled it back from the bottom), and
   // the transcript scroll that puts the preview's top where it is meant to be.
-  // Past either end of the conversation, the preview stops at that end.
   const limit = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
   const needed = scroller.scrollTop + (pre.getBoundingClientRect().top - intended.top);
+
+  if (needed >= -FIT_TOLERANCE_PX && needed <= limit + FIT_TOLERANCE_PX) {
+    pre.scrollTop = intended.scroll;
+    scroller.scrollTop = needed;
+    return;
+  }
+
+  // No room: the preview stops at that end of the conversation, wherever the
+  // click was, and shows the lines that were already at that spot, so the
+  // code's origin stays still and nothing inside it moves.
   scroller.scrollTop = Math.min(limit, Math.max(0, needed));
+  pre.scrollTop = clamp(pre.getBoundingClientRect().top - before);
 }
 
 /**
  * Open or close a block, keeping its code still on screen. `clientY` is where
- * the click landed, which decides where a collapsing block's preview goes.
+ * the click landed, which decides where a collapsing block's preview goes
+ * when there is room for it to go there.
  */
 export function toggleCodeBlock(pre, { clientY = null } = {}) {
   const scroller = scrollerOf(pre);
