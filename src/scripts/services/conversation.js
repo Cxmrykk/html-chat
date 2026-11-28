@@ -95,12 +95,16 @@ export function removeChat(id) {
   return removeChats([id]);
 }
 
-/** Lock a chat (Auto-Purge and Reset Chats keep it), or unlock it. */
-export async function toggleChatLock(id) {
+/**
+ * Name a chat, or with an empty `name`, take its name away. A named chat
+ * shows its name in the sidebar, and is kept by Auto-Purge and Reset Chats.
+ */
+export async function renameChat(id, name) {
   const chat = findChat(id);
   if (!chat) return;
-  if (chat.locked) delete chat.locked;
-  else chat.locked = true;
+  const trimmed = String(name ?? '').trim();
+  if (trimmed) chat.name = trimmed;
+  else delete chat.name;
   await persistChat(id);
   emit(EVENTS.CHATS);
 }
@@ -109,6 +113,7 @@ export async function toggleChatLock(id) {
  * A fork taken mid-turn copies a thinking message that is still counting or a
  * call that is still running. Nothing will ever finish them in the copy, so
  * the copy goes through `normalizeChat`, which settles them as interrupted.
+ * The fork is unnamed, whatever the original is called.
  */
 export async function forkChat(messageIndex) {
   const chat = currentChat();

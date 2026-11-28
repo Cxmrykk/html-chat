@@ -276,7 +276,7 @@ export const GLOBAL_SETTINGS = {
     default: 'false',
     tooltip:
       'Send the images the image tools made back to the model, in a user message right after the tool results, so it can check them and adjust. ' +
-      'Off, a tool result carries only the images’ ids and sizes. Click to switch.',
+      'Off, a tool result carries only the images’ ids and sizes. The image count beside each chat follows this. Click to switch.',
     display: showOnOff,
   },
   editMaxPixels: {
@@ -304,7 +304,7 @@ export const GLOBAL_SETTINGS = {
     type: 'number',
     default: '0',
     tooltip:
-      'Delete chats that have not changed for more than this many days, on load and every hour. Locked chats and the open chat are never deleted. ' +
+      'Delete chats that have not changed for more than this many days, on load and every hour. Named chats and the open chat are never deleted. ' +
       '0 turns Auto-Purge off.',
     display: showPurgeDays,
   },

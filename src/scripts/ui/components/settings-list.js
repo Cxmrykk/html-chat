@@ -11,7 +11,8 @@ import { pickBoolean } from '../../core/values.js';
  *
  * A `select` setting is drawn as a dropdown row (`selectRowHTML`) that saves
  * as soon as a choice is made; a `boolean` setting as a switch that flips
- * with a click; every other setting is a button that opens it in the editor.
+ * with a click, reading On or Off; every other setting is a button that opens
+ * it in the editor.
  */
 
 /**
@@ -77,11 +78,11 @@ function buttonRowHTML(key, entry, activeKey, summary) {
     </button>`;
 }
 
-/** An On/Off setting: a switch, outlined while on, that flips with a click. */
+/** An On/Off setting: a plain row that flips with a click and reads On or Off. */
 function toggleRowHTML(key, entry, value, summary) {
   const on = pickBoolean(pickBoolean(false, entry.default), value);
   return `
-    <button class="setting-row setting-choice setting-toggle${on ? ' is-on' : ''}"
+    <button class="setting-row setting-toggle"
             data-command="settings.toggleBoolean" data-key="${escapeHTML(key)}"
             role="switch" aria-checked="${on ? 'true' : 'false'}"
             title="${escapeHTML(entry.tooltip)}">

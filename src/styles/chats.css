@@ -2,7 +2,7 @@
  * The chats page (ui/views/chats-view.js)
  *
  * Built from the settings page's pieces (panel, headings, cards), plus a
- * date-grouped list of chats. Each row opens its chat; its padlock and
+ * date-grouped list of chats. Each row opens its chat; its rename and
  * delete buttons are the sidebar's.
  * ------------------------------------------------------------------ */
 
@@ -84,6 +84,19 @@
 .chat-result-time {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.chat-result-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: bold;
+  color: var(--text);
+}
+
+.chat-result-head .chat-stats {
+  flex-shrink: 0;
 }
 
 .chat-result-count {

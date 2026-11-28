@@ -33,8 +33,11 @@ const DISCOVERY_KEYS = ['probeCapabilities'];
 const MODEL_LIST_KEYS = ['extraModels', 'imageModels', 'modelFilterMode', 'modelFilterList'];
 /** Settings that change how much the image cache may hold. */
 const IMAGE_CACHE_KEYS = ['imageCacheMB'];
-/** Settings that change how the chat list is drawn. */
-const CHAT_LIST_KEYS = ['chatDateGroups'];
+/**
+ * Settings that change how the chat lists are drawn: the date groups, and
+ * how many images each chat counts as sending.
+ */
+const CHAT_LIST_KEYS = ['chatDateGroups', 'sendGeneratedImages'];
 
 /** Whether `key` is read and written as `model`'s override. */
 function isScoped(key, model) {

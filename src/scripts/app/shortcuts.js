@@ -71,9 +71,11 @@ export function installShortcuts() {
 
     if (event.altKey && !event.ctrlKey && !event.metaKey) {
       const key = event.key.toLowerCase();
+      const current = state.data.currentChatId;
       const actions = {
         t: () => runCommand('chat.new', { event: {} }),
-        w: () => state.data.currentChatId && runCommand('chat.delete', { id: state.data.currentChatId }),
+        w: () => current && runCommand('chat.delete', { id: current }),
+        r: () => current && runCommand('chat.rename', { id: current }),
         p: () => runCommand('ui.toggleSidebar'),
         o: () => runCommand('ui.toggleTitle'),
         d: () => runCommand('ui.toggleTheme'),

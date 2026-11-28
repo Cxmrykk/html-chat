@@ -192,8 +192,6 @@ function renderChatsBar() {
     caseButton.setAttribute('aria-pressed', caseSensitive ? 'true' : 'false');
   }
 
-  setDisabled($('#chat-search-clear'), !query);
-
   const input = $('#chat-search-input');
   if (input) {
     if (input.value !== query) input.value = query;

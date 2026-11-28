@@ -5,7 +5,7 @@ import { pickNumber } from '../../core/values.js';
 import { GLOBAL_SETTINGS } from '../../core/settings-schema.js';
 import { groupChatsByDate, chatTimestamp, chatTimeLabel } from '../../core/chat-dates.js';
 import { createMatcher, searchChat } from '../../core/chat-search.js';
-import { chatPreview } from '../../core/chat-summary.js';
+import { chatName, chatPreview } from '../../core/chat-summary.js';
 import { messageMarkdown } from '../components/message.js';
 import { actionRowHTML } from '../components/settings-list.js';
 import { chatStatsLabel, chatActionsHTML } from '../components/chat-list.js';
@@ -14,7 +14,8 @@ import { chatStatsLabel, chatActionsHTML } from '../components/chat-list.js';
  * The chats page, opened from the Your Chats heading. It opens with the
  * actions on chats as a whole: exporting the open chat or every chat,
  * importing, Reset Chats, and where Auto-Purge stands. Under them, every
- * chat, grouped by date as in the sidebar.
+ * chat, grouped by date as in the sidebar: its time, its name if it has one,
+ * and its counts.
  *
  * The search typed in the bottom bar (`state.session.chatSearch`) narrows
  * the list to chats whose text matches — every message as copy would give it,
@@ -41,14 +42,18 @@ function purgeLabel() {
 function actionsHTML() {
   const chats = state.data.chats;
   const open = currentChat();
-  const removable = chats.filter((chat) => !chat.locked).length;
-  const locked = chats.length - removable;
+  const removable = chats.filter((chat) => !chatName(chat)).length;
+  const named = chats.length - removable;
+
+  const openLabel = open
+    ? chatName(open) || chatTimeLabel(chatTimestamp(open), { grouped: false }) || 'Open chat'
+    : 'No chat open';
 
   const cards = [
     actionRowHTML({
       command: 'chat.exportCurrent',
       label: 'Export Current Chat',
-      value: open ? chatTimeLabel(chatTimestamp(open), { grouped: false }) || 'Open chat' : 'No chat open',
+      value: openLabel,
       title: 'Download the open chat as a JSON file',
       disabled: !open,
     }),
@@ -69,18 +74,18 @@ function actionsHTML() {
       command: 'chat.resetAll',
       label: 'Reset Chats',
       value: removable
-        ? `Delete ${chatCount(removable)}${locked ? `, keep ${locked} locked` : ''}`
+        ? `Delete ${chatCount(removable)}${named ? `, keep ${named} named` : ''}`
         : chats.length
-          ? 'All locked'
+          ? 'All named'
           : 'No chats',
-      title: 'Delete every chat that is not locked. Export them first to keep a copy.',
+      title: 'Delete every chat that has no name. Export them first to keep a copy.',
       disabled: !removable,
     }),
     actionRowHTML({
       command: 'settings.toggle',
       label: 'Auto-Purge',
       value: purgeLabel(),
-      title: 'Change Auto-Purge Days under Chats, in the settings. Locked chats are never purged.',
+      title: 'Change Auto-Purge Days under Chats, in the settings. Named chats are never purged.',
     }),
   ];
 
@@ -106,13 +111,15 @@ function matchCount(hit) {
 
 function rowHTML(chat, hit) {
   const id = escapeHTML(chat.id);
+  const name = chatName(chat);
   const classes = ['chat-result'];
   if (chat.id === state.data.currentChatId) classes.push('active');
-  if (chat.locked) classes.push('locked');
+  if (name) classes.push('named');
 
   const time = chatTimeLabel(chatTimestamp(chat), { grouped: true });
   const head = [
     time ? `<span class="chat-result-time">${escapeHTML(time)}</span>` : '',
+    name ? `<span class="chat-result-name">${escapeHTML(name)}</span>` : '',
     `<span class="chat-stats" data-chat-stats="${id}">${escapeHTML(chatStatsLabel(chat))}</span>`,
     hit ? `<span class="chat-result-count">${escapeHTML(matchCount(hit))}</span>` : '',
   ].join('');
@@ -158,8 +165,8 @@ function listHTML() {
   if (!matcher.ok) return noteHTML(`Invalid pattern: ${matcher.error}`, 'chat-search-error');
 
   if (matcher.empty) {
-    const locked = chats.filter((chat) => chat.locked).length;
-    const summary = `${chatCount(chats.length)}${locked ? `, ${locked} locked` : ''}.`;
+    const named = chats.filter((chat) => chatName(chat)).length;
+    const summary = `${chatCount(chats.length)}${named ? `, ${named} named` : ''}.`;
     return noteHTML(summary) + groupsHTML(chats.map((chat) => ({ chat, hit: null })));
   }
 

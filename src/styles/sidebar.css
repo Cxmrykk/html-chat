@@ -147,30 +147,27 @@
   font-weight: bold;
 }
 
-/* When the chat was made, then its token and image count. */
+/* The chat's name, or its token and image count. */
 .chat-item-title {
   cursor: pointer;
   flex-grow: 1;
   display: flex;
   align-items: baseline;
-  gap: 8px;
   overflow: hidden;
   white-space: nowrap;
   min-width: 0;
   margin-right: 10px;
 }
 
-.chat-item-time {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
+.chat-name,
 .chat-stats {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chat-stats {
   font-variant-numeric: tabular-nums;
 }
 
@@ -188,22 +185,6 @@
 .chat-item-actions button .icon {
   width: 1em;
   height: 1em;
-}
-
-/* An open padlock is faint; a locked chat's padlock stands out. */
-.chat-item-actions .lock-btn {
-  opacity: 0.45;
-}
-
-.chat-item-actions .lock-btn:hover {
-  opacity: 1;
-}
-
-.chat-item.locked .lock-btn,
-.chat-result.locked .lock-btn {
-  opacity: 1;
-  color: var(--accent);
-  border-color: var(--accent);
 }
 
 body.ctrl-down .chat-item:hover {

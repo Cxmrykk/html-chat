@@ -7,10 +7,11 @@ import { normalizeAttachments } from './attachments.js';
  * Bringing a chat record — from storage, from an import, or from a fork — up
  * to the current message model.
  *
- * A chat has no name: it is told apart by when it was made and what it holds
- * (`core/chat-summary.js`), so any stored `title` is dropped. It may be
- * `locked` (kept from Auto-Purge and Reset Chats), and carries `updatedAt`,
- * when it last changed (`core/chat-retention.js`).
+ * A chat may have a `name`, given by the user; a named chat is kept by
+ * Auto-Purge and Reset Chats. Chats once carried a `title` generated from
+ * their first message, and briefly a `locked` flag; both are dropped, so no
+ * chat gets a name the user did not give it. `updatedAt` is when the chat
+ * last changed (`core/chat-retention.js`).
  *
  * Files used to be inserted into the transcript as `file` messages, either
  * whole or as a retrieval placeholder. A whole file already carries the exact
@@ -364,14 +365,21 @@ function normalizeMessages(messages) {
 /** Idempotent: a current record comes back equivalent. */
 export function normalizeChat(chat) {
   // `fileIds` named the files a chat could search, when file search existed;
-  // `title` is from when chats had names.
-  const { fileIds: _retired, title: _title, locked, updatedAt, ...rest } = chat || {};
+  // `title` was generated, never given; `locked` became naming.
+  const {
+    fileIds: _retired,
+    title: _title,
+    locked: _locked,
+    name,
+    updatedAt,
+    ...rest
+  } = chat || {};
   const messages = Array.isArray(rest.messages) ? rest.messages : [];
   const out = {
     ...rest,
     messages: normalizeMessages(messages),
   };
-  if (locked === true) out.locked = true;
+  if (typeof name === 'string' && name.trim()) out.name = name.trim();
   const touched = Number(updatedAt);
   if (Number.isFinite(touched) && touched > 0) out.updatedAt = touched;
   return out;

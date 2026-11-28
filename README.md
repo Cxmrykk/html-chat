@@ -13,7 +13,7 @@ Features:
 - Edit, retry, fork and delete any message, or change its role
 - Markdown, syntax highlighting and KaTeX math
 - Chat list grouped by date, with a page to search every chat (text, wildcard or regex)
-- Chat locking and automatic purging of old chats
+- Named chats, kept by automatic purging of old chats
 - Import and export of one chat, all chats, or the settings
 - Light and dark themes, keyboard navigation
 
@@ -110,9 +110,23 @@ Each turn's reasoning, the text written alongside tool calls, and the tool calls
 
 ## Chats
 
-Chats have no names. Each one in the sidebar shows when it was created, then its estimated size (4 characters per token, as it would be sent) and how many images it holds, e.g. `14:32  1.2k tokens · 2 images`. Hover it to see how it began.
+In the sidebar, a chat without a name shows its estimated size (4 characters per token, as it would be sent) and how many images go with it, e.g. `1.2k tokens + 5`. A named chat shows its name. Hover any chat for the exact counts and how it began.
+
+Token counts are shortened to save space: the raw number below 1,000, then one decimal below 100 of a unit (dropped when it's `.0`) and none from 100 up: `999`, `1k`, `1.1k`, `12.3k`, `100k`, `1M`, `12.5M`, `250M`.
+
+The `+ N` counts the images sent as image parts: every image you attached, each time a message carries it, plus, with **Send Generated Images** on, every image the model made, once each.
 
 Chats are grouped by creation date: Today, Yesterday, one heading per day for the last 30 days, then Older. Click a heading to collapse its group. Turn this off with **Chat Date Groups**.
+
+### Naming chats
+
+Click the pencil beside a chat (or press `Alt+R`) to name it. A named chat:
+
+- shows its name in the sidebar instead of its counts;
+- is never deleted by Auto-Purge or Reset Chats;
+- asks for confirmation before you delete it yourself.
+
+Clear the name to undo all of this.
 
 ### The chats page
 
@@ -123,7 +137,7 @@ Click **Your Chats** to open it. It holds:
 | Export Current Chat | Downloads the open chat as JSON                                                        |
 | Export All Chats    | Downloads every chat as one JSON file                                                  |
 | Import Chats        | Reads either export. Chats whose id already exists are skipped                         |
-| Reset Chats         | Deletes every chat that isn't locked, after a confirmation                             |
+| Reset Chats         | Deletes every chat that has no name, after a confirmation                              |
 | Auto-Purge          | Shows the current setting; click to open the settings                                  |
 
 Below them, every chat, grouped by date. Type in the bottom box to search all of them, reasoning and tool calls included:
@@ -136,11 +150,9 @@ Below them, every chat, grouped by date. Type in the bottom box to search all of
 
 > A regular expression runs on your own machine. A pathological one (catastrophic backtracking) can freeze the page.
 
-### Locking and Auto-Purge
+### Auto-Purge
 
-Click the padlock beside a chat to lock it. Locked chats are kept by Auto-Purge and Reset Chats; deleting one asks first.
-
-**Auto-Purge Days** (under *Chats* in the settings, default `0`, off) deletes chats unchanged for longer than that many days, on load and every hour. Locked chats and the open chat are kept. Setting a value that would delete chats right away asks first; cancelling restores the previous value.
+**Auto-Purge Days** (under *Chats* in the settings, default `0`, off) deletes chats unchanged for longer than that many days, on load and every hour. Named chats and the open chat are kept. Setting a value that would delete chats right away asks first; cancelling restores the previous value.
 
 ## Images
 
@@ -215,9 +227,9 @@ The **Model** row at the top of LLM Behavior picks whose parameters you're editi
 | Placeholder Width, Placeholder Max Pixels                       | 64, 4096          | Size of the stored placeholder                                           |
 | Vision Max Pixels, Vision Scaling Method                        | 4194304, high     | Scales images sent to chat models. `0` sends full size                   |
 | Identify Image Models, Toggle Image Models                      | none, all         | Pages for marking image models and which ones the tools may use          |
-| Send Generated Images                                           | off               | Send generated images back to the model                                  |
+| Send Generated Images                                           | off               | Send generated images back to the model; counted in each chat's `+ N`    |
 | Edit Max Pixels, Edit Scaling Method                            | 4194304, high     | Scales images sent for editing. `0` sends full size                      |
-| Auto-Purge Days                                                 | 0 (off)           | Delete chats unchanged for longer. Locked chats are kept                 |
+| Auto-Purge Days                                                 | 0 (off)           | Delete chats unchanged for longer. Named chats are kept                  |
 | Chat Date Groups                                                | on                | Group the chat list by date                                              |
 | Collapse Thinking                                               | on                | New thinking boxes start closed                                          |
 | Auto-Collapse Code, Threshold, Preview Lines, Hint              | on, 20, 5, on     | Long code blocks fold                                                    |
@@ -228,7 +240,7 @@ Scaling methods: smooth (high, medium or low quality), progressive halving, or n
 
 | Shortcut                             | Action                               |
 | ------------------------------------ | ------------------------------------ |
-| `Alt+T` / `Alt+W`                    | New / delete chat                    |
+| `Alt+T` / `Alt+W` / `Alt+R`          | New / delete / name chat             |
 | `Alt+↑` / `Alt+↓`                    | Previous / next chat                 |
 | `Alt+P` / `Alt+O` / `Alt+D`          | Toggle sidebar / title / dark mode   |
 | `Alt+I`                              | Advanced settings                    |
@@ -247,7 +259,7 @@ Scaling methods: smooth (high, medium or low quality), progressive halving, or n
 - Clearing site data deletes your chats and key. Export to back up.
 - Settings exports never contain your API key; keep a copy of it elsewhere.
 - Ollama reports the trained context length, which may exceed `num_ctx`.
-- Chats no longer have names, and renaming is gone. Titles stored by earlier versions are dropped.
+- Chat titles generated by earlier versions are dropped: only names you give a chat are kept.
 - Image models used to be detected automatically. They now have to be identified once by hand.
 - Chatting directly with image models has been removed, along with the **Image Models in Chat** and **Image Parameters** settings. Images from earlier chats with them are still shown.
 - Old file-search data is deleted on load. Old search calls in chats are shown by name with their raw arguments.

@@ -25,6 +25,7 @@ import { attachmentsOf } from '../core/attachments.js';
 import { callAt } from '../core/thinking.js';
 import { isPerModel } from '../core/settings-schema.js';
 import { chatTimestamp } from '../core/chat-dates.js';
+import { chatName } from '../core/chat-summary.js';
 import { SEARCH_MODES } from '../core/chat-search.js';
 import { nextRange, sameRange, editSlice, applyEdit } from '../core/edit-range.js';
 import { ICON_CHECK } from '../ui/icons.js';
@@ -294,7 +295,7 @@ async function guardPurge(previous) {
   const days = conversation.purgeDays();
   const proceed = confirm(
     `Auto-Purge is now ${days} day(s): ${doomed.length} chat(s) unchanged for longer than that ` +
-      'will be deleted now, and others as they reach that age. Locked chats and the open chat are kept.\n\n' +
+      'will be deleted now, and others as they reach that age. Named chats and the open chat are kept.\n\n' +
       'Delete them now? Cancel keeps them and restores the previous Auto-Purge value.',
   );
   if (!proceed) {
@@ -453,8 +454,13 @@ export const commands = {
       })
       .join('');
 
+    const name = chatName(chat);
     const created = chatTimestamp(chat);
-    const heading = created ? `# Chat from ${new Date(created).toLocaleString()}` : '# Chat';
+    const heading = name
+      ? `# ${name}`
+      : created
+        ? `# Chat from ${new Date(created).toLocaleString()}`
+        : '# Chat';
 
     navigator.clipboard.writeText(`${heading}\n\n${body}`.trim()).then(() => {
       const item = element?.closest('[data-id]');
@@ -464,22 +470,31 @@ export const commands = {
     });
   },
 
-  /** Delete a chat. A locked one is asked about first. */
+  /**
+   * Name a chat, or rename it. Leaving the name empty removes it. A named
+   * chat shows its name in the sidebar and is kept by Auto-Purge and Reset
+   * Chats.
+   */
+  'chat.rename': async ({ id }) => {
+    const chat = state.data.chats.find((entry) => entry.id === id);
+    if (!chat) return;
+    const name = prompt(
+      'Name this chat. A named chat is kept by Auto-Purge and Reset Chats.\nLeave it empty to remove the name.',
+      chatName(chat),
+    );
+    if (name === null) return;
+    await conversation.renameChat(id, name);
+  },
+
+  /** Delete a chat. A named one is asked about first. */
   'chat.delete': async ({ id }) => {
     const chat = state.data.chats.find((entry) => entry.id === id);
     if (!chat) return;
-    if (chat.locked && !confirm('This chat is locked. Delete it anyway? This cannot be undone.')) {
-      return;
-    }
+    const name = chatName(chat);
+    if (name && !confirm(`Delete "${name}"? This cannot be undone.`)) return;
     if (id === state.data.currentChatId) stopEditing();
     if (state.session.view === 'settings') showTranscript();
     await conversation.removeChat(id);
-  },
-
-  /** Lock a chat (kept by Auto-Purge and Reset Chats), or unlock it. */
-  'chat.toggleLock': async ({ id }) => {
-    if (!id) return;
-    await conversation.toggleChatLock(id);
   },
 
   /* ---- chats page ---- */
@@ -497,18 +512,18 @@ export const commands = {
   'chats.import': () => importFile('chats'),
 
   /**
-   * Delete every chat that is not locked, after asking: Reset Chats. A reply
+   * Delete every chat that has no name, after asking: Reset Chats. A reply
    * in progress is stopped first.
    */
   'chat.resetAll': async () => {
     const chats = state.data.chats;
-    const removable = chats.filter((chat) => !chat.locked);
+    const removable = chats.filter((chat) => !chatName(chat));
     if (!removable.length) return;
-    const locked = chats.length - removable.length;
+    const named = chats.length - removable.length;
 
     const question =
       `Delete ${removable.length} chat(s)? This cannot be undone.` +
-      (locked ? `\n\n${locked} locked chat(s) are kept.` : '') +
+      (named ? `\n\n${named} named chat(s) are kept.` : '') +
       '\n\nUse Export All Chats first to keep a copy.';
     if (!confirm(question)) return;
 
@@ -526,11 +541,6 @@ export const commands = {
 
   'chats.toggleCase': () => {
     setSearch({ caseSensitive: !state.session.chatSearch.caseSensitive });
-  },
-
-  'chats.clearSearch': () => {
-    setSearch({ query: '' });
-    $('#chat-search-input')?.focus();
   },
 
   /* ---- composing ---- */
