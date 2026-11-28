@@ -129,9 +129,9 @@ function editingMessage() {
 }
 
 /**
- * The attach button, left of Send (or of Save while a message is being
- * edited, where what it picks goes to that message). Hidden while a reply is
- * being processed, and while the thinking levels are being edited.
+ * The attach button, left of the model dropdown (or of Save while a message is
+ * being edited, where what it picks goes to that message). Hidden while a
+ * reply is being processed, and while the thinking levels are being edited.
  */
 export function renderAttachButton() {
   const button = $('#attach-btn');
