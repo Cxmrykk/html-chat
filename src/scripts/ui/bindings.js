@@ -2,7 +2,7 @@ import { $ } from './dom.js';
 import { on, state, currentChat } from '../store/state.js';
 import { EVENTS } from '../store/events.js';
 import { isModelOutput } from '../core/roles.js';
-import { renderChatList } from './components/chat-list.js';
+import { renderChatList, updateChatStats } from './components/chat-list.js';
 import {
   replaceMessage,
   updateMessageContent,
@@ -28,6 +28,7 @@ import {
   scrollToBottom,
 } from './views/chat-view.js';
 import { renderSettingsView } from './views/settings-view.js';
+import { renderChatsView } from './views/chats-view.js';
 import { syncTicker } from './ticker.js';
 
 /** Declarative event bindings mapping store events to UI renders. */
@@ -37,11 +38,10 @@ import { syncTicker } from './ticker.js';
  * the part being edited lives inside the row, so a new row needs it redrawn.
  */
 export function renderMainView({ preserveScroll = false } = {}) {
-  if (state.session.view === 'settings') {
-    renderSettingsView();
-  } else {
-    renderChatView({ preserveScroll });
-  }
+  const view = state.session.view;
+  if (view === 'settings') renderSettingsView();
+  else if (view === 'chats') renderChatsView();
+  else renderChatView({ preserveScroll });
   syncEditSelection();
 }
 
@@ -57,8 +57,12 @@ export function renderAll() {
 export function installBindings() {
   on(EVENTS.CHATS, () => {
     renderChatList();
-    // Quick Actions read the chat list: the open chat, and how many there are.
-    if (state.session.view === 'settings') renderSettingsView();
+    // The chats page lists every chat, and acts on them.
+    if (state.session.view === 'chats') renderChatsView();
+  });
+
+  on(EVENTS.SEARCH, () => {
+    if (state.session.view === 'chats') renderChatsView();
   });
 
   on(EVENTS.MESSAGES, () => {
@@ -135,7 +139,6 @@ export function installBindings() {
       const follow = !isModelOutput(message) || isPinnedToBottom();
       appendMessageToView(message, index, { follow });
     }
-    renderSendButton();
   });
 
   on(EVENTS.EDIT, () => {
@@ -169,8 +172,9 @@ export function installBindings() {
     syncTicker(state.runtime.generation.active);
   });
 
-  on(EVENTS.CONTEXT, () => {
-    renderSendButton();
+  on(EVENTS.CONTEXT, ({ chatId } = {}) => {
+    // Only the counts shown for that chat change, wherever they are.
+    updateChatStats(chatId);
   });
 
   on(EVENTS.MODELS, () => {
@@ -178,7 +182,7 @@ export function installBindings() {
     // The Image Manipulation switch shows only once an image model is identified.
     renderConnectionForm();
     // The settings view lists the models parameters can be set for, the
-    // image model pickers, and what each setting currently reads.
+    // model pickers, and what each setting currently reads.
     if (state.session.view === 'settings') renderSettingsView();
   });
 

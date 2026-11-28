@@ -1,22 +1,19 @@
 import { $, setHidden, setDisabled } from '../dom.js';
 import { state, currentChat } from '../../store/state.js';
-import { estimateTokens } from '../../core/tokens.js';
-import { formatCompactCount, escapeHTML } from '../../core/format.js';
-import { buildApiMessages, payloadChars } from '../../core/tool-calls.js';
-import { toolSchemaChars, toolActivityLabel } from '../../core/tools.js';
+import { escapeHTML } from '../../core/format.js';
 import { GLOBAL_SETTINGS, isPerModel, describeSetting } from '../../core/settings-schema.js';
 import { OMIT } from '../../core/model-params.js';
+import { SEARCH_MODES } from '../../core/chat-search.js';
 import {
   describeCapabilities,
   capabilitySourceLabel,
   DEFAULT_EFFORT,
 } from '../../core/capabilities.js';
 import { availableModels, capabilitiesFor, reasoningChoicesFor } from '../../services/models.js';
-import { toolSchemasFor } from '../../services/tools/index.js';
 import { composerAttachmentsHTML } from './attachments.js';
 import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
 
-/** Input area components: composer and settings editor bars. */
+/** Input area components: the composer, settings editor and chat search bars. */
 
 const PROMPT_PLACEHOLDER = 'Type your prompt here...';
 const PICK_PLACEHOLDER =
@@ -57,11 +54,11 @@ function renderReasoningDropdown(select) {
 
 /**
  * The model dropdown, driven by whatever `services/models.js` last
- * discovered (plus any manually configured extras). It lists text models
- * only: image models are reached through the image tools. When editing
- * thinking, the options flip to the reasoning levels. A name too long for the
- * dropdown scrolls (see `ui/marquee.js`). Hovering it says what the selected
- * model can do, when its endpoint said.
+ * discovered (plus any manually configured extras), less what the model
+ * filter hides. It lists text models only: image models are reached through
+ * the image tools. When editing thinking, the options flip to the reasoning
+ * levels. A name too long for the dropdown scrolls (see `ui/marquee.js`).
+ * Hovering it says what the selected model can do, when its endpoint said.
  */
 export function updateModelDropdown() {
   const select = $('#model-select');
@@ -100,62 +97,23 @@ export function updateModelDropdown() {
   syncSelectMarquee(select);
 }
 
-/**
- * Cached estimated character count for conversation context. It is measured
- * on the very payload a send would build, so whatever is left out of the
- * request (errors, thinking, unpaired tool calls) is left out of the estimate,
- * and the tool definitions that ride along with every request are counted.
- * Images are not: what they cost depends on the provider.
- */
-function contextChars() {
-  if (state.runtime.contextChars !== -1) return state.runtime.contextChars;
-
-  let total = 0;
-  const chat = currentChat();
-  if (chat) {
-    total = payloadChars(buildApiMessages(chat.messages)) + toolSchemaChars(toolSchemasFor());
-  }
-
-  state.runtime.contextChars = total;
-  return total;
-}
-
-function generationLabel({ phase, tool, loop, maxLoops }) {
-  const suffix = loop > 0 ? ` (Round ${loop}/${maxLoops})` : '';
-  const verb =
-    phase === 'tool'
-      ? toolActivityLabel(tool)
-      : phase === 'generating'
-        ? 'Generating'
-        : 'Thinking';
-  return `${verb}${suffix}...`;
-}
-
-/** The text the send button should show right now. */
-function sendButtonText() {
-  if (state.runtime.generation.active) return generationLabel(state.runtime.generation);
-
-  const input = $('#chat-input');
-  const tokens = estimateTokens('x'.repeat((input?.value || '').length + contextChars()));
-  const label = formatCompactCount(tokens);
-  const pending = state.session.pendingAttachments?.length || 0;
-
-  const parts = [];
-  if (label) parts.push(`${label} tokens`);
-  if (pending) parts.push(`${pending} image${pending === 1 ? '' : 's'}`);
-  return parts.length ? `Send (${parts.join(' + ')})` : 'Send';
+/** What the send button says while a turn runs. */
+function generationLabel({ phase }) {
+  if (phase === 'tool') return 'Executing...';
+  if (phase === 'generating') return 'Generating...';
+  return 'Thinking...';
 }
 
 /**
- * The send button doubles as a token counter, and as the stop button while a
- * request is in flight. Its label stays on one line and scrolls when it does
- * not fit; the full text is always the button's accessible name.
+ * The send button, which doubles as the stop button while a request is in
+ * flight. Its label stays on one line and scrolls when it does not fit; the
+ * full text is always the button's accessible name.
  */
 export function renderSendButton() {
   const button = $('#send-btn');
   if (!button) return;
 
-  const text = sendButtonText();
+  const text = state.runtime.generation.active ? generationLabel(state.runtime.generation) : 'Send';
   if (button.getAttribute('aria-label') !== text) button.setAttribute('aria-label', text);
   setMarqueeText(button.querySelector('.marquee-label') || button, text);
 }
@@ -210,16 +168,56 @@ function renderComposerMode(chatInput, editingMsg) {
   else chatInput.placeholder = picking ? PICK_PLACEHOLDER : EDIT_PLACEHOLDER;
 }
 
+/**
+ * The chats page's search bar: how the text is matched, whether case counts,
+ * and the query itself. The query is only written back when it differs, so
+ * a redraw never moves the caret while typing.
+ */
+function renderChatsBar() {
+  const { query, mode, caseSensitive } = state.session.chatSearch;
+
+  const select = $('#chat-search-mode');
+  if (select) {
+    if (!select.options.length) {
+      select.innerHTML = SEARCH_MODES.map(
+        (entry) => `<option value="${escapeHTML(entry.value)}">${escapeHTML(entry.label)}</option>`,
+      ).join('');
+    }
+    if (select.value !== mode) select.value = mode;
+  }
+
+  const caseButton = $('#chat-search-case');
+  if (caseButton) {
+    caseButton.textContent = caseSensitive ? 'Case: On' : 'Case: Off';
+    caseButton.setAttribute('aria-pressed', caseSensitive ? 'true' : 'false');
+  }
+
+  setDisabled($('#chat-search-clear'), !query);
+
+  const input = $('#chat-search-input');
+  if (input) {
+    if (input.value !== query) input.value = query;
+    input.placeholder = (SEARCH_MODES.find((entry) => entry.value === mode) || SEARCH_MODES[0]).hint;
+  }
+}
+
 /** Show the bar that belongs to the current view, and the right buttons within. */
 export function renderInputArea() {
   const view = state.session.view;
 
   setHidden($('#composer-bar'), view !== 'chat');
   setHidden($('#settings-bar'), view !== 'settings');
+  setHidden($('#chats-bar'), view !== 'chats');
 
   if (view === 'settings') {
     renderSettingsEditor();
     // The pending images belong to the composer: out of sight with it.
+    renderComposerAttachments();
+    return;
+  }
+
+  if (view === 'chats') {
+    renderChatsBar();
     renderComposerAttachments();
     return;
   }

@@ -104,9 +104,14 @@ export function parseImport(rawJson) {
   );
 }
 
-/** Add the chats of an import, skipping any whose id already exists. Resolves with how many were added. */
+/**
+ * Add the chats of an import, skipping any whose id already exists. Resolves
+ * with how many were added. An imported chat counts as just changed, so
+ * Auto-Purge does not delete it straight away.
+ */
 export async function addChats(imported) {
   const existingIds = new Set(state.data.chats.map((chat) => chat.id));
+  const now = Date.now();
   let added = 0;
 
   for (const entry of imported) {
@@ -114,6 +119,7 @@ export async function addChats(imported) {
     if (existingIds.has(entry.id)) continue;
     // Exports from before tool calling still carry `file` messages.
     const chat = normalizeChat(entry);
+    chat.updatedAt = now;
     state.data.chats.push(chat);
     existingIds.add(chat.id);
     await chatsRepo.saveChat(chat);

@@ -1,0 +1,123 @@
+/* ------------------------------------------------------------------ *
+ * The chats page (ui/views/chats-view.js)
+ *
+ * Built from the settings page's pieces (panel, headings, cards), plus a
+ * date-grouped list of chats. Each row opens its chat; its padlock and
+ * delete buttons are the sidebar's.
+ * ------------------------------------------------------------------ */
+
+.chat-manager-list > .settings-note {
+  margin: 10px 0;
+}
+
+.chat-search-error {
+  color: var(--role-error);
+  font-weight: bold;
+}
+
+/*
+ * Sticks to the top of the transcript box while its chats scroll under it.
+ * The box has 15px of padding, so the heading sticks that far up.
+ */
+.chat-manager-date {
+  position: sticky;
+  top: -15px;
+  z-index: 1;
+  margin: 15px 0 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid currentColor;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 0.75em;
+  text-transform: uppercase;
+}
+
+.chat-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-raised);
+}
+
+.chat-result:hover {
+  background: var(--bg-soft-hover);
+}
+
+.chat-result.active {
+  border-color: var(--border);
+}
+
+.chat-result-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.chat-result-main:hover {
+  background: transparent;
+}
+
+.chat-result-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.chat-result.active .chat-result-head {
+  font-weight: bold;
+}
+
+.chat-result-time {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-result-count {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--accent);
+}
+
+.chat-result-preview,
+.chat-result-snippet {
+  display: block;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.chat-result-role {
+  margin-right: 6px;
+  font-size: 0.8em;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.chat-result-snippet mark {
+  background: var(--accent);
+  color: #fff;
+  padding: 0 1px;
+}
+
+.chat-result .chat-item-actions {
+  margin-top: 2px;
+}
+
+#chat-search-case[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}

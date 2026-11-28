@@ -18,11 +18,14 @@ import { pickJSONText, pickFiles } from '../services/file-io.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { hydrateConnectionForm } from '../ui/components/connection-form.js';
+import { scrollToMessage } from '../ui/views/chat-view.js';
 import { sourceBlocks } from '../ui/markdown.js';
 import { isSendable, isEditable, isThinking, isPreamble } from '../core/roles.js';
 import { attachmentsOf } from '../core/attachments.js';
 import { callAt } from '../core/thinking.js';
 import { isPerModel } from '../core/settings-schema.js';
+import { chatTimestamp } from '../core/chat-dates.js';
+import { SEARCH_MODES } from '../core/chat-search.js';
 import { nextRange, sameRange, editSlice, applyEdit } from '../core/edit-range.js';
 import { ICON_CHECK } from '../ui/icons.js';
 
@@ -39,14 +42,17 @@ import { ICON_CHECK } from '../ui/icons.js';
  */
 
 /** The pages of the settings view (`ui/views/settings-view.js`). */
-const SETTINGS_PAGES = ['main', 'imageModels', 'imageToolModels'];
+const SETTINGS_PAGES = ['main', 'imageModels', 'imageToolModels', 'modelFilter'];
+
+/** How long a message found by a search stays highlighted after opening its chat. */
+const REVEAL_MS = 600;
 
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
 
-/** Back to the transcript from the settings view. */
-function leaveSettings(patch = {}) {
+/** Back to the transcript from the settings or the chats page. */
+function showTranscript(patch = {}) {
   setSession({
     view: 'chat',
     settingsPage: 'main',
@@ -146,10 +152,17 @@ function clearEditRange() {
   emit(EVENTS.EDIT);
 }
 
+function collapseSidebarOnMobile() {
+  if (window.innerWidth <= 768 && !state.session.sidebarHidden) {
+    setSession({ sidebarHidden: true }, { silent: true });
+    persistPrefs();
+  }
+}
+
 /** Open the advanced settings, or close them if they are open. */
 function toggleSettings() {
   if (state.session.view === 'settings') {
-    leaveSettings();
+    showTranscript();
     return;
   }
   stopEditing();
@@ -162,11 +175,36 @@ function toggleSettings() {
   });
 }
 
-function collapseSidebarOnMobile() {
-  if (window.innerWidth <= 768 && !state.session.sidebarHidden) {
-    setSession({ sidebarHidden: true }, { silent: true });
-    persistPrefs();
+/** Open the chats page, or close it if it is open. */
+function toggleChats() {
+  if (state.session.view === 'chats') {
+    showTranscript();
+    return;
   }
+  stopEditing();
+  setSession({
+    view: 'chats',
+    settingsPage: 'main',
+    activeSettingKey: null,
+    settingsDraft: null,
+    editingThinking: false,
+  });
+  collapseSidebarOnMobile();
+  $('#chat-search-input')?.focus();
+}
+
+/** Change the chats page's search, and redraw what depends on it. */
+function setSearch(patch) {
+  setSession({ chatSearch: { ...state.session.chatSearch, ...patch } });
+}
+
+/** Scroll a message of the open chat into view, and flash it. */
+function revealMessage(index) {
+  scrollToMessage(index);
+  const element = $(`#chat-container .msg[data-index="${index}"]`);
+  if (!element) return;
+  element.classList.add('flash');
+  setTimeout(() => element.classList.remove('flash'), REVEAL_MS);
 }
 
 /** Replace the images waiting in the composer. */
@@ -236,12 +274,88 @@ function confirmSettingsImport(imported) {
     transfer.importedCodeExecution(imported) && !state.data.config.jsExecution;
   return confirm(
     'Replace your current settings with the ones in this file?\n\n' +
-      'Per-model overrides and identified image models are replaced too. ' +
+      'Per-model overrides, identified image models and the model filter are replaced too. ' +
       'Your API key is kept unless the file holds one, and your chats are not changed.' +
       (enablesCode
         ? '\n\nThis file turns Code Execution ON: the model will be able to run JavaScript in this page.'
         : ''),
   );
+}
+
+/**
+ * After Auto-Purge Days changed: if chats would be deleted now, ask first.
+ * Cancelling puts back `previous`, the value it had before. Resolves with
+ * whether the new value stands.
+ */
+async function guardPurge(previous) {
+  const doomed = conversation.purgeCandidates();
+  if (!doomed.length) return true;
+
+  const days = conversation.purgeDays();
+  const proceed = confirm(
+    `Auto-Purge is now ${days} day(s): ${doomed.length} chat(s) unchanged for longer than that ` +
+      'will be deleted now, and others as they reach that age. Locked chats and the open chat are kept.\n\n' +
+      'Delete them now? Cancel keeps them and restores the previous Auto-Purge value.',
+  );
+  if (!proceed) {
+    const restored = previous === undefined || previous === null ? '' : String(previous);
+    await settings.saveSetting('autoPurgeDays', restored);
+    return false;
+  }
+  await conversation.removeChats(doomed.map((chat) => chat.id));
+  return true;
+}
+
+/**
+ * Import a file made by any export. `expect` ('chats' or 'settings') refuses
+ * the other kind; null takes either. Settings replace the current ones,
+ * after asking.
+ */
+async function importFile(expect = null) {
+  const text = await pickJSONText();
+  if (!text) return;
+
+  let parsed;
+  try {
+    parsed = transfer.parseImport(text);
+  } catch (error) {
+    alert(`Failed to import: ${error.message}`);
+    return;
+  }
+
+  if (expect && parsed.kind !== expect) {
+    alert(
+      parsed.kind === 'settings'
+        ? 'This file holds settings, not chats. Import it with Import Settings, in the settings.'
+        : 'This file holds chats, not settings. Import it with Import Chats, on the chats page.',
+    );
+    return;
+  }
+
+  if (parsed.kind === 'settings') {
+    if (!confirmSettingsImport(parsed.settings)) return;
+    const previousPurge = state.data.config.autoPurgeDays;
+    try {
+      setSession(
+        { activeSettingKey: null, settingsDraft: null, settingsModel: null },
+        { silent: true },
+      );
+      await transfer.applySettings(parsed.settings);
+      hydrateConnectionForm();
+      await guardPurge(previousPurge);
+      alert('Settings imported.');
+    } catch (error) {
+      alert(`Failed to import settings: ${error.message}`);
+    }
+    return;
+  }
+
+  try {
+    const added = await transfer.addChats(parsed.chats);
+    alert(`Successfully imported ${added} new chat(s).`);
+  } catch (error) {
+    alert(`Failed to import chats: ${error.message}`);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -269,16 +383,20 @@ export const commands = {
   /* ---- chats ---- */
 
   'chat.new': async ({ event } = {}) => {
-    if (event?.altKey) return commands['data.import']();
+    if (event?.altKey) return importFile(null);
     stopEditing();
-    leaveSettings();
+    showTranscript();
     await conversation.createChat();
     collapseSidebarOnMobile();
     $('#chat-input')?.focus();
     return undefined;
   },
 
-  'chat.open': async ({ event, id }) => {
+  /**
+   * Open a chat. From a search result on the chats page (`key`, the index of
+   * the first matching message), that message is scrolled into view.
+   */
+  'chat.open': async ({ event, id, key }) => {
     if (event?.altKey) {
       event.preventDefault();
       transfer.exportChat(id);
@@ -289,10 +407,19 @@ export const commands = {
       commands['chat.copyTranscript']({ id, element: event.target });
       return;
     }
+    const fromSearch = state.session.view === 'chats';
     stopEditing();
-    leaveSettings();
+    showTranscript();
     await conversation.openChat(id);
     collapseSidebarOnMobile();
+
+    const at = Number.parseInt(key, 10);
+    if (fromSearch && Number.isInteger(at)) revealMessage(at);
+  },
+
+  /** Open or close the chats page: a click on the Your Chats heading. */
+  'chats.toggle': () => {
+    toggleChats();
   },
 
   /**
@@ -326,28 +453,36 @@ export const commands = {
       })
       .join('');
 
-    navigator.clipboard.writeText(`# ${chat.title}\n\n${body}`.trim()).then(() => {
-      const item = element?.closest('.chat-item');
+    const created = chatTimestamp(chat);
+    const heading = created ? `# Chat from ${new Date(created).toLocaleString()}` : '# Chat';
+
+    navigator.clipboard.writeText(`${heading}\n\n${body}`.trim()).then(() => {
+      const item = element?.closest('[data-id]');
       if (!item) return;
       item.classList.add('flash');
       setTimeout(() => item.classList.remove('flash'), 150);
     });
   },
 
-  'chat.rename': async ({ id }) => {
+  /** Delete a chat. A locked one is asked about first. */
+  'chat.delete': async ({ id }) => {
     const chat = state.data.chats.find((entry) => entry.id === id);
     if (!chat) return;
-    const title = prompt('Rename chat:', chat.title);
-    if (title) await conversation.renameChat(id, title);
-  },
-
-  'chat.delete': async ({ id }) => {
-    stopEditing();
-    leaveSettings();
+    if (chat.locked && !confirm('This chat is locked. Delete it anyway? This cannot be undone.')) {
+      return;
+    }
+    if (id === state.data.currentChatId) stopEditing();
+    if (state.session.view === 'settings') showTranscript();
     await conversation.removeChat(id);
   },
 
-  /* ---- quick actions ---- */
+  /** Lock a chat (kept by Auto-Purge and Reset Chats), or unlock it. */
+  'chat.toggleLock': async ({ id }) => {
+    if (!id) return;
+    await conversation.toggleChatLock(id);
+  },
+
+  /* ---- chats page ---- */
 
   /** The open chat as a JSON file: Export Current Chat. */
   'chat.exportCurrent': () => {
@@ -358,62 +493,44 @@ export const commands = {
   /** Every chat as one JSON file: Export All Chats. */
   'chat.export': () => transfer.exportAllChats(),
 
-  /** The settings as a JSON file, without the API key: Export Settings. */
-  'settings.export': () => transfer.exportSettings(),
+  /** Import one chat or all chats: Import Chats. */
+  'chats.import': () => importFile('chats'),
 
   /**
-   * Import any export: one chat, all chats, or the settings (Import under
-   * Quick Actions, or Alt+Click New). What the file holds is read from it.
-   * Settings replace the current ones, after asking.
+   * Delete every chat that is not locked, after asking: Reset Chats. A reply
+   * in progress is stopped first.
    */
-  'data.import': async () => {
-    const text = await pickJSONText();
-    if (!text) return;
-
-    let parsed;
-    try {
-      parsed = transfer.parseImport(text);
-    } catch (error) {
-      alert(`Failed to import: ${error.message}`);
-      return;
-    }
-
-    if (parsed.kind === 'settings') {
-      if (!confirmSettingsImport(parsed.settings)) return;
-      try {
-        setSession(
-          { activeSettingKey: null, settingsDraft: null, settingsModel: null },
-          { silent: true },
-        );
-        await transfer.applySettings(parsed.settings);
-        hydrateConnectionForm();
-        alert('Settings imported.');
-      } catch (error) {
-        alert(`Failed to import settings: ${error.message}`);
-      }
-      return;
-    }
-
-    try {
-      const added = await transfer.addChats(parsed.chats);
-      alert(`Successfully imported ${added} new chat(s).`);
-    } catch (error) {
-      alert(`Failed to import chats: ${error.message}`);
-    }
-  },
-
-  /** Delete every chat, after asking: Reset Chats. A reply in progress is stopped first. */
   'chat.resetAll': async () => {
-    const count = state.data.chats.length;
-    if (!count) return;
+    const chats = state.data.chats;
+    const removable = chats.filter((chat) => !chat.locked);
+    if (!removable.length) return;
+    const locked = chats.length - removable.length;
+
     const question =
-      `Delete all ${count} chat(s)? This cannot be undone.\n\n` +
-      'Use Export All Chats first to keep a copy.';
+      `Delete ${removable.length} chat(s)? This cannot be undone.` +
+      (locked ? `\n\n${locked} locked chat(s) are kept.` : '') +
+      '\n\nUse Export All Chats first to keep a copy.';
     if (!confirm(question)) return;
 
     if (state.runtime.generation.active) conversation.abortGeneration();
-    stopEditing();
-    await conversation.removeAllChats();
+    if (removable.some((chat) => chat.id === state.data.currentChatId)) stopEditing();
+    await conversation.removeChats(removable.map((chat) => chat.id));
+  },
+
+  /** How the search text is matched: Contains, Wildcard or Regex. */
+  'chats.setSearchMode': ({ element }) => {
+    const value = element?.value;
+    const mode = SEARCH_MODES.some((entry) => entry.value === value) ? value : 'text';
+    if (mode !== state.session.chatSearch.mode) setSearch({ mode });
+  },
+
+  'chats.toggleCase': () => {
+    setSearch({ caseSensitive: !state.session.chatSearch.caseSensitive });
+  },
+
+  'chats.clearSearch': () => {
+    setSearch({ query: '' });
+    $('#chat-search-input')?.focus();
   },
 
   /* ---- composing ---- */
@@ -784,7 +901,7 @@ export const commands = {
 
   'message.fork': async ({ index }) => {
     stopEditing();
-    leaveSettings();
+    showTranscript();
     await conversation.forkChat(index);
   },
 
@@ -868,6 +985,12 @@ export const commands = {
     toggleSettings();
   },
 
+  /** The settings as a JSON file, without the API key: Export Settings. */
+  'settings.export': () => transfer.exportSettings(),
+
+  /** Replace the settings with an exported set, after asking: Import Settings. */
+  'settings.import': () => importFile('settings'),
+
   /**
    * Show a page of the settings view (`key`): 'main', or one of the model
    * pickers. Toggle Image Models has nothing to show until an image model is
@@ -892,6 +1015,18 @@ export const commands = {
   'settings.toggleImageToolModel': async ({ key }) => {
     if (!key) return;
     await settings.toggleImageToolModel(key);
+  },
+
+  /** Put a model (`key`) on the model filter's list, or take it off: Filter Models. */
+  'settings.toggleModelFilter': async ({ key }) => {
+    if (!key) return;
+    await settings.toggleModelFilter(key);
+  },
+
+  /** Flip an On/Off setting (`key`): saved at once. */
+  'settings.toggleBoolean': async ({ key }) => {
+    if (!key) return;
+    await settings.toggleSetting(key);
   },
 
   /** A dropdown setting (`key`) changed: saved at once, as a global value. */
@@ -941,9 +1076,11 @@ export const commands = {
   'settings.save': async () => {
     const { activeSettingKey } = state.session;
     if (!activeSettingKey) return;
+    const previous = state.data.config[activeSettingKey];
     const value = $('#settings-input')?.value ?? '';
     await settings.saveSetting(activeSettingKey, value, settingScope(activeSettingKey));
     setSession({ activeSettingKey: null, settingsDraft: null });
+    if (activeSettingKey === 'autoPurgeDays') await guardPurge(previous);
   },
 
   'settings.reset': async () => {
@@ -965,7 +1102,7 @@ export const commands = {
     const model = state.session.settingsModel;
     const question = model
       ? `Remove every LLM Behavior override for "${model}"? It will use the defaults again. Other settings are not changed.`
-      : 'Reset ALL Advanced parameters to default? Per-model overrides and the identified image models are kept.';
+      : 'Reset ALL Advanced parameters to default? Per-model overrides, the identified image models and the model filter list are kept.';
     if (!confirm(question)) return;
     await settings.resetAllSettings(model);
     setSession({ activeSettingKey: null, settingsDraft: null });
@@ -978,7 +1115,7 @@ export const commands = {
    */
   'settings.close': () => {
     if (state.session.activeSettingKey) return;
-    leaveSettings();
+    showTranscript();
   },
 
   /* ---- thinking levels ---- */

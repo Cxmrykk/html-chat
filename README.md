@@ -6,12 +6,14 @@ Features:
 
 - Streaming chat with reasoning display (`reasoning_content` / `reasoning` fields, inline `<think>` tags, LiteLLM `thinking_blocks`)
 - Model capabilities (tools, thinking levels, vision, context length) read from LiteLLM, Ollama and `/models`
+- A model blacklist or whitelist for the dropdown
 - Per-model LLM parameters on top of shared defaults
 - Image attachments, and image generation and editing as tools
 - Tool calling: JavaScript execution in the page
 - Edit, retry, fork and delete any message, or change its role
 - Markdown, syntax highlighting and KaTeX math
-- Chat list grouped by date
+- Chat list grouped by date, with a page to search every chat (text, wildcard or regex)
+- Chat locking and automatic purging of old chats
 - Import and export of one chat, all chats, or the settings
 - Light and dark themes, keyboard navigation
 
@@ -52,6 +54,15 @@ After fetching `/models`, the app asks the server what each model supports. Requ
 
 Turn probing off with **Probe Capabilities**.
 
+### Filtering models
+
+Under **API & Connections**, **Model Filter Mode** picks a blacklist (the default) or a whitelist, and **Filter Models** opens the list of text models to click on or off:
+
+- **Blacklist**: the models marked *Hidden* are left out of the dropdown.
+- **Whitelist**: only the models marked *Shown* are offered. With none marked, no model is offered.
+
+A model the filter hides can't be sent to.
+
 ## Chatting
 
 | Action                         | How                                         |
@@ -61,7 +72,7 @@ Turn probing off with **Probe Capabilities**.
 | Stop                           | Click the send button while it's running    |
 | Set reasoning effort           | Ctrl+Click the model dropdown               |
 
-**Send** shows an estimated context size (4 characters per token), including tool definitions.
+While a turn runs, the send button reads **Thinking...**, **Generating...** or **Executing...** (a tool is running).
 
 The chat is for text models only. Image models never appear in the model dropdown. They are used through the image tools (see [Images](#images)).
 
@@ -97,9 +108,39 @@ After **Edit**, click a block (paragraph, list, code block) to load it into the 
 
 Each turn's reasoning, the text written alongside tool calls, and the tool calls with their results sit in one collapsible box. Its header shows how long you waited.
 
-### Chat list
+## Chats
+
+Chats have no names. Each one in the sidebar shows when it was created, then its estimated size (4 characters per token, as it would be sent) and how many images it holds, e.g. `14:32  1.2k tokens · 2 images`. Hover it to see how it began.
 
 Chats are grouped by creation date: Today, Yesterday, one heading per day for the last 30 days, then Older. Click a heading to collapse its group. Turn this off with **Chat Date Groups**.
+
+### The chats page
+
+Click **Your Chats** to open it. It holds:
+
+| Card                | Does                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| Export Current Chat | Downloads the open chat as JSON                                                        |
+| Export All Chats    | Downloads every chat as one JSON file                                                  |
+| Import Chats        | Reads either export. Chats whose id already exists are skipped                         |
+| Reset Chats         | Deletes every chat that isn't locked, after a confirmation                             |
+| Auto-Purge          | Shows the current setting; click to open the settings                                  |
+
+Below them, every chat, grouped by date. Type in the bottom box to search all of them, reasoning and tool calls included:
+
+- **Contains**: plain text.
+- **Wildcard**: `*` matches any run of characters and `?` any one character, within a line.
+- **Regex**: a JavaScript regular expression, bare or as `/pattern/flags`.
+
+**Case** switches case-sensitive matching. Each result shows its match count and the first match in context; clicking it opens the chat at that message.
+
+> A regular expression runs on your own machine. A pathological one (catastrophic backtracking) can freeze the page.
+
+### Locking and Auto-Purge
+
+Click the padlock beside a chat to lock it. Locked chats are kept by Auto-Purge and Reset Chats; deleting one asks first.
+
+**Auto-Purge Days** (under *Chats* in the settings, default `0`, off) deletes chats unchanged for longer than that many days, on load and every hour. Locked chats and the open chat are kept. Setting a value that would delete chats right away asks first; cancelling restores the previous value.
 
 ## Images
 
@@ -135,20 +176,17 @@ Calls run one at a time. Results are capped by **Max Tool Result Tokens**.
 
 ## Advanced settings
 
-Open them by clicking the **Settings** heading or pressing `Alt+I`. Select a setting, edit it in the bottom textarea, and save with **Save** or `Ctrl+Enter`. Dropdown settings save as soon as you pick. A blank value uses the default. **Reset** restores one setting.
+Open them by clicking the **Settings** heading or pressing `Alt+I`. Select a setting, edit it in the bottom textarea, and save with **Save** or `Ctrl+Enter`. On/Off settings flip with a click, and dropdown settings save as soon as you pick. A blank value uses the default. **Reset** restores one setting.
 
 ### Quick Actions
 
-The cards at the top of the advanced settings run as soon as you click them:
+| Card               | Does                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| Export Settings    | Downloads every setting, per-model override, image model selection and the model filter. The API key is left out |
+| Import Settings    | Replaces the current settings after a confirmation, keeping your API key                     |
+| Reset All Settings | Restores every setting to its default, keeping per-model overrides, identified image models and the model filter list. With a model picked in LLM Behavior, removes only that model's overrides |
 
-| Card                | Does                                                                                         |
-| ------------------- | -------------------------------------------------------------------------------------------- |
-| Export Current Chat | Downloads the open chat as JSON                                                              |
-| Export All Chats    | Downloads every chat as one JSON file                                                        |
-| Export Settings     | Downloads every setting, per-model override and image model selection. The API key is left out |
-| Import              | Reads any of the three exports. Chats whose id already exists are skipped. Settings replace the current ones after a confirmation, keeping your API key |
-| Reset All Settings  | Restores every setting to its default, keeping per-model overrides and identified image models. With a model picked in LLM Behavior, removes only that model's overrides |
-| Reset Chats         | Deletes every chat, after a confirmation                                                     |
+Chat import and export live on the [chats page](#the-chats-page).
 
 ### Per-model parameters
 
@@ -168,19 +206,21 @@ The **Model** row at the top of LLM Behavior picks whose parameters you're editi
 | Max Tool Rounds                                                 | 25                | After this, the model must answer without tools                          |
 | Max Tool Result Tokens                                          | 4000              | `0` disables the cap                                                     |
 | Echo Reasoning Field                                            | off               | `reasoning_content` or `reasoning`, sent back during tool loops          |
-| Retry Keeps Thinking                                            | true              | A resumed turn carries the reasoning shown so far                        |
+| Retry Keeps Thinking                                            | on                | A resumed turn carries the reasoning shown so far                        |
 | JavaScript Tool Description                                     | built-in          | What the model is told about the tool                                    |
 | Extra Models                                                    | —                 | Comma-separated, always listed                                           |
-| Probe Capabilities                                              | true              | Ask LiteLLM and Ollama what each model supports                          |
+| Probe Capabilities                                              | on                | Ask LiteLLM and Ollama what each model supports                          |
+| Model Filter Mode, Filter Models                                | blacklist, none   | Hide listed models, or show only them                                    |
 | Image Cache (MB)                                                | 100               | `0` keeps originals in memory only                                       |
 | Placeholder Width, Placeholder Max Pixels                       | 64, 4096          | Size of the stored placeholder                                           |
 | Vision Max Pixels, Vision Scaling Method                        | 4194304, high     | Scales images sent to chat models. `0` sends full size                   |
 | Identify Image Models, Toggle Image Models                      | none, all         | Pages for marking image models and which ones the tools may use          |
-| Send Generated Images                                           | false             | Send generated images back to the model                                  |
+| Send Generated Images                                           | off               | Send generated images back to the model                                  |
 | Edit Max Pixels, Edit Scaling Method                            | 4194304, high     | Scales images sent for editing. `0` sends full size                      |
-| Chat Date Groups                                                | true              | Group the chat list by date                                              |
-| Collapse Thinking                                               | true              | New thinking boxes start closed                                          |
-| Auto-Collapse Code, Threshold, Preview Lines, Hint              | true, 20, 5, true | Long code blocks fold                                                    |
+| Auto-Purge Days                                                 | 0 (off)           | Delete chats unchanged for longer. Locked chats are kept                 |
+| Chat Date Groups                                                | on                | Group the chat list by date                                              |
+| Collapse Thinking                                               | on                | New thinking boxes start closed                                          |
+| Auto-Collapse Code, Threshold, Preview Lines, Hint              | on, 20, 5, on     | Long code blocks fold                                                    |
 
 Scaling methods: smooth (high, medium or low quality), progressive halving, or nearest neighbour. Only the copy sent to the API is scaled; the stored image stays at full size.
 
@@ -188,10 +228,11 @@ Scaling methods: smooth (high, medium or low quality), progressive halving, or n
 
 | Shortcut                             | Action                               |
 | ------------------------------------ | ------------------------------------ |
-| `Alt+T` / `Alt+W` / `Alt+R`          | New / delete / rename chat           |
+| `Alt+T` / `Alt+W`                    | New / delete chat                    |
 | `Alt+↑` / `Alt+↓`                    | Previous / next chat                 |
 | `Alt+P` / `Alt+O` / `Alt+D`          | Toggle sidebar / title / dark mode   |
 | `Alt+I`                              | Advanced settings                    |
+| Click **Your Chats**                 | Search and manage chats              |
 | `Shift+↑` / `Shift+↓`                | Jump between messages                |
 | `↑` / `↓`                            | Scroll the chat (outside text fields)|
 | Ctrl+Click code, inline code or math | Copy it (math as LaTeX)              |
@@ -206,6 +247,7 @@ Scaling methods: smooth (high, medium or low quality), progressive halving, or n
 - Clearing site data deletes your chats and key. Export to back up.
 - Settings exports never contain your API key; keep a copy of it elsewhere.
 - Ollama reports the trained context length, which may exceed `num_ctx`.
+- Chats no longer have names, and renaming is gone. Titles stored by earlier versions are dropped.
 - Image models used to be detected automatically. They now have to be identified once by hand.
 - Chatting directly with image models has been removed, along with the **Image Models in Chat** and **Image Parameters** settings. Images from earlier chats with them are still shown.
 - Old file-search data is deleted on load. Old search calls in chats are shown by name with their raw arguments.

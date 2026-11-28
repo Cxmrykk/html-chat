@@ -1,6 +1,6 @@
 /** Every event the store can emit. Views subscribe; nothing else pushes renders. */
 export const EVENTS = {
-  /** Chat list membership, ordering, titles or selection changed. */
+  /** Chat list membership, ordering, lock state or selection changed. */
   CHATS: 'chats',
   /** The current chat's message array changed wholesale. */
   MESSAGES: 'messages',
@@ -32,8 +32,13 @@ export const EVENTS = {
   SESSION: 'session',
   /** A request started, changed phase, or finished. */
   GENERATION: 'generation',
-  /** The estimated context size may have changed. */
+  /**
+   * What a chat would send may have changed, and with it its token and image
+   * counts. Payload: { chatId }.
+   */
   CONTEXT: 'context',
   /** The model list, or the status of fetching it, changed. */
   MODELS: 'models',
+  /** The text typed into the chat search changed. */
+  SEARCH: 'search',
 };

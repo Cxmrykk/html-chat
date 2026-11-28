@@ -7,7 +7,6 @@ import {
   setGeneration,
   invalidateContext,
   persistChat,
-  persistChatIndex,
   persistCurrentChat,
   persistPrefs,
 } from '../store/state.js';
@@ -15,9 +14,11 @@ import * as chatsRepo from '../data/chats-repo.js';
 import { requestCompletion } from './api/completions.js';
 import { toolSchemasFor, runToolCall, offersImageTools } from './tools/index.js';
 import { wireImages, sendsGeneratedImages } from './images.js';
+import { passesModelFilter } from './models.js';
 import { buildApiMessages } from '../core/tool-calls.js';
 import { normalizeRoundReasoning } from '../core/reasoning.js';
 import { normalizeChat } from '../core/chats.js';
+import { chatsToPurge } from '../core/chat-retention.js';
 import {
   attachmentsOf,
   normalizeAttachment,
@@ -34,8 +35,7 @@ import {
   isCollapsible,
   turnReasoning,
 } from '../core/thinking.js';
-import { pickInteger, pickBoolean } from '../core/values.js';
-import { truncate } from '../core/format.js';
+import { pickInteger, pickBoolean, pickNumber } from '../core/values.js';
 
 /**
  * Chat lifecycle and the send / tool-call loop. The chat always talks to a
@@ -50,7 +50,7 @@ const IDLE = { active: false, phase: 'idle', tool: null, loop: 0, maxLoops: 0 };
 
 export async function createChat() {
   const id = Date.now().toString();
-  state.data.chats.unshift({ id, title: 'New Chat', messages: [] });
+  state.data.chats.unshift({ id, messages: [] });
   state.data.currentChatId = id;
   invalidateContext();
   await persistCurrentChat();
@@ -68,36 +68,40 @@ export async function openChat(id) {
   emit(EVENTS.MESSAGES);
 }
 
-export async function removeChat(id) {
-  state.data.chats = state.data.chats.filter((chat) => chat.id !== id);
-  if (state.data.currentChatId === id) {
+/**
+ * Delete the chats named in `ids`. If the open chat is among them, the newest
+ * remaining one opens instead. Resolves with how many were deleted.
+ */
+export async function removeChats(ids) {
+  const doomed = new Set(ids);
+  const before = state.data.chats.length;
+  state.data.chats = state.data.chats.filter((chat) => !doomed.has(chat.id));
+  const removed = before - state.data.chats.length;
+  if (!removed) return 0;
+
+  const reopened = doomed.has(state.data.currentChatId);
+  if (reopened) {
     state.data.currentChatId = state.data.chats.length ? state.data.chats[0].id : null;
   }
   invalidateContext();
-  await chatsRepo.deleteChat(id, state.data.chats);
+  await chatsRepo.deleteChats([...doomed], state.data.chats);
   await persistPrefs();
   emit(EVENTS.CHATS);
-  emit(EVENTS.MESSAGES);
+  if (reopened) emit(EVENTS.MESSAGES);
+  return removed;
 }
 
-/** Delete every chat. Original images stay in the image cache, which trims itself. */
-export async function removeAllChats() {
-  const ids = state.data.chats.map((chat) => chat.id);
-  state.data.chats = [];
-  state.data.currentChatId = null;
-  invalidateContext();
-  await chatsRepo.deleteAllChats(ids);
-  await persistPrefs();
-  emit(EVENTS.CHATS);
-  emit(EVENTS.MESSAGES);
+export function removeChat(id) {
+  return removeChats([id]);
 }
 
-export async function renameChat(id, title) {
+/** Lock a chat (Auto-Purge and Reset Chats keep it), or unlock it. */
+export async function toggleChatLock(id) {
   const chat = findChat(id);
   if (!chat) return;
-  chat.title = title.trim();
+  if (chat.locked) delete chat.locked;
+  else chat.locked = true;
   await persistChat(id);
-  await persistChatIndex();
   emit(EVENTS.CHATS);
 }
 
@@ -114,7 +118,6 @@ export async function forkChat(messageIndex) {
   state.data.chats.unshift(
     normalizeChat({
       id,
-      title: `${chat.title} (Forked)`,
       messages: JSON.parse(JSON.stringify(chat.messages.slice(0, messageIndex + 1))),
     }),
   );
@@ -128,6 +131,32 @@ export async function forkChat(messageIndex) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Auto-Purge
+ * ------------------------------------------------------------------ */
+
+/** The Auto-Purge Days setting; 0 is off. */
+export function purgeDays() {
+  return Math.max(
+    0,
+    pickNumber(0, state.data.config.autoPurgeDays, GLOBAL_SETTINGS.autoPurgeDays.default),
+  );
+}
+
+/** The chats Auto-Purge would delete now. The open chat is kept unless `keepCurrent` is off. */
+export function purgeCandidates({ keepCurrent = true } = {}) {
+  const current = state.data.currentChatId;
+  return chatsToPurge(state.data.chats, purgeDays(), {
+    keep: keepCurrent && current ? [current] : [],
+  });
+}
+
+/** Delete what Auto-Purge would. Resolves with how many were deleted. */
+export async function purgeOldChats(options) {
+  const doomed = purgeCandidates(options);
+  return doomed.length ? removeChats(doomed.map((chat) => chat.id)) : 0;
+}
+
+/* ------------------------------------------------------------------ *
  * Messages
  * ------------------------------------------------------------------ */
 
@@ -136,7 +165,7 @@ export async function appendMessage(message, { chatId = state.data.currentChatId
   if (!chat) return -1;
   chat.messages.push(message);
   const index = chat.messages.length - 1;
-  invalidateContext();
+  invalidateContext(chatId);
   await persistChat(chatId);
   if (chatId === state.data.currentChatId) emit(EVENTS.MESSAGE_APPENDED, { index });
   return index;
@@ -153,9 +182,8 @@ export async function updateMessage(index, patch) {
 
 /**
  * Expand or collapse a thinking message. Purely presentational: what is sent
- * does not depend on it, so the context estimate is untouched, and the
- * repaint is `anchored` so the view does not scroll away from the box just
- * clicked.
+ * does not depend on it, so the counts are untouched, and the repaint is
+ * `anchored` so the view does not scroll away from the box just clicked.
  */
 export async function setCollapsed(index, collapsed) {
   const chat = currentChat();
@@ -327,7 +355,8 @@ export async function setAttachmentsOpen(index, open) {
  * Renders read the message back out of the store by index, so a chat the user
  * has since navigated away from must stay silent: otherwise every delta
  * repaints whichever message happens to share that index in the chat now on
- * screen. Returning to the chat re-renders it in full anyway.
+ * screen. Returning to the chat re-renders it in full anyway. Its counts in
+ * the chat lists are kept current wherever it is.
  */
 function createTurn(chat, chatId, { resume = null } = {}) {
   const isVisible = () => chatId === state.data.currentChatId;
@@ -367,14 +396,14 @@ function createTurn(chat, chatId, { resume = null } = {}) {
 
   /** After a change that moves indices: re-render the transcript and save. */
   const refresh = () => {
-    invalidateContext();
+    invalidateContext(chatId);
     if (isVisible()) emit(EVENTS.MESSAGES);
     persistChat(chatId);
   };
 
   const append = (message) => {
     chat.messages.push(message);
-    invalidateContext();
+    invalidateContext(chatId);
     if (isVisible()) emit(EVENTS.MESSAGE_APPENDED, { index: chat.messages.length - 1 });
     persistChat(chatId);
   };
@@ -648,7 +677,7 @@ function createTurn(chat, chatId, { resume = null } = {}) {
 
       if (isMounted(work)) repaint(work, false);
       if (assistant) repaint(assistant, false);
-      invalidateContext();
+      invalidateContext(chatId);
       await persistChat(chatId);
     },
 
@@ -687,7 +716,7 @@ function createTurn(chat, chatId, { resume = null } = {}) {
       const images = normalizeAttachments(outcome.attachments);
       if (images.length) call.attachments = images;
       else delete call.attachments;
-      invalidateContext();
+      invalidateContext(chatId);
       const after = holder();
       if (after) repaint(after, false);
       await persistChat(chatId);
@@ -740,16 +769,10 @@ function createTurn(chat, chatId, { resume = null } = {}) {
         if (answer) repaint(answer, false);
       }
 
-      invalidateContext();
+      invalidateContext(chatId);
       await persistChat(chatId);
     },
   };
-}
-
-function buildTitle(text) {
-  const lastBreak = text.lastIndexOf('\n\n');
-  const source = lastBreak !== -1 ? text.substring(lastBreak + 2).trim() : text;
-  return truncate(source, 30);
 }
 
 export function abortGeneration() {
@@ -766,13 +789,13 @@ function appendStopped(chatId) {
  * Hand the runtime back once a run is over. A stop followed at once by a new
  * send may already own it, and then it is left alone.
  */
-function releaseRuntime(controller) {
+function releaseRuntime(controller, chatId) {
   const current = state.runtime.completionAbort;
   if (current === controller || current === null) {
     state.runtime.completionAbort = null;
     setGeneration(IDLE);
   }
-  invalidateContext();
+  invalidateContext(chatId);
 }
 
 /**
@@ -959,7 +982,23 @@ async function runTurns(chatId, { carryReasoning = false } = {}) {
     } catch (error) {
       console.error('Could not settle the turn:', error);
     }
-    releaseRuntime(controller);
+    releaseRuntime(controller, chatId);
+  }
+}
+
+/** Throw when no request can be made: no key, no model, or a model the filter hides. */
+function assertCanRequest() {
+  const config = state.data.config;
+  if (!config.key) {
+    throw new Error('Please enter your API key in the settings first.');
+  }
+  if (!config.lastModel) {
+    throw new Error('No model selected. Check the connection settings, or add one under Extra Models.');
+  }
+  if (!passesModelFilter(config.lastModel)) {
+    throw new Error(
+      `"${config.lastModel}" is hidden by Filter Models. Pick another model, or change the filter in the settings.`,
+    );
   }
 }
 
@@ -973,20 +1012,9 @@ export async function sendMessage({ text = '', attachments = [], skipApi = false
   const images = normalizeAttachments(attachments);
   if (!trimmed && !images.length) return;
 
-  if (!state.data.config.key && !skipApi) {
-    throw new Error('Please enter your API key in the settings first.');
-  }
-  if (!state.data.config.lastModel && !skipApi) {
-    throw new Error('No model selected. Check the connection settings, or add one under Extra Models.');
-  }
+  if (!skipApi) assertCanRequest();
   if (!state.data.currentChatId) await createChat();
 
-  const chat = currentChat();
-  if (!chat.messages.length) {
-    chat.title = buildTitle(trimmed || 'Image');
-    await persistChatIndex();
-    emit(EVENTS.CHATS);
-  }
   await appendMessage({
     role: 'user',
     content: trimmed,
@@ -1004,12 +1032,7 @@ export async function sendMessage({ text = '', attachments = [], skipApi = false
  * when Retry Keeps Thinking is on.
  */
 export async function regenerate({ carryReasoning = false } = {}) {
-  if (!state.data.config.key) {
-    throw new Error('Please enter your API key in the settings first.');
-  }
-  if (!state.data.config.lastModel) {
-    throw new Error('No model selected. Check the connection settings, or add one under Extra Models.');
-  }
+  assertCanRequest();
   if (!state.data.currentChatId) return;
 
   await runTurns(state.data.currentChatId, { carryReasoning });

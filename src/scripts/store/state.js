@@ -23,11 +23,11 @@ export const state = {
   },
 
   session: {
-    /** 'chat' | 'settings' */
+    /** 'chat' | 'settings' | 'chats' (the page that searches and manages chats) */
     view: 'chat',
     /**
      * Which page the settings view shows: 'main' (every setting), or one of
-     * the model pickers, 'imageModels' or 'imageToolModels'.
+     * the model pickers, 'imageModels', 'imageToolModels' or 'modelFilter'.
      */
     settingsPage: 'main',
     sidebarHidden: false,
@@ -36,6 +36,8 @@ export const state = {
     theme: 'light',
     /** Labels of the chat list's date groups the user has folded (`core/chat-dates.js`). */
     collapsedChatGroups: [],
+    /** The chats page's search (`core/chat-search.js`). */
+    chatSearch: { query: '', mode: 'text', caseSensitive: false },
     editingMessageIndex: null,
     /**
      * The part of that message being edited: a range of its markdown blocks,
@@ -77,8 +79,8 @@ export const state = {
      */
     generation: { active: false, phase: 'idle', tool: null, loop: 0, maxLoops: 0 },
     completionAbort: null,
-    /** Cached context size; -1 means "recompute". */
-    contextChars: -1,
+    /** chat id -> its token and image count, as shown in the chat lists. */
+    chatStats: new Map(),
     /** Discovery status; the list itself is cached in `data.config.models`. */
     models: { loading: false, error: null },
     modelsAbort: null,
@@ -106,9 +108,10 @@ export function setSession(patch, { silent = false } = {}) {
   if (!silent) emit(EVENTS.SESSION);
 }
 
-export function invalidateContext() {
-  state.runtime.contextChars = -1;
-  emit(EVENTS.CONTEXT);
+/** What `chatId` would send may have changed: its counts are worked out again. */
+export function invalidateContext(chatId = state.data.currentChatId) {
+  if (chatId) state.runtime.chatStats.delete(chatId);
+  emit(EVENTS.CONTEXT, { chatId });
 }
 
 export function setGeneration(patch) {
@@ -133,9 +136,12 @@ export function persistChatIndex() {
   return chatsRepo.saveChatIndex(state.data.chats);
 }
 
+/** Save a chat, stamped with when it last changed (what Auto-Purge goes by). */
 export function persistChat(id = state.data.currentChatId) {
   const chat = findChat(id);
-  return chat ? chatsRepo.saveChat(chat) : Promise.resolve();
+  if (!chat) return Promise.resolve();
+  chat.updatedAt = Date.now();
+  return chatsRepo.saveChat(chat);
 }
 
 export function persistPrefs() {
@@ -148,7 +154,7 @@ export function persistPrefs() {
   });
 }
 
-/** Chat content plus its index entry (title may have changed). */
+/** Chat content plus its index entry. */
 export async function persistCurrentChat() {
   await persistChat();
   await persistChatIndex();

@@ -10,17 +10,19 @@ import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
  * list (`display`). Nothing else should maintain parallel lists of keys.
  *
  * A `select` entry also lists its `options` (`{ value, label }`); it is shown
- * in the list as a dropdown and saved as soon as a choice is made, instead of
- * being edited in the textarea.
+ * in the list as a dropdown and saved as soon as a choice is made. A
+ * `boolean` entry is shown as a switch that flips with a click. Every other
+ * entry is edited in the textarea.
  *
  * Entries marked `perModel` are the LLM parameters sent with each request.
  * Their global value is the default for every model; a model may override it
  * (see `core/model-params.js`).
  *
- * Which models are image models (Identify Image Models), and which of them
- * the image tools may use (Toggle Image Models), are not entries here: they
- * are lists picked on their own settings pages (`config.imageModels`,
- * `config.imageToolExcluded`).
+ * Which models are image models (Identify Image Models), which of them the
+ * image tools may use (Toggle Image Models), and which models the filter
+ * names (Filter Models), are not entries here: they are lists picked on their
+ * own settings pages (`config.imageModels`, `config.imageToolExcluded`,
+ * `config.modelFilterList`).
  */
 
 /** How an image is scaled down to a pixel budget (`services/image-scaling.js`). */
@@ -30,6 +32,12 @@ export const SCALING_METHODS = [
   { value: 'low', label: 'Smooth, low quality (fastest)' },
   { value: 'stepped', label: 'Progressive halving' },
   { value: 'nearest', label: 'Nearest neighbour (pixelated)' },
+];
+
+/** What the model filter does with the models it names (`services/models.js`). */
+export const MODEL_FILTER_MODES = [
+  { value: 'blacklist', label: 'Blacklist (hide listed)' },
+  { value: 'whitelist', label: 'Whitelist (show only listed)' },
 ];
 
 /** Display helpers shared by several entries. */
@@ -59,6 +67,11 @@ const showEchoField = (value) => {
 const showCacheSize = (value, entry) => {
   const mb = pickNumber(Number(entry.default), value);
   return mb > 0 ? `${mb} MB` : 'Memory only';
+};
+
+const showPurgeDays = (value, entry) => {
+  const days = pickNumber(Number(entry.default), value);
+  return days > 0 ? `${days} day${days === 1 ? '' : 's'}` : 'Off';
 };
 
 /** A positive whole number of pixels; anything else shows (and acts as) the default. */
@@ -168,7 +181,7 @@ export const GLOBAL_SETTINGS = {
     default: 'true',
     tooltip:
       'When Retry on a thinking box (or on the Assistant text before its tool calls) resumes a turn, append the reasoning shown so far in that turn to the latest user message as it is sent, so the model can pick up from it instead of losing it. ' +
-      'The stored message is not changed. true or false.',
+      'The stored message is not changed. Click to switch.',
     display: showOnOff,
   },
   jsToolDescription: {
@@ -196,6 +209,16 @@ export const GLOBAL_SETTINGS = {
       'When fetching models, also ask LiteLLM (/model/info) and Ollama (/api/show) what each model supports: tools, thinking and its levels, vision, context length. ' +
       'Off reads /models alone. A model reported without tool support is not offered tools. Image models are never detected: identify them under Image Generation.',
     display: showOnOff,
+  },
+  modelFilterMode: {
+    label: 'Model Filter Mode',
+    category: 'API & Connections',
+    type: 'select',
+    options: MODEL_FILTER_MODES,
+    default: 'blacklist',
+    tooltip:
+      'What Filter Models does with the models it lists: a blacklist hides them from the model dropdown, a whitelist shows only them.',
+    display: showOption,
   },
   imageCacheMB: {
     label: 'Image Cache (MB)',
@@ -253,7 +276,7 @@ export const GLOBAL_SETTINGS = {
     default: 'false',
     tooltip:
       'Send the images the image tools made back to the model, in a user message right after the tool results, so it can check them and adjust. ' +
-      'Off, a tool result carries only the images’ ids and sizes. true or false.',
+      'Off, a tool result carries only the images’ ids and sizes. Click to switch.',
     display: showOnOff,
   },
   editMaxPixels: {
@@ -275,13 +298,23 @@ export const GLOBAL_SETTINGS = {
     tooltip: 'How images are scaled down to Edit Max Pixels.',
     display: showOption,
   },
+  autoPurgeDays: {
+    label: 'Auto-Purge Days',
+    category: 'Chats',
+    type: 'number',
+    default: '0',
+    tooltip:
+      'Delete chats that have not changed for more than this many days, on load and every hour. Locked chats and the open chat are never deleted. ' +
+      '0 turns Auto-Purge off.',
+    display: showPurgeDays,
+  },
   chatDateGroups: {
     label: 'Chat Date Groups',
     category: 'UI & Display',
     type: 'boolean',
     default: 'true',
     tooltip:
-      'Group the chat list in the sidebar under collapsible date headings by when each chat was created: Today, Yesterday, each other day of the last 30 (e.g. Nov 24), then Older. true or false.',
+      'Group the chat list in the sidebar under collapsible date headings by when each chat was created: Today, Yesterday, each other day of the last 30 (e.g. Nov 24), then Older.',
     display: showOnOff,
   },
   collapseThinking: {
@@ -290,7 +323,7 @@ export const GLOBAL_SETTINGS = {
     type: 'boolean',
     default: 'true',
     tooltip:
-      'Whether a new thinking box (reasoning, and the tool calls made while thinking) starts collapsed: true or false. Any box can still be opened or closed by clicking it.',
+      'Whether a new thinking box (reasoning, and the tool calls made while thinking) starts collapsed. Any box can still be opened or closed by clicking it.',
     display: showOnOff,
   },
   autoCollapseCode: {

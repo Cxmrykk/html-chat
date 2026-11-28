@@ -97,14 +97,19 @@
 }
 
 /*
- * Opens the advanced settings with a plain click. It looks like any other
- * heading; only the cursor says it can be clicked, and a click never selects
- * its text.
+ * The headings that open a page (the settings, the chats page) with a plain
+ * click. They look like any other heading; only the cursor says they can be
+ * clicked, and a click never selects their text.
  */
-#settings-heading {
+#settings-heading,
+#chats-heading {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+}
+
+#chats-heading:hover {
+  color: var(--accent);
 }
 
 .checkbox-label {
@@ -142,14 +147,31 @@
   font-weight: bold;
 }
 
+/* When the chat was made, then its token and image count. */
 .chat-item-title {
   cursor: pointer;
   flex-grow: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
   margin-right: 10px;
+}
+
+.chat-item-time {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-stats {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .chat-item-actions {
@@ -166,6 +188,22 @@
 .chat-item-actions button .icon {
   width: 1em;
   height: 1em;
+}
+
+/* An open padlock is faint; a locked chat's padlock stands out. */
+.chat-item-actions .lock-btn {
+  opacity: 0.45;
+}
+
+.chat-item-actions .lock-btn:hover {
+  opacity: 1;
+}
+
+.chat-item.locked .lock-btn,
+.chat-result.locked .lock-btn {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 body.ctrl-down .chat-item:hover {

@@ -74,7 +74,6 @@ export function installShortcuts() {
       const actions = {
         t: () => runCommand('chat.new', { event: {} }),
         w: () => state.data.currentChatId && runCommand('chat.delete', { id: state.data.currentChatId }),
-        r: () => state.data.currentChatId && runCommand('chat.rename', { id: state.data.currentChatId }),
         p: () => runCommand('ui.toggleSidebar'),
         o: () => runCommand('ui.toggleTitle'),
         d: () => runCommand('ui.toggleTheme'),

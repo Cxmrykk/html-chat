@@ -1,5 +1,6 @@
 /**
- * Which date heading a chat falls under in the sidebar.
+ * Which date heading a chat falls under in the sidebar, and how its time is
+ * written.
  *
  * A chat's id is the `Date.now()` of its creation, so that is the date it is
  * grouped by. The last 30 days get one heading per day: "Today",
@@ -41,6 +42,28 @@ export function dateGroupLabel(timestamp, now = Date.now()) {
   if (days === 1) return 'Yesterday';
   if (days < DAILY_DAYS) return dayLabel(timestamp);
   return OLDER_LABEL;
+}
+
+/**
+ * When a chat was created, as shown beside it. Under a heading that already
+ * names the day (`grouped`), the time alone, e.g. "14:32". Otherwise the
+ * time for today, and the day as well for any other: "Nov 24, 14:32", or
+ * "Nov 24, 2024" for another year.
+ */
+export function chatTimeLabel(timestamp, { grouped = true, now = Date.now() } = {}) {
+  if (timestamp === null || timestamp === undefined) return '';
+  const date = new Date(timestamp);
+  const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const label = dateGroupLabel(timestamp, now);
+  if (label === 'Today' || (grouped && label !== OLDER_LABEL)) return time;
+
+  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+  const day = date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+  return sameYear ? `${day}, ${time}` : day;
 }
 
 /**

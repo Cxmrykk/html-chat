@@ -86,7 +86,8 @@
         <!-- Fills the rest of the sidebar; the list inside scrolls on its own. -->
         <div class="sidebar-section chats-section">
           <div class="section-header">
-            <h3>Your Chats</h3>
+            <h3 id="chats-heading" data-command="chats.toggle"
+                title="Click to search and manage your chats">Your Chats</h3>
             <button data-command="chat.new" title="New: Alt+T · Import: Alt+Click">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               New
@@ -141,6 +142,19 @@
                       title="Close the settings">Close</button>
             </div>
             <textarea id="settings-input" placeholder="Select a setting above to edit..."></textarea>
+          </div>
+
+          <!-- Chat search, for the chats page. Its options are filled in by ui/components/input-area.js. -->
+          <div id="chats-bar" class="hidden">
+            <div class="button-row">
+              <select id="chat-search-mode" data-command="chats.setSearchMode"
+                      title="How the search text is matched" aria-label="Search mode"></select>
+              <button id="chat-search-case" data-command="chats.toggleCase" aria-pressed="false"
+                      title="Match upper and lower case exactly">Case: Off</button>
+              <button id="chat-search-clear" data-command="chats.clearSearch">Clear</button>
+              <button id="chats-close-btn" data-command="chats.toggle" title="Back to the chat">Close</button>
+            </div>
+            <textarea id="chat-search-input" placeholder="Search every chat for this text..."></textarea>
           </div>
         </div>
       </main>

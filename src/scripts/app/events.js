@@ -1,7 +1,7 @@
 import { $ } from '../ui/dom.js';
 import { runCommand } from './commands.js';
-import { state, setSession, persistPrefs } from '../store/state.js';
-import { renderSendButton } from '../ui/components/input-area.js';
+import { EVENTS } from '../store/events.js';
+import { state, emit, setSession, persistPrefs } from '../store/state.js';
 import {
   setAttachmentZoom,
   zoomAttachment,
@@ -338,8 +338,9 @@ function installModifierTracking() {
 
 /** Live-bind the textareas so no value is ever read back out of the DOM. */
 function installEditorBindings() {
-  const chatInput = $('#chat-input');
-  const resizable = [chatInput, $('#thinking-input')].filter(Boolean);
+  const resizable = [$('#chat-input'), $('#thinking-input'), $('#chat-search-input')].filter(
+    Boolean,
+  );
 
   const observer = new ResizeObserver((entries) => {
     for (const entry of entries) {
@@ -357,12 +358,23 @@ function installEditorBindings() {
     input.style.height = state.session.promptHeight;
     observer.observe(input);
   }
-  chatInput?.addEventListener('input', renderSendButton);
 
   const settingsInput = $('#settings-input');
   if (settingsInput) {
     settingsInput.addEventListener('input', (event) => {
       setSession({ settingsDraft: event.target.value }, { silent: true });
+    });
+  }
+
+  // The chats page re-searches as the query is typed; only its results redraw.
+  const searchInput = $('#chat-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', (event) => {
+      setSession(
+        { chatSearch: { ...state.session.chatSearch, query: event.target.value } },
+        { silent: true },
+      );
+      emit(EVENTS.SEARCH);
     });
   }
 }

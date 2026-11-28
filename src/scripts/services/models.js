@@ -7,7 +7,7 @@ import {
   reasoningEffortToSend,
 } from '../core/capabilities.js';
 import { pickBoolean } from '../core/values.js';
-import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
+import { GLOBAL_SETTINGS, optionValue } from '../core/settings-schema.js';
 
 /** Model discovery: the cached server list and capabilities, refreshed on demand. */
 
@@ -35,12 +35,30 @@ export function imageToolModels() {
 }
 
 /**
- * What the dropdown offers: text models only. The last list the server gave
- * us, minus models it says cannot chat (embedding models), plus manual
- * extras, which are always offered. Image models are never offered: they are
- * only used by the image tools.
+ * The model filter: `{ mode, list }`. A blacklist hides the models it lists
+ * from the dropdown; a whitelist offers only them.
  */
-export function availableModels() {
+export function modelFilter() {
+  const config = state.data.config;
+  return {
+    mode: optionValue('modelFilterMode', config.modelFilterMode),
+    list: modelNamesFrom(config.modelFilterList),
+  };
+}
+
+/** Whether the filter lets `id` be offered and used. */
+export function passesModelFilter(id, filter = modelFilter()) {
+  const listed = filter.list.includes(id);
+  return filter.mode === 'whitelist' ? listed : !listed;
+}
+
+/**
+ * The text models the dropdown could offer before the filter: the last list
+ * the server gave us, minus models it says cannot chat (embedding models),
+ * plus manual extras. Image models are never offered: they are only used by
+ * the image tools. What Filter Models lists.
+ */
+export function filterableModels() {
   const { models, extraModels, modelCapabilities } = state.data.config;
   const isImage = new Set(imageModels());
   const chatModels = normalizeModelList(models).filter(
@@ -48,6 +66,12 @@ export function availableModels() {
   );
   const extras = normalizeModelList(extraModels).filter((id) => !isImage.has(id));
   return mergeModelLists(chatModels, extras);
+}
+
+/** What the dropdown offers: the text models the filter lets through. */
+export function availableModels() {
+  const filter = modelFilter();
+  return filterableModels().filter((id) => passesModelFilter(id, filter));
 }
 
 /** What the endpoint reported about a model; all unknown if it said nothing. */

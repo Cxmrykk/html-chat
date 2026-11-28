@@ -1,16 +1,17 @@
 import { escapeHTML } from '../../core/format.js';
 import { groupByCategory } from '../../core/settings-schema.js';
+import { pickBoolean } from '../../core/values.js';
 
 /**
  * The category-grouped list of settings buttons. `describe(key)` gives the
  * summary shown on the right, and `read(key)` the stored value of a dropdown
- * setting. `leadRows` maps a category to markup placed at the top of its
- * group, before its settings (the model selector of LLM Behavior, say);
- * `trailRows` to markup placed after them.
+ * or On/Off setting. `leadRows` maps a category to markup placed at the top
+ * of its group, before its settings (the model selector of LLM Behavior,
+ * say); `trailRows` to markup placed after them.
  *
  * A `select` setting is drawn as a dropdown row (`selectRowHTML`) that saves
- * as soon as a choice is made; every other setting is a button that opens it
- * in the editor.
+ * as soon as a choice is made; a `boolean` setting as a switch that flips
+ * with a click; every other setting is a button that opens it in the editor.
  */
 
 /**
@@ -54,10 +55,35 @@ export function selectRowHTML({
     </div>`;
 }
 
+/** A row that acts as soon as it is clicked: a Quick Actions card, or one that opens a page. */
+export function actionRowHTML({ command, label, value, title, key = '', disabled = false }) {
+  return `
+    <button class="setting-row" data-command="${escapeHTML(command)}"${
+      key ? ` data-key="${escapeHTML(key)}"` : ''
+    }
+            title="${escapeHTML(title)}"${disabled ? ' disabled' : ''}>
+      <span>${escapeHTML(label)}</span>
+      <span class="setting-value">${escapeHTML(value)}</span>
+    </button>`;
+}
+
 function buttonRowHTML(key, entry, activeKey, summary) {
   return `
     <button class="setting-row${activeKey === key ? ' active-setting' : ''}"
             data-command="settings.select" data-key="${escapeHTML(key)}"
+            title="${escapeHTML(entry.tooltip)}">
+      <span>${escapeHTML(entry.label)}</span>
+      <span class="setting-value">${escapeHTML(summary)}</span>
+    </button>`;
+}
+
+/** An On/Off setting: a switch, outlined while on, that flips with a click. */
+function toggleRowHTML(key, entry, value, summary) {
+  const on = pickBoolean(pickBoolean(false, entry.default), value);
+  return `
+    <button class="setting-row setting-choice setting-toggle${on ? ' is-on' : ''}"
+            data-command="settings.toggleBoolean" data-key="${escapeHTML(key)}"
+            role="switch" aria-checked="${on ? 'true' : 'false'}"
             title="${escapeHTML(entry.tooltip)}">
       <span>${escapeHTML(entry.label)}</span>
       <span class="setting-value">${escapeHTML(summary)}</span>
@@ -98,6 +124,7 @@ export function settingsListHTML({
             hint: entry.tooltip,
           });
         }
+        if (entry.type === 'boolean') return toggleRowHTML(key, entry, read(key), describe(key));
         return buttonRowHTML(key, entry, activeKey, describe(key));
       })
       .join('');

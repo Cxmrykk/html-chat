@@ -6,7 +6,7 @@ import {
   isPerModel,
   describeSetting,
 } from '../core/settings-schema.js';
-import { coerceForStorage } from '../core/values.js';
+import { coerceForStorage, pickBoolean } from '../core/values.js';
 import { modelNamesFrom } from '../core/models.js';
 import {
   coerceOverride,
@@ -20,7 +20,7 @@ import { trimImageCache } from './images.js';
 
 /**
  * The global advanced settings, the per-model overrides of the LLM
- * parameters among them, and the hand-picked image model lists.
+ * parameters among them, and the hand-picked model lists.
  *
  * Every setting function takes an optional `model`. Without one (or for a
  * setting that is not per-model) it works on the global value, which is the
@@ -30,7 +30,7 @@ import { trimImageCache } from './images.js';
 /** Settings that change what model discovery asks for, so the list is fetched again. */
 const DISCOVERY_KEYS = ['probeCapabilities'];
 /** Settings (and lists) that change which models the dropdown offers. */
-const MODEL_LIST_KEYS = ['extraModels', 'imageModels'];
+const MODEL_LIST_KEYS = ['extraModels', 'imageModels', 'modelFilterMode', 'modelFilterList'];
 /** Settings that change how much the image cache may hold. */
 const IMAGE_CACHE_KEYS = ['imageCacheMB'];
 /** Settings that change how the chat list is drawn. */
@@ -80,7 +80,7 @@ export function readEditorValue(key, model = null) {
 
 async function afterMutation(keys) {
   // A model that is no longer offered (one just identified as an image
-  // model, say) must not stay selected.
+  // model, or filtered out, say) must not stay selected.
   if (keys.some((key) => MODEL_LIST_KEYS.includes(key))) ensureActiveModel();
   await persistConfig();
   // Extra models change the dropdown; tool settings change what every
@@ -111,6 +111,15 @@ export async function saveSetting(key, rawValue, model = null) {
   await afterMutation([key]);
 }
 
+/** Flip an On/Off setting. */
+export async function toggleSetting(key) {
+  const entry = GLOBAL_SETTINGS[key];
+  if (!entry || entry.type !== 'boolean') return;
+  const current = pickBoolean(pickBoolean(false, entry.default), state.data.config[key]);
+  state.data.config[key] = !current;
+  await afterMutation([key]);
+}
+
 export async function resetSetting(key, model = null) {
   const entry = GLOBAL_SETTINGS[key];
   if (!entry) return;
@@ -122,7 +131,7 @@ export async function resetSetting(key, model = null) {
 /**
  * With a model: remove every override it has. Without one: reset every
  * global setting. Per-model overrides are kept either way for other models,
- * and the image model lists are not settings, so they are kept too.
+ * and the model lists are not settings, so they are kept too.
  */
 export async function resetAllSettings(model = null) {
   const config = state.data.config;
@@ -138,7 +147,7 @@ export async function resetAllSettings(model = null) {
 }
 
 /* ------------------------------------------------------------------ *
- * Image models
+ * Model lists
  * ------------------------------------------------------------------ */
 
 /**
@@ -172,6 +181,17 @@ export async function toggleImageToolModel(id) {
   await afterMutation(['imageToolExcluded']);
 }
 
+/** Add `id` to the model filter's list, or take it off (Filter Models). */
+export async function toggleModelFilter(id) {
+  if (!id) return;
+  const config = state.data.config;
+  const list = modelNamesFrom(config.modelFilterList);
+  config.modelFilterList = list.includes(id)
+    ? list.filter((entry) => entry !== id)
+    : [...list, id];
+  await afterMutation(['modelFilterList']);
+}
+
 /* ------------------------------------------------------------------ *
  * Connection
  * ------------------------------------------------------------------ */
@@ -191,7 +211,7 @@ export async function saveConnectionConfig({ url, key, jsExecution, imageGenerat
 
 /**
  * A different model may take different tools and reasoning levels, so the
- * context estimate and the dropdown's description follow it.
+ * dropdown's description follows it.
  */
 export function setActiveModel(model) {
   state.data.config.lastModel = model;

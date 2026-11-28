@@ -4,7 +4,8 @@ import { normalizeChat } from '../core/chats.js';
 
 /**
  * Chats are stored as an index record plus one record per chat, so opening the
- * app does not deserialise every message of every conversation at once.
+ * app does not deserialise every message of every conversation at once. Chats
+ * have no names, so the index holds only their ids.
  *
  * Every record read passes through `normalizeChat`, so the rest of the app
  * only ever sees the current message model. Nothing is rewritten eagerly; a
@@ -12,7 +13,7 @@ import { normalizeChat } from '../core/chats.js';
  */
 
 function toIndex(chats) {
-  return chats.map((chat) => ({ id: chat.id, title: chat.title }));
+  return chats.map((chat) => ({ id: chat.id }));
 }
 
 /** Migrates legacy single-record chat format to index-and-record architecture. */
@@ -33,7 +34,7 @@ export async function loadChats() {
   const chats = [];
   for (const entry of index) {
     const record = await idb.get(KEYS.chat(entry.id));
-    chats.push(normalizeChat(record || { id: entry.id, title: entry.title, messages: [] }));
+    chats.push(normalizeChat(record || { id: entry.id, messages: [] }));
   }
   return chats;
 }
@@ -51,18 +52,12 @@ export async function saveAllChats(chats) {
   await idb.setMany(chats.map((chat) => [KEYS.chat(chat.id), chat]));
 }
 
-/** Delete a chat's message record as well as its index entry. */
-export async function deleteChat(id, remainingChats) {
-  await idb.remove(KEYS.chat(id));
-  await saveChatIndex(remainingChats);
-}
-
 /**
- * Delete every chat named in `ids`, and empty the index. Records are removed
- * one by one rather than by prefix: the index itself (`mf_chat_index`) shares
- * the chat records' prefix.
+ * Delete the chats named in `ids`, leaving `remaining` in the index. Records
+ * are removed one by one rather than by prefix: the index itself
+ * (`mf_chat_index`) shares the chat records' prefix.
  */
-export async function deleteAllChats(ids) {
-  await saveChatIndex([]);
+export async function deleteChats(ids, remaining) {
+  await saveChatIndex(remaining);
   for (const id of ids) await idb.remove(KEYS.chat(id));
 }

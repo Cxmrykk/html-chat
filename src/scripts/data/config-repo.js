@@ -17,6 +17,8 @@ const BASE_CONFIG = {
   imageModels: [],
   /** Image models the image tools may not use (Toggle Image Models). Every other one they may. */
   imageToolExcluded: [],
+  /** The models Filter Models names: hidden or shown alone, per Model Filter Mode. */
+  modelFilterList: [],
   jsExecution: false,
   /** The sidebar's Image Manipulation switch: whether the image tools may be offered. */
   imageGeneration: false,
@@ -134,6 +136,7 @@ export function normalizeConfig(record) {
   config.modelParams = normalizeModelParams(config.modelParams);
   config.imageModels = modelNamesFrom(config.imageModels);
   config.imageToolExcluded = modelNamesFrom(config.imageToolExcluded);
+  config.modelFilterList = modelNamesFrom(config.modelFilterList);
   config.jsExecution = Boolean(config.jsExecution);
   config.imageGeneration = Boolean(config.imageGeneration);
   config.url = typeof config.url === 'string' ? config.url : BASE_CONFIG.url;
