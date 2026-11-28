@@ -12,7 +12,8 @@
  * image fills the width, so a portrait image scrolls vertically, and nothing
  * ever scrolls sideways. Over it, outside the scrolling part so they stay
  * put: X to close in the top-left corner, and the image's actions in the
- * top-right one.
+ * top-right one, each 10px in from its edge (on the right, from the
+ * scrollbar, when there is one).
  *
  * Over a grid image there is nothing but, while editing, its corner buttons.
  * Its caption carries the tag, `[name]`, on the left, red with a `(!)` prefix
@@ -209,11 +210,15 @@
   z-index: 2;
 }
 
-/* Clear of the viewer's own scrollbar on the right. */
+/*
+ * The same 10px inset as the close button, measured from the scrollbar when
+ * the image scrolls (`--scrollbar-width`, set when it opens), so the two
+ * corners mirror each other.
+ */
 .attachment-view-actions {
   position: absolute;
   top: 10px;
-  right: 22px;
+  right: calc(10px + var(--scrollbar-width, 0px));
   z-index: 2;
   display: flex;
   align-items: center;

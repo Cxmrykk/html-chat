@@ -26,7 +26,9 @@ import {
  * the image is taller than it is wide. Over it, outside the scrolling part,
  * X closes it (top-left), and download and copy sit top-right; for a
  * placeholder, whose original is gone, those two are greyed out and a restore
- * button comes first.
+ * button comes first. Both corners keep the same inset from the edge they
+ * sit at; on the right, that inset is measured from the scrollbar, when the
+ * square has one (`--scrollbar-width`).
  *
  * Which image is open is session state (`state.session.expandedImage`), not
  * markup: rows are redrawn all the time while a reply streams, so after any
@@ -181,6 +183,22 @@ function expandedFigure(container) {
 }
 
 /**
+ * How wide the open image's scrollbar is, as `--scrollbar-width` on its
+ * figure, so the buttons on the right keep the same inset from it that the
+ * close button keeps from the left edge. Zero for an image that does not
+ * scroll, and for overlay scrollbars that take no room.
+ */
+function syncScrollbarInset(figure) {
+  const viewer = figure.querySelector('.attachment-viewer');
+  if (!viewer) return;
+  const width = Math.max(0, viewer.offsetWidth - viewer.clientWidth - viewer.clientLeft * 2);
+  const value = `${width}px`;
+  if (figure.style.getPropertyValue('--scrollbar-width') !== value) {
+    figure.style.setProperty('--scrollbar-width', value);
+  }
+}
+
+/**
  * Show the open image as open, and every other as not. Idempotent and cheap:
  * called after any render that may have rebuilt a row. An image opened again
  * after a redraw gets back the scroll it had.
@@ -196,12 +214,16 @@ export function syncExpandedImage() {
   for (const grid of container.querySelectorAll('.has-expanded')) {
     if (!target || grid !== target.parentElement) grid.classList.remove('has-expanded');
   }
-  if (!target || target.classList.contains('expanded')) return;
+  if (!target) return;
 
-  target.classList.add('expanded');
-  target.parentElement?.classList.add('has-expanded');
-  const viewer = target.querySelector('.attachment-viewer');
-  if (viewer) viewer.scrollTop = state.session.expandedImage?.scrollTop || 0;
+  if (!target.classList.contains('expanded')) {
+    target.classList.add('expanded');
+    target.parentElement?.classList.add('has-expanded');
+    const viewer = target.querySelector('.attachment-viewer');
+    if (viewer) viewer.scrollTop = state.session.expandedImage?.scrollTop || 0;
+  }
+  // Measured once open: only then can the square scroll at all.
+  syncScrollbarInset(target);
 }
 
 /** Keep the open image's scroll, so a redraw can give it back. */
