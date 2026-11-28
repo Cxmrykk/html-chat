@@ -14,10 +14,12 @@ import * as settings from '../services/settings.js';
 import * as transfer from '../services/transfer.js';
 import * as models from '../services/models.js';
 import * as images from '../services/images.js';
-import { pickJSONText, pickFiles } from '../services/file-io.js';
+import { pickJSONText, pickFiles, downloadBlob } from '../services/file-io.js';
+import { copyImageBlob } from '../services/clipboard.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
 import { hydrateConnectionForm } from '../ui/components/connection-form.js';
+import { syncExpandedImage } from '../ui/components/attachments.js';
 import { scrollToMessage } from '../ui/views/chat-view.js';
 import { sourceBlocks } from '../ui/markdown.js';
 import { isSendable, isEditable, isThinking, isPreamble } from '../core/roles.js';
@@ -47,6 +49,9 @@ const SETTINGS_PAGES = ['main', 'imageModels', 'imageToolModels', 'modelFilter']
 
 /** How long a message found by a search stays highlighted after opening its chat. */
 const REVEAL_MS = 600;
+
+/** How long a copy button shows its check mark. */
+const COPIED_MS = 1500;
 
 /* ------------------------------------------------------------------ *
  * Helpers
@@ -208,6 +213,17 @@ function revealMessage(index) {
   setTimeout(() => element.classList.remove('flash'), REVEAL_MS);
 }
 
+/** Show a check mark on a copy button for a moment (or "Copied" on a text button). */
+function flashCopied(element) {
+  if (!element) return;
+  const originalHTML = element.innerHTML;
+  if (element.classList.contains('icon-btn')) element.innerHTML = ICON_CHECK;
+  else element.textContent = 'Copied';
+  setTimeout(() => {
+    element.innerHTML = originalHTML;
+  }, COPIED_MS);
+}
+
 /** Replace the images waiting in the composer. */
 function setPendingAttachments(list) {
   setSession({ pendingAttachments: list }, { silent: true });
@@ -241,7 +257,7 @@ async function confirmPlaceholders(messages) {
 
   const proceed = confirm(
     `${subject}${fresh}: the original is no longer stored.\n\n` +
-      `Unless you restore ${them} first (open the attachments and click the placeholder), ` +
+      `Unless you restore ${them} first (open the image and use its restore button), ` +
       `the pixelated placeholder, scaled up to the original size, will be sent instead.\n\n` +
       'Send anyway?',
   );
@@ -576,8 +592,20 @@ export const commands = {
   /* ---- attachments ---- */
 
   /**
-   * Images pasted or dropped. While a message is being edited they are added
-   * to it; otherwise they wait in the composer for the next send.
+   * The attach button: pick image files, which go wherever a paste would
+   * (the message being edited, or the composer). Not while a reply is being
+   * processed: the button is hidden then.
+   */
+  'attachments.pick': async () => {
+    if (state.session.view !== 'chat' || state.session.editingThinking) return;
+    if (state.runtime.generation.active) return;
+    const files = await pickFiles({ multiple: true, accept: 'image/*' });
+    if (files.length) await commands['attachments.add']({ files });
+  },
+
+  /**
+   * Images pasted, dropped or picked. While a message is being edited they
+   * are added to it; otherwise they wait in the composer for the next send.
    */
   'attachments.add': async ({ files } = {}) => {
     if (state.session.view !== 'chat') return;
@@ -603,6 +631,74 @@ export const commands = {
     setPendingAttachments(list.filter((_, i) => i !== at));
   },
 
+  /**
+   * Open an image across its whole attachments area. Nothing is redrawn: the
+   * figure is shown as open in place (`syncExpandedImage`), and stays open
+   * through later redraws of its row.
+   */
+  'attachments.expand': ({ index, attachment: at, call }) => {
+    const target = attachmentAt(index, at, call);
+    if (!target) return;
+    const current = state.session.expandedImage;
+    if (
+      current &&
+      current.chatId === state.data.currentChatId &&
+      current.index === index &&
+      current.call === (call || null) &&
+      current.at === at &&
+      current.hash === target.hash
+    ) {
+      return;
+    }
+    setSession(
+      {
+        expandedImage: {
+          chatId: state.data.currentChatId,
+          index,
+          call: call || null,
+          at,
+          hash: target.hash,
+          scrollTop: 0,
+        },
+      },
+      { silent: true },
+    );
+    syncExpandedImage();
+    $('#chat-container .attachment.expanded')?.scrollIntoView({ block: 'nearest' });
+  },
+
+  /** Close the opened image: X, or Esc. */
+  'attachments.collapse': () => {
+    if (!state.session.expandedImage) return;
+    setSession({ expandedImage: null }, { silent: true });
+    syncExpandedImage();
+  },
+
+  /** Save an image's original as a file. A placeholder has none to save. */
+  'attachments.download': async ({ index, attachment: at, call }) => {
+    const target = attachmentAt(index, at, call);
+    if (!target) return;
+    const blob = await images.originalBlob(target.hash);
+    if (!blob) {
+      alert('Only a placeholder of this image is stored: restore the original first.');
+      return;
+    }
+    downloadBlob(blob, target.name);
+  },
+
+  /** Copy an image's original to the clipboard, as PNG. */
+  'attachments.copy': async ({ index, attachment: at, call, element }) => {
+    const target = attachmentAt(index, at, call);
+    if (!target) return;
+    try {
+      await copyImageBlob(images.originalBlob(target.hash));
+    } catch (error) {
+      alert(`Could not copy the image: ${error.message}`);
+      return;
+    }
+    flashCopied(element);
+  },
+
   /** Remove an image from the message being edited. */
   'attachments.remove': async ({ index, attachment }) => {
     if (!isEditedAttachment(index, attachment)) return;
@@ -621,10 +717,10 @@ export const commands = {
   },
 
   /**
-   * A click on an image of the message being edited: pick one file and put
-   * it in that image's place, for good. Replacing is the point, so there is
-   * no warning when the file is a different image; picking the image's own
-   * original simply restores it.
+   * The replace button of an image in the message being edited: pick one
+   * file and put it in that image's place, for good. Replacing is the point,
+   * so there is no warning when the file is a different image; picking the
+   * image's own original simply restores it.
    */
   'attachments.replace': async ({ index, attachment: at }) => {
     if (!isEditedAttachment(index, at)) return;
@@ -649,7 +745,7 @@ export const commands = {
   },
 
   /**
-   * A click on a placeholder (outside edit mode): pick files to bring back
+   * The restore button of an opened placeholder: pick files to bring back
    * originals. The placeholder may be a message's image or one a tool call
    * generated (`call`).
    *
@@ -725,20 +821,7 @@ export const commands = {
     const textToCopy = messageMarkdown(message);
     if (!textToCopy) return;
 
-    navigator.clipboard.writeText(textToCopy).then(() => {
-      if (!element) return;
-      const originalHTML = element.innerHTML;
-
-      if (element.classList.contains('icon-btn')) {
-        element.innerHTML = ICON_CHECK;
-      } else {
-        element.textContent = 'Copied';
-      }
-
-      setTimeout(() => {
-        element.innerHTML = originalHTML;
-      }, 1500);
-    });
+    navigator.clipboard.writeText(textToCopy).then(() => flashCopied(element));
   },
 
   /**
@@ -896,7 +979,7 @@ export const commands = {
     await conversation.setCollapsed(index, !isCollapsed(message));
   },
 
-  /** Expand or collapse one call inside a thinking message. */
+  /** Expand or collapse one call inside a thinking message, even while it streams in. */
   'message.toggleCall': async ({ index, call }) => {
     if (!Number.isInteger(index) || !call) return;
     await conversation.toggleCallCollapsed(index, call);

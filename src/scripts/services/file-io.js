@@ -1,4 +1,4 @@
-/** Browser file picking and reading. */
+/** Browser file picking, reading and downloading. */
 
 export function pickFiles({ multiple = true, accept } = {}) {
   return new Promise((resolve) => {
@@ -25,4 +25,17 @@ export function readFileText(file) {
 export async function pickJSONText() {
   const [file] = await pickFiles({ multiple: false, accept: '.json' });
   return file ? readFileText(file) : null;
+}
+
+/** Save `blob` as a download named `filename`. */
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename || 'download';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  // Revoked a moment later: some browsers start the download asynchronously.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

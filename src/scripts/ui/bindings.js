@@ -12,13 +12,14 @@ import {
 import {
   renderInputArea,
   renderSendButton,
+  renderAttachButton,
   renderSettingsEditor,
   renderComposerAttachments,
   applyChromeState,
   updateModelDropdown,
 } from './components/input-area.js';
 import { renderConnectionForm } from './components/connection-form.js';
-import { syncAttachmentImages } from './components/attachments.js';
+import { syncAttachmentImages, syncExpandedImage } from './components/attachments.js';
 import { syncEditSelection } from './components/edit-selection.js';
 import {
   renderChatView,
@@ -34,15 +35,21 @@ import { syncTicker } from './ticker.js';
 /** Declarative event bindings mapping store events to UI renders. */
 
 /**
- * Every render that can rebuild a message row ends here: the outline around
- * the part being edited lives inside the row, so a new row needs it redrawn.
+ * After anything that may have rebuilt a message row: the outline around the
+ * part being edited, and the opened image, live inside rows, so a new row
+ * needs both put back.
  */
+function syncRowOverlays() {
+  syncEditSelection();
+  syncExpandedImage();
+}
+
 export function renderMainView({ preserveScroll = false } = {}) {
   const view = state.session.view;
   if (view === 'settings') renderSettingsView();
   else if (view === 'chats') renderChatsView();
   else renderChatView({ preserveScroll });
-  syncEditSelection();
+  syncRowOverlays();
 }
 
 export function renderAll() {
@@ -67,7 +74,7 @@ export function installBindings() {
 
   on(EVENTS.MESSAGES, () => {
     if (state.session.view === 'chat') renderChatView();
-    syncEditSelection();
+    syncRowOverlays();
     renderInputArea();
   });
 
@@ -83,7 +90,7 @@ export function installBindings() {
         messages[i].remove();
       }
     }
-    syncEditSelection();
+    syncRowOverlays();
     renderInputArea();
   });
 
@@ -100,7 +107,7 @@ export function installBindings() {
     if (streaming && isCollapsed(message, { editing })) {
       if (!hasMessageElement(index)) {
         renderChatView({ preserveScroll: true });
-        syncEditSelection();
+        syncRowOverlays();
       }
       return;
     }
@@ -120,7 +127,7 @@ export function installBindings() {
       replaceMessage(message, index, { editing });
     }
 
-    syncEditSelection();
+    syncRowOverlays();
 
     // Follow the reply down unless the user has deliberately scrolled away —
     // or has just toggled a box or a call, or started or stopped an edit,
@@ -138,6 +145,7 @@ export function installBindings() {
       // message, an error — always scrolls into view.
       const follow = !isModelOutput(message) || isPinnedToBottom();
       appendMessageToView(message, index, { follow });
+      syncExpandedImage();
     }
   });
 
@@ -168,6 +176,8 @@ export function installBindings() {
 
   on(EVENTS.GENERATION, () => {
     renderSendButton();
+    // The attach button is away while a reply is processed.
+    renderAttachButton();
     // Live counters only move while a turn is running.
     syncTicker(state.runtime.generation.active);
   });

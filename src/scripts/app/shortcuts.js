@@ -69,6 +69,12 @@ export function installShortcuts() {
     const tag = document.activeElement?.tagName.toLowerCase();
     const inField = tag === 'input' || tag === 'textarea' || tag === 'select';
 
+    // Esc closes an opened image, wherever the focus is.
+    if (event.key === 'Escape' && state.session.expandedImage) {
+      runCommand('attachments.collapse');
+      return;
+    }
+
     if (event.altKey && !event.ctrlKey && !event.metaKey) {
       const key = event.key.toLowerCase();
       const current = state.data.currentChatId;

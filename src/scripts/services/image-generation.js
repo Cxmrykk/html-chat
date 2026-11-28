@@ -2,14 +2,16 @@ import { state } from '../store/state.js';
 import { requestImageGeneration, requestImageEdit } from './api/images.js';
 import { ingestImage } from './images.js';
 import { editScaling, scaleImageBlob } from './image-scaling.js';
+import { fitToRequestedSize, autoCropSettings } from './image-cropping.js';
 import { TOOL_IMAGE_OPTIONS } from '../core/tools.js';
 
 /**
  * Making images with an image model, for the image tools. A prompt alone
  * generates; a prompt with images to start from edits, and those images are
  * first scaled down to Edit Max Pixels (only the copy that is sent: the
- * originals stay at full size). What comes back is held like any pasted image
- * (`services/images.js`) and resolves as attachment records.
+ * originals stay at full size). What comes back is fitted to the size the
+ * call asked for, when it did (`services/image-cropping.js`), then held like
+ * any pasted image (`services/images.js`) and resolves as attachment records.
  */
 
 const EXTENSIONS = {
@@ -65,8 +67,9 @@ async function scaledSources(sources) {
 
 /**
  * Generate (no `sources`) or edit (`sources`: `{ blob, name }`) with `model`,
- * and resolve with `{ records, revisedPrompt }`. A reply with no image is an
- * error.
+ * and resolve with `{ records, revisedPrompt, notes }`: `notes[i]` says what
+ * was done to fit `records[i]` to the requested size, or is ''. A reply with
+ * no image is an error.
  */
 export async function createImages({ model, prompt, sources = [], params = {}, signal }) {
   const config = state.data.config;
@@ -83,12 +86,17 @@ export async function createImages({ model, prompt, sources = [], params = {}, s
 
   if (!reply.images.length) throw new Error('The server answered without an image.');
 
+  const crop = autoCropSettings();
   const records = [];
+  const notes = [];
   for (let at = 0; at < reply.images.length; at++) {
-    const blob = reply.images[at];
+    const fitted = await fitToRequestedSize(reply.images[at], params.size, crop);
     records.push(
-      await ingestImage(blob, { name: generatedName(model, at, reply.images.length, blob.type) }),
+      await ingestImage(fitted.blob, {
+        name: generatedName(model, at, reply.images.length, fitted.blob.type),
+      }),
     );
+    notes.push(fitted.note);
   }
-  return { records, revisedPrompt: reply.revisedPrompt };
+  return { records, revisedPrompt: reply.revisedPrompt, notes };
 }

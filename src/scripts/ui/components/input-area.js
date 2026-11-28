@@ -17,11 +17,14 @@ import { setMarqueeText, syncSelectMarquee } from '../marquee.js';
 
 const PROMPT_PLACEHOLDER = 'Type your prompt here...';
 const PICK_PLACEHOLDER =
-  'Click the part of the message you want to edit, or Select All. Shift+Click another part to select everything in between. Paste or drop images to add them to the message.';
+  'Click the part of the message you want to edit, or Select All. Shift+Click another part to select everything in between. Attach, paste or drop images to add them to the message.';
 const EDIT_PLACEHOLDER = 'Empty: saving removes the selected part.';
 
 const CLOSE_TITLE = 'Close the settings';
 const CLOSE_BLOCKED_TITLE = 'Save, reset or cancel the setting being edited first';
+
+const ATTACH_TITLE = 'Attach images (you can also paste or drop them)';
+const ATTACH_EDIT_TITLE = 'Add images to the message being edited';
 
 /** How close to the bottom still counts as "following along" (see `chat-view.js`). */
 const STICK_THRESHOLD_PX = 48;
@@ -123,6 +126,22 @@ function editingMessage() {
   const index = state.session.editingMessageIndex;
   if (!chat || index === null) return null;
   return chat.messages[index] || null;
+}
+
+/**
+ * The attach button, left of Send (or of Save while a message is being
+ * edited, where what it picks goes to that message). Hidden while a reply is
+ * being processed, and while the thinking levels are being edited.
+ */
+export function renderAttachButton() {
+  const button = $('#attach-btn');
+  if (!button) return;
+  const show =
+    state.session.view === 'chat' &&
+    !state.session.editingThinking &&
+    !state.runtime.generation.active;
+  setHidden(button, !show);
+  button.title = editingMessage() ? ATTACH_EDIT_TITLE : ATTACH_TITLE;
 }
 
 /**
@@ -250,6 +269,7 @@ export function renderInputArea() {
 
   renderComposerMode(chatInput, editingMsg);
   renderComposerAttachments();
+  renderAttachButton();
   renderSendButton();
 }
 

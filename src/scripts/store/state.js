@@ -60,6 +60,13 @@ export const state = {
      * are held by `services/images.js`.
      */
     pendingAttachments: [],
+    /**
+     * The image opened across its attachments area, or null:
+     * `{ chatId, index, call, at, hash, scrollTop }`, where `call` is the
+     * `"round.call"` key of the tool call that made it, or null for a
+     * message's own image (`ui/components/attachments.js`).
+     */
+    expandedImage: null,
     /** Which setting the settings editor has open. */
     activeSettingKey: null,
     /** Unsaved editor contents, restored when returning to the same key. */

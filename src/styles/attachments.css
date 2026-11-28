@@ -4,14 +4,19 @@
  * A drop-down at the bottom of a message. Its header has the same geometry
  * as a tool call's (padding, font size, line height, icon column), so the two
  * read as one family. Inside it, the images are tiled in two equal columns,
- * each in a square viewer as wide as its column. The image fills the
- * viewer's width: a landscape image sits centred in the square, a portrait
- * one scrolls vertically. Zooming changes the image's width
- * (ui/components/attachments.js).
+ * each in a square as wide as its column, showing the whole image: nothing
+ * scrolls or zooms in the grid.
  *
- * Over an image there is nothing but, while editing, its corner buttons. Its
- * caption carries the tag, `[name]`, on the left, red with a `(!)` prefix for
- * a placeholder, and the dimensions on the right.
+ * A click on an image opens it (`.expanded`, ui/components/attachments.js):
+ * the grid shows that image alone, in a square as wide as the whole area. The
+ * image fills the width, so a portrait image scrolls vertically, and nothing
+ * ever scrolls sideways. Over it, outside the scrolling part so they stay
+ * put: X to close in the top-left corner, and the image's actions in the
+ * top-right one.
+ *
+ * Over a grid image there is nothing but, while editing, its corner buttons.
+ * Its caption carries the tag, `[name]`, on the left, red with a `(!)` prefix
+ * for a placeholder, and the dimensions on the right.
  * ------------------------------------------------------------------ */
 
 .attachments {
@@ -74,20 +79,12 @@
   margin-top: 0.15em;
 }
 
-/* Two equal columns; `minmax(0, 1fr)` stops a long caption from widening one. */
-.attachments-body {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: 12px;
-  padding: 8px;
-  border-top: 1px dashed var(--border-soft);
-}
-
 /*
- * The images a tool call made, under its header (and its details, when
- * open): the same tiling as an attachments drop-down, always shown.
+ * Two equal columns; `minmax(0, 1fr)` stops a long caption from widening one.
+ * The images a tool call made, under its header (and its details, when open),
+ * are tiled the same way and always shown.
  */
+.attachments-body,
 .tool-call-images {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -97,26 +94,32 @@
   border-top: 1px dashed var(--border-soft);
 }
 
+/* One image open: it alone, across the whole area. */
+.attachments-body.has-expanded,
+.tool-call-images.has-expanded {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.has-expanded > .attachment:not(.expanded) {
+  display: none;
+}
+
 .attachment {
   margin: 0;
   min-width: 0;
 }
 
-/* Holds the viewer and, over it, the corner buttons, which must not scroll with it. */
+/* Holds the viewer and, over it, the buttons, which must not scroll with it. */
 .attachment-frame {
   position: relative;
 }
 
-/*
- * The single grid cell is the square itself, so an image smaller than it is
- * centred by its auto margins, and one larger simply overflows and scrolls.
- * Auto margins never push content out of reach, unlike flex centring.
- */
+/* A square showing the whole image, letterboxed. Nothing scrolls. */
 .attachment-viewer {
   box-sizing: border-box;
   width: 100%;
   aspect-ratio: 1 / 1;
-  overflow: auto;
+  overflow: hidden;
   display: grid;
   grid-template: 100% / 100%;
   background: var(--bg-inset);
@@ -126,9 +129,11 @@
 .attachment-image {
   display: block;
   width: 100%;
+  height: 100%;
   max-width: none;
-  height: auto;
-  margin: auto;
+  margin: 0;
+  object-fit: contain;
+  cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -137,16 +142,42 @@
   image-rendering: pixelated;
 }
 
-/* Clicking does something: restores a placeholder, or replaces while editing. */
-.attachment.is-placeholder .attachment-image,
-.attachment.is-replaceable .attachment-image {
-  cursor: pointer;
+/*
+ * Opened: the image fills the width at its own height, and the square
+ * scrolls vertically. Auto margins centre a landscape image, and never push
+ * a tall one out of reach, unlike flex centring.
+ */
+.attachment.expanded .attachment-viewer {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.attachment.expanded .attachment-image {
+  height: auto;
+  margin: auto;
+  object-fit: fill;
+  cursor: default;
+}
+
+/* ---- Buttons over the image ---- */
+
+.attachment-frame button {
+  font-size: 0.8em;
+}
+
+.attachment-frame button.icon-btn {
+  padding: 3px;
+}
+
+.attachment-frame button.icon-btn .icon {
+  width: 1.2em;
+  height: 1.2em;
 }
 
 /*
  * The corner buttons of an image being edited: the same 10px inset from the
  * top and right that a message's buttons keep (`.msg-actions-container`), and
- * the same button size (`.msg-actions button.icon-btn`).
+ * the same button size (`.msg-actions button.icon-btn`). Not while open.
  */
 .attachment-actions {
   position: absolute;
@@ -158,17 +189,35 @@
   gap: 5px;
 }
 
-.attachment-actions button {
-  font-size: 0.8em;
+.attachment.expanded .attachment-actions {
+  display: none;
 }
 
-.attachment-actions button.icon-btn {
-  padding: 3px;
+/* Close, download and copy: only while the image is open. */
+.attachment-view-tools {
+  display: none;
 }
 
-.attachment-actions button.icon-btn .icon {
-  width: 1.2em;
-  height: 1.2em;
+.attachment.expanded .attachment-view-tools {
+  display: block;
+}
+
+.attachment-close {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+}
+
+/* Clear of the viewer's own scrollbar on the right. */
+.attachment-view-actions {
+  position: absolute;
+  top: 10px;
+  right: 22px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* ---- Caption: [tag] on the left, dimensions on the right ---- */

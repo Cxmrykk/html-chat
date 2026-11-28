@@ -10,60 +10,72 @@ import {
   ICON_DELETE,
   ICON_CANCEL,
   ICON_PAPERCLIP,
+  ICON_COPY,
+  ICON_DOWNLOAD,
+  ICON_UPLOAD,
 } from '../icons.js';
 
 /**
  * A message's attachments: a drop-down at the bottom of the row, and inside it
- * one square viewer per image, tiled in two columns. A tool call that made
- * images shows them the same way, in a strip of its own
- * (`components/message.js`).
+ * one square per image, tiled in two columns. A tool call that made images
+ * shows them the same way, in a strip of its own (`components/message.js`).
  *
- * Every viewer is 1:1 and as wide as its column. The image fills the viewer's
- * width: a landscape image sits centred in the square, a portrait one scrolls
- * vertically. Zooming (`setAttachmentZoom`) scales the image within it.
+ * In the grid every square shows its whole image: nothing scrolls or zooms
+ * there. A click opens an image (`attachments.expand`): the grid shows it
+ * alone, as wide as the whole area, in a square that scrolls vertically when
+ * the image is taller than it is wide. Over it, outside the scrolling part,
+ * X closes it (top-left), and download and copy sit top-right; for a
+ * placeholder, whose original is gone, those two are greyed out and a restore
+ * button comes first.
  *
- * Nothing is drawn over the image except, while its message is being edited,
- * a row of buttons in the top-right corner: move earlier, move later, remove.
- * Under it, a caption carries the image's tag, `[name]`, on the left and its
+ * Which image is open is session state (`state.session.expandedImage`), not
+ * markup: rows are redrawn all the time while a reply streams, so after any
+ * render `syncExpandedImage` finds the image again, by position and hash, and
+ * gives back the scroll it had.
+ *
+ * While its message is being edited, a grid image carries a row of buttons
+ * in its top-right corner: move earlier, move later, replace, remove. Under
+ * every image, a caption carries its tag, `[name]`, on the left and its
  * dimensions on the right. Once the original is known to be gone, the tag
  * turns red and reads `(!) [name]`.
- *
- * A click on an image means one of two things:
- *
- *   - while its message is being edited, replace it (`attachments.replace`);
- *   - otherwise, if it is a placeholder, restore its original
- *     (`attachments.restore`).
- *
- * The image's tooltip says which.
  */
 
-const MAX_ZOOM = 8;
-const ZOOM_HINT = 'Pinch or Ctrl+Scroll to zoom';
+const NOT_STORED = 'Only a placeholder of this image is stored: restore the original first';
 
 function sizeLabel(attachment) {
   return `${attachment.width}×${attachment.height}`;
 }
 
-/** What a click on the image does, for its tooltip; empty when it does nothing. */
-function clickHint(placeholder, editing) {
-  if (editing) return 'Click to replace this image';
-  return placeholder ? 'Placeholder: click to restore the original image' : '';
+function iconButton(command, title, icon, { key = '', disabled = false, extra = '' } = {}) {
+  return `<button class="icon-btn${extra ? ` ${extra}` : ''}" data-command="${command}"${
+    key ? ` data-key="${key}"` : ''
+  } title="${escapeHTML(title)}"${disabled ? ' disabled' : ''}>${icon}</button>`;
 }
 
 /**
  * The corner buttons of an image in a message being edited. `data-key` is the
  * step a move takes; the ends of the list cannot move further out.
  */
-function actionsHTML(at, count) {
-  const btn = (command, title, icon, { key = '', disabled = false } = {}) =>
-    `<button class="icon-btn" data-command="${command}"${key ? ` data-key="${key}"` : ''}
-             title="${title}"${disabled ? ' disabled' : ''}>${icon}</button>`;
-
+function editActionsHTML(at, count) {
   return `
     <div class="attachment-actions">
-      ${btn('attachments.move', 'Move earlier', ICON_CHEVRON_UP, { key: '-1', disabled: at === 0 })}
-      ${btn('attachments.move', 'Move later', ICON_CHEVRON_DOWN, { key: '1', disabled: at >= count - 1 })}
-      ${btn('attachments.remove', 'Remove this image', ICON_DELETE)}
+      ${iconButton('attachments.move', 'Move earlier', ICON_CHEVRON_UP, { key: '-1', disabled: at === 0 })}
+      ${iconButton('attachments.move', 'Move later', ICON_CHEVRON_DOWN, { key: '1', disabled: at >= count - 1 })}
+      ${iconButton('attachments.replace', 'Replace this image', ICON_UPLOAD)}
+      ${iconButton('attachments.remove', 'Remove this image', ICON_DELETE)}
+    </div>`;
+}
+
+/** The buttons of an open image: close on the left, its actions on the right. */
+function viewToolsHTML(placeholder) {
+  return `
+    <div class="attachment-view-tools">
+      ${iconButton('attachments.collapse', 'Close (Esc)', ICON_CANCEL, { extra: 'attachment-close' })}
+      <div class="attachment-view-actions">
+        ${placeholder ? iconButton('attachments.restore', 'Restore the original from a file', ICON_UPLOAD) : ''}
+        ${iconButton('attachments.download', placeholder ? NOT_STORED : 'Download', ICON_DOWNLOAD, { disabled: placeholder })}
+        ${iconButton('attachments.copy', placeholder ? NOT_STORED : 'Copy the image', ICON_COPY, { disabled: placeholder })}
+      </div>
     </div>`;
 }
 
@@ -79,26 +91,16 @@ export function attachmentItemHTML(attachment, at, { editing = false, count = 1 
   // Red only once the lookup is over, so a cached original never flashes red.
   const missing = placeholder && imageStatus(attachment.hash) === 'missing';
 
-  // Zooming out stops when the whole image fits the square: narrower than it
-  // for a portrait image, full width for any other.
-  const minZoom = Math.min(1, attachment.width / attachment.height);
+  const hint = placeholder
+    ? 'Placeholder: click to open it, and restore the original from there'
+    : 'Click to open';
 
-  const command = editing
-    ? 'attachments.replace'
-    : placeholder
-      ? 'attachments.restore'
-      : '';
-  const hint = clickHint(placeholder, editing);
-
+  // The aspect ratio gives an opened image its height before it has loaded,
+  // so its scroll can be given back straight away.
   const image = `<img class="attachment-image${placeholder ? ' pixelated' : ''}"
       src="${escapeHTML(url || attachment.placeholder)}" alt="${escapeHTML(attachment.name)}"
-      style="aspect-ratio: ${attachment.width} / ${attachment.height}" draggable="false"${
-        command ? ` data-command="${command}"` : ''
-      }${hint ? ` title="${escapeHTML(hint)}"` : ''}>`;
-
-  const viewerHint = [ZOOM_HINT, editing || placeholder ? '' : 'double-click to reset']
-    .filter(Boolean)
-    .join(' · ');
+      style="aspect-ratio: ${attachment.width} / ${attachment.height}" draggable="false"
+      data-command="attachments.expand" title="${escapeHTML(hint)}">`;
 
   const tagTitle = missing
     ? `${attachment.name} (placeholder: the original is not stored)`
@@ -107,15 +109,15 @@ export function attachmentItemHTML(attachment, at, { editing = false, count = 1 
   const classes = ['attachment'];
   if (placeholder) classes.push('is-placeholder');
   if (missing) classes.push('is-missing');
-  if (editing) classes.push('is-replaceable');
+  if (editing) classes.push('is-editable');
 
   return `
     <figure class="${classes.join(' ')}" data-attachment="${at}"
             data-hash="${escapeHTML(attachment.hash)}">
       <div class="attachment-frame">
-        <div class="attachment-viewer" data-zoom="1" data-min-zoom="${minZoom}"
-             title="${escapeHTML(viewerHint)}">${image}</div>
-        ${editing ? actionsHTML(at, count) : ''}
+        <div class="attachment-viewer">${image}</div>
+        ${editing ? editActionsHTML(at, count) : ''}
+        ${viewToolsHTML(placeholder)}
       </div>
       <figcaption class="attachment-caption">
         <span class="attachment-tag" title="${escapeHTML(tagTitle)}">${
@@ -155,6 +157,59 @@ export function attachmentsHTML(message, { editing = false } = {}) {
     </div>`;
 }
 
+/* ------------------------------------------------------------------ *
+ * The open image
+ * ------------------------------------------------------------------ */
+
+/**
+ * The figure of the open image, if it is on screen: in the open chat, in the
+ * row, call and position it was opened at, and still the same image (a
+ * deleted message shifts every index after it).
+ */
+function expandedFigure(container) {
+  const wanted = state.session.expandedImage;
+  if (!wanted || state.session.view !== 'chat') return null;
+  if (wanted.chatId !== state.data.currentChatId) return null;
+
+  const row = container.querySelector(`.msg[data-index="${wanted.index}"]`);
+  if (!row) return null;
+  const grid = wanted.call
+    ? row.querySelector(`.tool-call[data-call="${CSS.escape(wanted.call)}"] > .tool-call-images`)
+    : row.querySelector(':scope > .attachments > .attachments-body');
+  const figure = grid?.querySelector(`:scope > .attachment[data-attachment="${wanted.at}"]`);
+  return figure && figure.dataset.hash === wanted.hash ? figure : null;
+}
+
+/**
+ * Show the open image as open, and every other as not. Idempotent and cheap:
+ * called after any render that may have rebuilt a row. An image opened again
+ * after a redraw gets back the scroll it had.
+ */
+export function syncExpandedImage() {
+  const container = $('#chat-container');
+  if (!container) return;
+
+  const target = expandedFigure(container);
+  for (const figure of container.querySelectorAll('.attachment.expanded')) {
+    if (figure !== target) figure.classList.remove('expanded');
+  }
+  for (const grid of container.querySelectorAll('.has-expanded')) {
+    if (!target || grid !== target.parentElement) grid.classList.remove('has-expanded');
+  }
+  if (!target || target.classList.contains('expanded')) return;
+
+  target.classList.add('expanded');
+  target.parentElement?.classList.add('has-expanded');
+  const viewer = target.querySelector('.attachment-viewer');
+  if (viewer) viewer.scrollTop = state.session.expandedImage?.scrollTop || 0;
+}
+
+/** Keep the open image's scroll, so a redraw can give it back. */
+export function rememberExpandedScroll(viewer) {
+  const wanted = state.session.expandedImage;
+  if (wanted && viewer?.closest('.attachment.expanded')) wanted.scrollTop = viewer.scrollTop;
+}
+
 /**
  * Redraw every shown image with this hash, after its original was found,
  * found missing, or restored. Only the image itself is replaced. An image a
@@ -180,6 +235,7 @@ export function syncAttachmentImages(hash) {
       fromHTML(attachmentItemHTML(attachment, at, { editing, count: list.length })),
     );
   }
+  syncExpandedImage();
 }
 
 /** The composer's images waiting to be sent, as removable chips. */
@@ -196,50 +252,4 @@ export function composerAttachmentsHTML(list) {
         </span>`;
     })
     .join('');
-}
-
-/* ------------------------------------------------------------------ *
- * Zoom
- * ------------------------------------------------------------------ */
-
-/**
- * Scale the image in `viewer` to `zoom` times the viewer's width, keeping the
- * point under `anchor` (viewport coordinates; the centre if omitted) still.
- */
-export function setAttachmentZoom(viewer, zoom, anchor = null) {
-  const image = viewer?.querySelector('.attachment-image');
-  if (!image) return;
-
-  const min = Number(viewer.dataset.minZoom) || 1;
-  const current = Number(viewer.dataset.zoom) || 1;
-  const next = Math.min(MAX_ZOOM, Math.max(min, zoom));
-  if (Math.abs(next - current) < 1e-4) return;
-
-  const frame = viewer.getBoundingClientRect();
-  const x = Number.isFinite(anchor?.x) ? anchor.x : frame.left + frame.width / 2;
-  const y = Number.isFinite(anchor?.y) ? anchor.y : frame.top + frame.height / 2;
-
-  const before = image.getBoundingClientRect();
-  const rx = before.width ? (x - before.left) / before.width : 0.5;
-  const ry = before.height ? (y - before.top) / before.height : 0.5;
-
-  viewer.dataset.zoom = String(next);
-  image.style.width = `${next * 100}%`;
-
-  const after = image.getBoundingClientRect();
-  viewer.scrollLeft += after.left + rx * after.width - x;
-  viewer.scrollTop += after.top + ry * after.height - y;
-}
-
-/** One wheel step of zoom. A trackpad pinch arrives as Ctrl+wheel with small deltas. */
-export function zoomAttachment(viewer, deltaY, anchor) {
-  const current = Number(viewer.dataset.zoom) || 1;
-  const delta = Math.max(-50, Math.min(50, deltaY));
-  setAttachmentZoom(viewer, current * Math.exp(-delta * 0.01), anchor);
-}
-
-export function resetAttachmentZoom(viewer) {
-  setAttachmentZoom(viewer, 1);
-  viewer.scrollTop = 0;
-  viewer.scrollLeft = 0;
 }

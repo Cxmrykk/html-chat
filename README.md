@@ -8,7 +8,7 @@ Features:
 - Model capabilities (tools, thinking levels, vision, context length) read from LiteLLM, Ollama and `/models`
 - A model blacklist or whitelist for the dropdown
 - Per-model LLM parameters on top of shared defaults
-- Image attachments, and image generation and editing as tools
+- Image attachments, and image generation and editing as tools, with lossless auto-cropping to the requested size
 - Tool calling: JavaScript execution in the page
 - Edit, retry, fork and delete any message, or change its role
 - Markdown, syntax highlighting and KaTeX math
@@ -68,11 +68,12 @@ A model the filter hides can't be sent to.
 | Action                         | How                                         |
 | ------------------------------ | ------------------------------------------- |
 | Send                           | `Ctrl/Cmd+Enter` or **Send**                |
+| Attach images                  | The paperclip button, or paste or drop them |
 | Add a message without the API  | `Ctrl+Shift+Enter`, or Shift+Click **Send** |
 | Stop                           | Click the send button while it's running    |
 | Set reasoning effort           | Ctrl+Click the model dropdown               |
 
-While a turn runs, the send button reads **Thinking...**, **Generating...** or **Executing...** (a tool is running).
+While a turn runs, the send button reads **Thinking...**, **Generating...** or **Executing...** (a tool is running), and the paperclip button is hidden.
 
 The chat is for text models only. Image models never appear in the model dropdown. They are used through the image tools (see [Images](#images)).
 
@@ -102,11 +103,11 @@ After **Edit**, click a block (paragraph, list, code block) to load it into the 
 - Shift+Click another block to select the range; **Select All** selects every block.
 - Clicking the selected block again deselects it.
 - **Save** (`Ctrl+Enter`) writes the edit back. An empty composer deletes the selection.
-- Paste or drop images to add them to the message. Use the corner buttons on an image to move or remove it, or click it to replace it.
+- Use the paperclip button left of **Save**, or paste or drop images, to add them to the message. The corner buttons on each image move, replace or remove it.
 
 ### Thinking boxes
 
-Each turn's reasoning, the text written alongside tool calls, and the tool calls with their results sit in one collapsible box. Its header shows how long you waited.
+Each turn's reasoning, the text written alongside tool calls, and the tool calls with their results sit in one collapsible box. Its header shows how long you waited. A tool call can be opened while the model is still writing it, to watch it arrive.
 
 ## Chats
 
@@ -158,9 +159,14 @@ Below them, every chat, grouped by date. Type in the bottom box to search all of
 
 ### Attachments
 
-Paste or drop images into the chat. A chat only stores a small pixelated placeholder of each image. Originals are kept in memory and, up to **Image Cache (MB)**, in browser storage.
+Attach images with the paperclip button, or paste or drop them into the chat. A chat only stores a small pixelated placeholder of each image. Originals are kept in memory and, up to **Image Cache (MB)**, in browser storage.
 
-If an original is gone, its tag turns red. Click the placeholder to restore it from the file. If you send anyway, you're warned first, and the placeholder is sent scaled up.
+A message's images sit in an **Attachments** drop-down, two to a row, each shown whole. Click one to open it across the whole drop-down: it fills the width, a tall image scrolls vertically, and the buttons stay put over it:
+
+- **X** (top left, or `Esc`) closes it.
+- **Download** and **Copy** (top right) save the original, or copy it to the clipboard as PNG.
+
+If an original is gone, its tag turns red, and the opened image offers **Restore** instead: pick the original file to bring it back. If you send anyway, you're warned first, and the placeholder is sent scaled up.
 
 **Vision Max Pixels** (default `4194304`, 2048×2048) scales down images sent to chat models.
 
@@ -177,6 +183,12 @@ Image models are only used through these tools. They never appear in the model d
 When a turn generates or edits images, the assistant's answer ends with an **Attachments** drop-down holding them, opened, so they show without opening the thinking box.
 
 Images sent for editing are scaled down to **Edit Max Pixels** (default `4194304`, 2048×2048) using **Edit Scaling Method**. With **Send Generated Images** on, generated images are sent back to the model, once each, so it can check them.
+
+### Auto-crop
+
+When a call asks for a size (e.g. `1024x1024`) and the image model returns a slightly larger image, **Auto-Crop Generated Images** (on by default) crops it from the top-left corner to the requested size. The pixels are copied one to one and saved as PNG, so nothing is lost. It applies when the image is no smaller in either dimension and has at most **Auto-Crop Tolerance** (default 5%) more pixels than requested.
+
+A larger image, one smaller in either dimension (it can't be enlarged without distorting it), or any mismatch with auto-crop off is left as it is. In every case the tool result tells the model what it got.
 
 ## Tools
 
@@ -229,6 +241,7 @@ The **Model** row at the top of LLM Behavior picks whose parameters you're editi
 | Identify Image Models, Toggle Image Models                      | none, all         | Pages for marking image models and which ones the tools may use          |
 | Send Generated Images                                           | off               | Send generated images back to the model; counted in each chat's `+ N`    |
 | Edit Max Pixels, Edit Scaling Method                            | 4194304, high     | Scales images sent for editing. `0` sends full size                      |
+| Auto-Crop Generated Images, Auto-Crop Tolerance (%)             | on, 5             | Crop slightly oversized generated images to the requested size           |
 | Auto-Purge Days                                                 | 0 (off)           | Delete chats unchanged for longer. Named chats are kept                  |
 | Chat Date Groups                                                | on                | Group the chat list by date                                              |
 | Collapse Thinking                                               | on                | New thinking boxes start closed                                          |
@@ -244,6 +257,7 @@ Scaling methods: smooth (high, medium or low quality), progressive halving, or n
 | `Alt+↑` / `Alt+↓`                    | Previous / next chat                 |
 | `Alt+P` / `Alt+O` / `Alt+D`          | Toggle sidebar / title / dark mode   |
 | `Alt+I`                              | Advanced settings                    |
+| `Esc`                                | Close an opened image                |
 | Click **Your Chats**                 | Search and manage chats              |
 | `Shift+↑` / `Shift+↓`                | Jump between messages                |
 | `↑` / `↓`                            | Scroll the chat (outside text fields)|
@@ -251,7 +265,6 @@ Scaling methods: smooth (high, medium or low quality), progressive halving, or n
 | Ctrl+Click a chat                    | Copy its transcript as markdown      |
 | Alt+Click a chat                     | Export it as JSON                    |
 | Alt+Click **New**                    | Import (chats or settings)           |
-| Pinch or Ctrl+Scroll an image        | Zoom                                 |
 
 ## Notes
 
@@ -259,6 +272,7 @@ Scaling methods: smooth (high, medium or low quality), progressive halving, or n
 - Clearing site data deletes your chats and key. Export to back up.
 - Settings exports never contain your API key; keep a copy of it elsewhere.
 - Ollama reports the trained context length, which may exceed `num_ctx`.
+- Copying an image needs a browser that supports image clipboard writes (`ClipboardItem`).
 - Chat titles generated by earlier versions are dropped: only names you give a chat are kept.
 - Image models used to be detected automatically. They now have to be identified once by hand.
 - Chatting directly with image models has been removed, along with the **Image Models in Chat** and **Image Parameters** settings. Images from earlier chats with them are still shown.

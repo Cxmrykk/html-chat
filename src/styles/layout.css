@@ -108,12 +108,21 @@ header {
  * Nothing in a button row may widen the page: every control can shrink below
  * its content, and none of them wraps. Labels that do not fit are scrolled by
  * `ui/marquee.js`.
+ *
+ * Every control in a row shares one height: one line at 1.2, 5px of padding
+ * above and below, and a 1px border. That is what lets the attach button be
+ * a square of exactly that size.
  */
 .button-row {
   display: flex;
   gap: 10px;
   margin-bottom: 10px;
   min-width: 0;
+}
+
+.button-row button,
+.button-row select {
+  line-height: 1.2;
 }
 
 .button-row button {
@@ -132,6 +141,18 @@ header {
   flex: 1 1 0;
 }
 
+/* The attach button: a square as tall as the row, holding only its paperclip. */
+.button-row #attach-btn {
+  flex: 0 0 auto;
+  width: calc(1.2em + 12px);
+  padding: 0;
+}
+
+.button-row #attach-btn .icon {
+  width: 1.2em;
+  height: 1.2em;
+}
+
 /*
  * The dropdown's width is set inline from its full option labels
  * (`ui/marquee.js`); here it is capped so the send button always keeps room.
@@ -142,6 +163,7 @@ header {
   min-width: 0;
   max-width: 60%;
   margin: 0;
+  padding: 5px 8px;
   white-space: nowrap;
   overflow: hidden;
 }

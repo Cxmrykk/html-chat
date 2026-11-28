@@ -74,6 +74,8 @@ const showPurgeDays = (value, entry) => {
   return days > 0 ? `${days} day${days === 1 ? '' : 's'}` : 'Off';
 };
 
+const showPercent = (value, entry) => `${Math.max(0, pickNumber(Number(entry.default), value))}%`;
+
 /** A positive whole number of pixels; anything else shows (and acts as) the default. */
 const positivePixels = (value, entry) => {
   const parsed = pickInteger(NaN, value);
@@ -297,6 +299,25 @@ export const GLOBAL_SETTINGS = {
     default: 'high',
     tooltip: 'How images are scaled down to Edit Max Pixels.',
     display: showOption,
+  },
+  autoCrop: {
+    label: 'Auto-Crop Generated Images',
+    category: 'Image Generation',
+    type: 'boolean',
+    default: 'true',
+    tooltip:
+      'When an image tool asks for a size (e.g. 1024x1024) and the image model returns a slightly larger image, crop it from the top-left corner to the requested size, losslessly (saved as PNG). ' +
+      'An image larger than Auto-Crop Tolerance allows, or smaller in either dimension, is left as it is. Either way the model is told. Click to switch.',
+    display: showOnOff,
+  },
+  autoCropTolerance: {
+    label: 'Auto-Crop Tolerance (%)',
+    category: 'Image Generation',
+    type: 'number',
+    default: '5',
+    tooltip:
+      'How many more pixels (width × height), in percent of the requested size, a generated image may have and still be auto-cropped. 5 allows up to 5% more.',
+    display: showPercent,
   },
   autoPurgeDays: {
     label: 'Auto-Purge Days',

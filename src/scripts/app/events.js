@@ -2,11 +2,7 @@ import { $ } from '../ui/dom.js';
 import { runCommand } from './commands.js';
 import { EVENTS } from '../store/events.js';
 import { state, emit, setSession, persistPrefs } from '../store/state.js';
-import {
-  setAttachmentZoom,
-  zoomAttachment,
-  resetAttachmentZoom,
-} from '../ui/components/attachments.js';
+import { rememberExpandedScroll } from '../ui/components/attachments.js';
 import {
   toggleCodeBlock,
   syncCodeOverlay,
@@ -42,13 +38,41 @@ function contextFor(element, event) {
   };
 }
 
+/**
+ * Commands that run when a mouse or pen button goes down rather than on the
+ * click. Their elements live in rows a streaming reply redraws many times a
+ * second: the header pressed may be gone before the button comes back up,
+ * and then no click ever fires. Opening a tool call while it streams in, or
+ * a thinking box while it thinks, must not depend on luck. Touch and the
+ * keyboard still go through `click`.
+ */
+const PRESS_COMMANDS = new Set(['message.toggleCall', 'message.toggleCollapsed']);
+/** A click this soon after a press that already ran its command is that same press. */
+const PRESS_CLICK_MS = 1000;
+
 function installCommandDelegation() {
+  let pressedAt = -Infinity;
+
+  document.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || event.pointerType === 'touch') return;
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const target = event.target.closest('[data-command]');
+    if (!target || !PRESS_COMMANDS.has(target.dataset.command)) return;
+    if (event.target.matches('input, textarea, select')) return;
+    pressedAt = performance.now();
+    runCommand(target.dataset.command, contextFor(target, event));
+  });
+
   document.addEventListener('click', (event) => {
     const target = event.target.closest('[data-command]');
     if (!target) return;
     // A form control inside a command element (the role select in an open
     // thinking header) must not trigger it.
     if (event.target.matches('input, textarea, select')) return;
+    if (PRESS_COMMANDS.has(target.dataset.command) && performance.now() - pressedAt < PRESS_CLICK_MS) {
+      pressedAt = -Infinity;
+      return;
+    }
     runCommand(target.dataset.command, contextFor(target, event));
   });
 
@@ -147,16 +171,21 @@ function installCodeCollapseDelegation() {
   const noteGesture = (event) => noteCodeScrollGesture(event.target);
   document.addEventListener('wheel', noteGesture, { passive: true });
   document.addEventListener('touchmove', noteGesture, { passive: true });
+}
 
-  // `scroll` does not bubble, so it is caught on the way down. Keeps a
-  // preview's fade in step with how far it is scrolled.
+/**
+ * `scroll` does not bubble, so it is caught on the way down. It keeps a code
+ * preview's fade in step with how far it is scrolled, and remembers how far
+ * the opened image is scrolled, so a redraw can give it back.
+ */
+function installScrollTracking() {
   document.addEventListener(
     'scroll',
     (event) => {
       const target = event.target;
-      if (target instanceof Element && target.matches('pre.collapsible-code')) {
-        syncCodeOverlay(target);
-      }
+      if (!(target instanceof Element)) return;
+      if (target.matches('pre.collapsible-code')) syncCodeOverlay(target);
+      else if (target.matches('.attachment-viewer')) rememberExpandedScroll(target);
     },
     { capture: true, passive: true },
   );
@@ -210,10 +239,10 @@ function carriesFiles(event) {
 }
 
 /**
- * Images come in by pasting or dropping; there is no button. A paste counts
- * when it is aimed at the composer or at nothing in particular, never at
- * another field. Text in the same paste still lands in the composer as usual:
- * a textarea ignores the image part.
+ * Images come in by the attach button, by pasting, or by dropping. A paste
+ * counts when it is aimed at the composer or at nothing in particular, never
+ * at another field. Text in the same paste still lands in the composer as
+ * usual: a textarea ignores the image part.
  */
 function installAttachmentInput() {
   document.addEventListener('paste', (event) => {
@@ -265,57 +294,6 @@ function installAttachmentInput() {
   window.addEventListener('drop', (event) => {
     if (carriesFiles(event)) event.preventDefault();
     main?.classList.remove('drop-target');
-  });
-}
-
-/**
- * Zooming an image under the cursor. A trackpad pinch arrives as a wheel event
- * with Ctrl held (Chrome, Edge, Firefox), as does Ctrl+Scroll on a mouse;
- * Safari sends gesture events instead. Plain scrolling is the viewer's own
- * overflow. A double-click resets the zoom, except on an image where a click
- * already does something (restoring a placeholder, replacing while editing).
- */
-function installAttachmentZoom() {
-  const container = $('#chat-container');
-  if (!container) return;
-
-  container.addEventListener(
-    'wheel',
-    (event) => {
-      if (!event.ctrlKey) return;
-      const viewer = event.target.closest('.attachment-viewer');
-      if (!viewer) return;
-      event.preventDefault();
-      const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
-      zoomAttachment(viewer, event.deltaY * scale, { x: event.clientX, y: event.clientY });
-    },
-    { passive: false },
-  );
-
-  container.addEventListener('dblclick', (event) => {
-    const viewer = event.target.closest('.attachment-viewer');
-    if (!viewer || viewer.closest('.attachment.is-placeholder, .attachment.is-replaceable')) return;
-    event.preventDefault();
-    resetAttachmentZoom(viewer);
-  });
-
-  let gesture = null;
-  container.addEventListener('gesturestart', (event) => {
-    const viewer = event.target.closest?.('.attachment-viewer');
-    if (!viewer) return;
-    event.preventDefault();
-    gesture = { viewer, zoom: Number(viewer.dataset.zoom) || 1 };
-  });
-  container.addEventListener('gesturechange', (event) => {
-    if (!gesture) return;
-    event.preventDefault();
-    setAttachmentZoom(gesture.viewer, gesture.zoom * event.scale, {
-      x: event.clientX,
-      y: event.clientY,
-    });
-  });
-  container.addEventListener('gestureend', () => {
-    gesture = null;
   });
 }
 
@@ -383,9 +361,9 @@ export function installEventHandlers() {
   installCommandDelegation();
   installEditSelection();
   installCodeCollapseDelegation();
+  installScrollTracking();
   installCopyAffordances();
   installAttachmentInput();
-  installAttachmentZoom();
   installModifierTracking();
   installEditorBindings();
 }

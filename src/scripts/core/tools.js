@@ -334,16 +334,21 @@ function fenced(text, language = '') {
 
 /**
  * What an opened call shows above its result, as markdown: the code, or the
- * arguments (pretty-printed once they are complete JSON).
+ * arguments (pretty-printed once they are complete JSON). Empty when there is
+ * nothing to show: no code yet, or no arguments at all (`{}`), as for
+ * `list_image_models`. Arguments still streaming in show as they stand.
  */
 export function toolCallRequestMarkdown(call) {
   if (call?.name === TOOL_NAMES.javascript) {
-    return fenced(stringArgument(call, 'code').trim(), 'javascript');
+    const code = stringArgument(call, 'code').trim();
+    return code ? fenced(code, 'javascript') : '';
   }
-  const raw = typeof call?.arguments === 'string' ? call.arguments : '';
+  const raw = typeof call?.arguments === 'string' ? call.arguments.trim() : '';
   const parsed = parseToolArguments(raw);
-  const text = parsed.ok && raw.trim() ? JSON.stringify(parsed.value, null, 2) : raw || '{}';
-  return fenced(text, 'json');
+  if (parsed.ok) {
+    return Object.keys(parsed.value).length ? fenced(JSON.stringify(parsed.value, null, 2), 'json') : '';
+  }
+  return fenced(raw, 'json');
 }
 
 /** One call, request, result and images, as markdown: what copy and the transcript export use. */
@@ -356,5 +361,5 @@ export function toolCallMarkdown(call) {
       ? `**Result:**\n${call.result || '*(empty)*'}`
       : `*(${callStatusNote(callStatusOf(call))})*`;
   const images = attachmentsOf(call).map(attachmentNote);
-  return [`${title}\n${request}`, outcome, ...images].join('\n\n');
+  return [request ? `${title}\n${request}` : title, outcome, ...images].join('\n\n');
 }

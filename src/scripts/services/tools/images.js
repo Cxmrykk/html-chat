@@ -34,11 +34,17 @@ function refsOf(value) {
   return [];
 }
 
-/** The tool result: the new images' ids and sizes, and what the model can do next. */
-function report(verb, model, records, revisedPrompt) {
+/**
+ * The tool result: the new images' ids and sizes, what was done to fit each
+ * to the requested size (`notes`), and what the model can do next.
+ */
+function report(verb, model, records, revisedPrompt, notes = []) {
   const count = records.length === 1 ? '1 image' : `${records.length} images`;
   const lines = [`${verb} ${count} with ${model}:`];
-  for (const record of records) lines.push(`- ${imageRef(record)} (${record.width}×${record.height})`);
+  records.forEach((record, i) => {
+    const note = notes[i];
+    lines.push(`- ${imageRef(record)} (${record.width}×${record.height})${note ? `: ${note}` : ''}`);
+  });
   if (revisedPrompt) lines.push('', `Revised prompt: ${revisedPrompt}`);
   lines.push(
     '',
@@ -69,13 +75,17 @@ export async function generateImage(args, { signal } = {}) {
   if (problem) return failure(problem);
 
   const model = args.model.trim();
-  const { records, revisedPrompt } = await createImages({
+  const { records, revisedPrompt, notes } = await createImages({
     model,
     prompt: args.prompt.trim(),
     params: toolImageParams(args),
     signal,
   });
-  return { content: report('Generated', model, records, revisedPrompt), failed: false, attachments: records };
+  return {
+    content: report('Generated', model, records, revisedPrompt, notes),
+    failed: false,
+    attachments: records,
+  };
 }
 
 /**
@@ -104,19 +114,23 @@ export async function editImage(args, { signal, chatId } = {}) {
     if (!blob) {
       return failure(
         `Error: the original of ${imageRef(attachment)} is no longer stored, only a low-resolution placeholder, ` +
-          'so it cannot be edited. The user can restore it by clicking it.',
+          'so it cannot be edited. The user can restore it by opening it.',
       );
     }
     sources.push({ blob, name: attachment.name });
   }
 
   const model = args.model.trim();
-  const { records, revisedPrompt } = await createImages({
+  const { records, revisedPrompt, notes } = await createImages({
     model,
     prompt: args.prompt.trim(),
     sources,
     params: toolImageParams(args),
     signal,
   });
-  return { content: report('Edited', model, records, revisedPrompt), failed: false, attachments: records };
+  return {
+    content: report('Edited', model, records, revisedPrompt, notes),
+    failed: false,
+    attachments: records,
+  };
 }
