@@ -5,14 +5,14 @@
  *
  * Both resolve with `{ images: Blob[], revisedPrompt }`. An image comes back
  * as base64 (`b64_json`) or as a URL, which is downloaded; a URL the browser
- * may not fetch (CORS) fails with a hint to ask for base64 instead. Takes
- * config explicitly; touches no state.
+ * may not fetch (CORS) fails with an error the model can read. Takes config
+ * explicitly; touches no state.
  */
 
 /**
  * Models whose default answer is a URL, which expires and is often not
- * downloadable from a page. They are asked for base64 instead, unless Image
- * Parameters says otherwise. Other models (gpt-image-*) reject the field.
+ * downloadable from a page. They are asked for base64 instead, unless the
+ * request already names a format. Other models (gpt-image-*) reject the field.
  */
 const URL_BY_DEFAULT = /dall-e/i;
 
@@ -82,8 +82,8 @@ async function download(url, signal) {
   } catch (error) {
     if (error.name === 'AbortError') throw error;
     throw new Error(
-      'The server answered with an image URL the browser could not download. ' +
-        'Add "response_format": "b64_json" to Image Parameters, if the model takes it.',
+      'The server answered with an image URL the browser could not download (most likely blocked by CORS). ' +
+        'Try another image model.',
     );
   }
   if (!response.ok) throw new Error(`Could not download the generated image (HTTP ${response.status}).`);

@@ -13,12 +13,12 @@ const BASE_CONFIG = {
   modelCapabilities: {},
   /** `{ [modelId]: { [settingKey]: value } }`, per-model LLM parameters (core/model-params.js). */
   modelParams: {},
-  /** The models picked by hand as image models (Select Image Models). */
+  /** The models picked by hand as image models (Identify Image Models). */
   imageModels: [],
-  /** Image models the image tools may not use (Image Tool Models). Every other one they may. */
+  /** Image models the image tools may not use (Toggle Image Models). Every other one they may. */
   imageToolExcluded: [],
   jsExecution: false,
-  /** The sidebar's Generate Images switch: whether the image tools may be offered. */
+  /** The sidebar's Image Manipulation switch: whether the image tools may be offered. */
   imageGeneration: false,
   lastModel: '',
   reasoningEffort: DEFAULT_EFFORT,
@@ -34,6 +34,9 @@ const BASE_CONFIG = {
  * with it every setting that configured it: tool descriptions, embeddings,
  * the retrieval budget and its batching, and the sidebar's file list. The
  * chat list now always fills the sidebar, so its height limit is gone too.
+ * Image models can no longer be chatted with directly, so the switch that
+ * offered them in the dropdown, and the parameters sent with those requests,
+ * are gone as well.
  */
 const RETIRED_FIELDS = [
   'godModePrompt',
@@ -52,12 +55,25 @@ const RETIRED_FIELDS = [
   'chunkBatchMaxTokens',
   'maxVisibleFiles',
   'maxVisibleChats',
+  'imageModelsInChat',
+  'imageParams',
 ];
+
+/**
+ * Defaults that have since changed, as they were stored. A default is stored
+ * as the schema's string, while a value the user saved is coerced to a number
+ * (`core/values.js`), so a stored string equal to the old default was never
+ * chosen: it is dropped, and the new default takes its place.
+ */
+const RETIRED_DEFAULTS = {
+  visionMaxPixels: '0',
+  editMaxPixels: '1048576',
+};
 
 /**
  * Image models used to be typed into a text setting (Image Models), on top of
  * those the endpoint reported, and the image tools were given an allow-list
- * (Image Tool Models). Both lists become the hand-picked image models, and
+ * (Image Tool Models). Both lists become the identified image models, and
  * every one of them the old allow-list did not name is excluded from the
  * tools, so the tools keep offering exactly what they did. Models that were
  * only reported as image models are not carried over: nothing records them.
@@ -88,6 +104,9 @@ function migrateLegacyFields(stored) {
   }
   delete config.godMode;
   for (const field of RETIRED_FIELDS) delete config[field];
+  for (const [key, old] of Object.entries(RETIRED_DEFAULTS)) {
+    if (config[key] === old) delete config[key];
+  }
 
   if (stored.modelCapabilities === undefined && stored.reasoningEffort === 'none') {
     config.reasoningEffort = DEFAULT_EFFORT;

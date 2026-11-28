@@ -330,8 +330,10 @@ export const commands = {
     await conversation.removeChat(id);
   },
 
+  /** Every chat as one JSON file: the Export Chats card under Quick Actions. */
   'chat.export': () => transfer.exportAllChats(),
 
+  /** Chats from a JSON export: the Import Chats card under Quick Actions, or Alt+Click New. */
   'chat.import': async () => {
     const text = await pickJSONText();
     if (!text) return;
@@ -357,10 +359,8 @@ export const commands = {
     if (!text.trim() && !pending.length) return;
 
     // Shift+Send never reaches the API, so nothing is sent as a placeholder.
-    // An image model is sent only the new message, whose images are fresh.
     const skipApi = Boolean(event?.shiftKey);
-    const toImageModel = models.isImageModel(state.data.config.lastModel);
-    if (!skipApi && !toImageModel && !(await confirmPlaceholders(currentChat()?.messages || []))) {
+    if (!skipApi && !(await confirmPlaceholders(currentChat()?.messages || []))) {
       return;
     }
 
@@ -722,12 +722,8 @@ export const commands = {
     const message = chat?.messages[index];
     if (!isRetryable(message)) return;
 
-    // Everything up to and including this message is what gets sent; an
-    // image model is sent only the message itself.
-    const scope = models.isImageModel(state.data.config.lastModel)
-      ? [message]
-      : chat.messages.slice(0, index + 1);
-    if (!(await confirmPlaceholders(scope))) return;
+    // Everything up to and including this message is what gets sent.
+    if (!(await confirmPlaceholders(chat.messages.slice(0, index + 1)))) return;
 
     stopEditing();
 
@@ -803,8 +799,8 @@ export const commands = {
 
   /**
    * Show a page of the settings view (`key`): 'main', or one of the model
-   * pickers. Image Tool Models has nothing to show until an image model is
-   * selected. A setting open in the editor is closed (after asking, if it
+   * pickers. Toggle Image Models has nothing to show until an image model is
+   * identified. A setting open in the editor is closed (after asking, if it
    * holds an unsaved change).
    */
   'settings.openPage': ({ key }) => {
@@ -815,13 +811,13 @@ export const commands = {
     setSession({ settingsPage: page, activeSettingKey: null, settingsDraft: null });
   },
 
-  /** Mark a model (`key`) as an image model, or unmark it: Select Image Models. */
+  /** Mark a model (`key`) as an image model, or unmark it: Identify Image Models. */
   'settings.toggleImageModel': async ({ key }) => {
     if (!key) return;
     await settings.toggleImageModel(key);
   },
 
-  /** Let the image tools use an image model (`key`), or stop them: Image Tool Models. */
+  /** Let the image tools use an image model (`key`), or stop them: Toggle Image Models. */
   'settings.toggleImageToolModel': async ({ key }) => {
     if (!key) return;
     await settings.toggleImageToolModel(key);
@@ -894,7 +890,7 @@ export const commands = {
     const model = state.session.settingsModel;
     const question = model
       ? `Remove every LLM Behavior override for "${model}"? It will use the defaults again. Other settings are not changed.`
-      : 'Reset ALL Advanced parameters to default? Per-model overrides and the selected image models are kept.';
+      : 'Reset ALL Advanced parameters to default? Per-model overrides and the identified image models are kept.';
     if (!confirm(question)) return;
     await settings.resetAllSettings(model);
     setSession({ activeSettingKey: null, settingsDraft: null });

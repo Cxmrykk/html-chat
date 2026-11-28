@@ -14,14 +14,17 @@ import {
 } from '../../services/models.js';
 
 /**
- * The advanced settings screen. Its main page holds every setting; two more
- * pages pick models, each opened from a row under Image Generation:
+ * The advanced settings screen. Its main page opens with Quick Actions
+ * (importing and exporting chats, as cards that act as soon as they are
+ * clicked), then holds every setting. Two more pages pick models, each opened
+ * from a row under Image Generation:
  *
- *   - Select Image Models lists every model there is to pick from, and a
- *     click marks or unmarks one as an image model.
- *   - Image Tool Models lists the image models alone, every one allowed by
+ *   - Identify Image Models lists every model there is to pick from, and a
+ *     click marks or unmarks one as an image model. Image models are only
+ *     ever used by the image tools; the chat is for text models.
+ *   - Toggle Image Models lists the image models alone, every one allowed by
  *     default, and a click switches one off (or on again) for the image
- *     tools. Its row is greyed out while no image model is selected.
+ *     tools. Its row is greyed out while no image model is identified.
  *
  * On the main page, the LLM parameters (the per-model settings, all under
  * LLM Behavior) are shown for the model picked in a selector at the top of
@@ -38,6 +41,29 @@ const IMAGE_CATEGORY = GLOBAL_SETTINGS.sendGeneratedImages.category;
 /* ------------------------------------------------------------------ *
  * Main page
  * ------------------------------------------------------------------ */
+
+/**
+ * Import and Export, as setting cards under a heading of their own. A click
+ * on a card runs its command at once; there is nothing to edit.
+ */
+function quickActionsHTML() {
+  return `
+    <div class="settings-category">
+      <h3>Quick Actions</h3>
+    </div>
+    <div class="settings-group">
+      <button class="setting-row" data-command="chat.import"
+              title="Import chats from a JSON export. Chats whose id already exists are skipped.">
+        <span>Import Chats</span>
+        <span class="setting-value">From JSON</span>
+      </button>
+      <button class="setting-row" data-command="chat.export"
+              title="Download every chat as one JSON file">
+        <span>Export Chats</span>
+        <span class="setting-value">All chats as JSON</span>
+      </button>
+    </div>`;
+}
 
 /** The categories that hold per-model settings, where the selector goes. */
 function perModelCategories() {
@@ -82,18 +108,18 @@ function pageRowsHTML() {
 
   const toolsValue = none ? 'No image models' : `${tools.length} of ${selected.length}`;
   const toolsHint = none
-    ? 'Select at least one image model first'
+    ? 'Identify at least one image model first'
     : 'Choose which image models the image tools may use';
 
   return `
     <button class="setting-row" data-command="settings.openPage" data-key="imageModels"
             title="Choose which models are image models">
-      <span>Select Image Models</span>
-      <span class="setting-value">${escapeHTML(none ? 'None' : `${selected.length} selected`)}</span>
+      <span>Identify Image Models</span>
+      <span class="setting-value">${escapeHTML(none ? 'None' : `${selected.length} identified`)}</span>
     </button>
     <button class="setting-row" data-command="settings.openPage" data-key="imageToolModels"
             title="${escapeHTML(toolsHint)}"${none ? ' disabled' : ''}>
-      <span>Image Tool Models</span>
+      <span>Toggle Image Models</span>
       <span class="setting-value">${escapeHTML(toolsValue)}</span>
     </button>`;
 }
@@ -114,6 +140,7 @@ function mainPageHTML() {
         <h2>Super Secret Settings</h2>
         <button data-command="settings.resetAll" title="${escapeHTML(resetHint)}">Reset All</button>
       </div>
+      ${quickActionsHTML()}
       ${settingsListHTML({
         schema: GLOBAL_SETTINGS,
         activeKey: state.session.activeSettingKey,
@@ -142,7 +169,7 @@ function choiceRowHTML({ command, id, name, on, onLabel, offLabel, title }) {
     </button>`;
 }
 
-/** Every listed model, plus any selected one the server no longer lists. */
+/** Every listed model, plus any identified one the server no longer lists. */
 function imageModelRowsHTML() {
   const selected = imageModels();
   const listed = listedModels();
@@ -171,7 +198,7 @@ function imageModelRowsHTML() {
 function toolModelRowsHTML() {
   const selected = imageModels();
   if (!selected.length) {
-    return noteHTML('No image models are selected. Select some under Select Image Models first.');
+    return noteHTML('No image models are identified. Identify some under Identify Image Models first.');
   }
   const tools = imageToolModels();
 
@@ -193,17 +220,17 @@ function toolModelRowsHTML() {
 
 const PAGES = {
   imageModels: {
-    title: 'Select Image Models',
+    title: 'Identify Image Models',
     note:
-      'Click a model to mark it as an image model, and again to unmark it. Image models are sent to the Images API ' +
-      '(/images/generations and /images/edits) instead of chat completions. They are what the image tools may use, and ' +
-      'what Image Models in Chat offers in the model dropdown. Nothing is detected: only the models marked here are image models.',
+      'Click a model to mark it as an image model, and again to unmark it. Image models are used only by the image tools ' +
+      '(Image Manipulation, in the sidebar), through the Images API (/images/generations and /images/edits). They are never ' +
+      'offered in the model dropdown: the chat is for text models. Nothing is detected: only the models marked here are image models.',
     rows: imageModelRowsHTML,
   },
   imageToolModels: {
-    title: 'Image Tool Models',
+    title: 'Toggle Image Models',
     note:
-      'The image tools (Generate Images, in the sidebar) may use every image model unless it is switched off here. ' +
+      'The image tools (Image Manipulation, in the sidebar) may use every identified image model unless it is switched off here. ' +
       'Click a model to switch it off, and again to switch it back on.',
     rows: toolModelRowsHTML,
   },

@@ -1,4 +1,4 @@
-import { isBlank, pickBoolean, pickNumber, pickInteger, parseJSONObject } from './values.js';
+import { isBlank, pickBoolean, pickNumber, pickInteger } from './values.js';
 import { DEFAULT_JS_TOOL_DESCRIPTION } from './tools.js';
 import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
 
@@ -17,9 +17,10 @@ import { REASONING_FIELDS, isReasoningField } from './reasoning.js';
  * Their global value is the default for every model; a model may override it
  * (see `core/model-params.js`).
  *
- * Which models are image models, and which of them the image tools may use,
- * are not entries here: they are lists picked on their own settings pages
- * (`config.imageModels`, `config.imageToolExcluded`).
+ * Which models are image models (Identify Image Models), and which of them
+ * the image tools may use (Toggle Image Models), are not entries here: they
+ * are lists picked on their own settings pages (`config.imageModels`,
+ * `config.imageToolExcluded`).
  */
 
 /** How an image is scaled down to a pixel budget (`services/image-scaling.js`). */
@@ -46,15 +47,6 @@ const showOption = (value, entry) => {
     options.find((option) => option.value === value) ||
     options.find((option) => option.value === entry.default);
   return match ? match.label : String(value ?? '');
-};
-
-/** The keys a JSON object of request fields sets, or why it is not one. */
-const showJSONFields = (value) => {
-  if (isBlank(value)) return 'API Default';
-  const parsed = parseJSONObject(value);
-  if (!parsed.ok) return 'Invalid JSON';
-  const keys = Object.keys(parsed.value);
-  return keys.length ? keys.join(', ') : 'API Default';
 };
 
 /** An unknown field name is ignored when sending, so the list says so. */
@@ -202,7 +194,7 @@ export const GLOBAL_SETTINGS = {
     default: 'true',
     tooltip:
       'When fetching models, also ask LiteLLM (/model/info) and Ollama (/api/show) what each model supports: tools, thinking and its levels, vision, context length. ' +
-      'Off reads /models alone. A model reported without tool support is not offered tools. Image models are never detected: select them under Image Generation.',
+      'Off reads /models alone. A model reported without tool support is not offered tools. Image models are never detected: identify them under Image Generation.',
     display: showOnOff,
   },
   imageCacheMB: {
@@ -239,10 +231,10 @@ export const GLOBAL_SETTINGS = {
     label: 'Vision Max Pixels',
     category: 'Images',
     type: 'number',
-    default: '0',
+    default: '4194304',
     tooltip:
       'Images sent to a chat model to look at (pasted images, and generated ones with Send Generated Images on) that hold more than this many pixels (width × height) are scaled down to fit, keeping their aspect ratio. ' +
-      '0 sends them at full size. Only what is sent changes: the chat keeps the original. Image edits use Edit Max Pixels instead.',
+      '0 sends them at full size. This limits only the copy sent to the API: the image kept locally stays at full size. Image edits use Edit Max Pixels instead.',
     display: showScaleBudget,
   },
   visionScalingMethod: {
@@ -260,18 +252,18 @@ export const GLOBAL_SETTINGS = {
     type: 'boolean',
     default: 'false',
     tooltip:
-      'Send the images the model made back to it, in a user message right after the tool results (or after an image model’s reply), so it can check them and adjust. ' +
-      'Off, a tool result carries only the images’ ids and sizes, and an image model’s reply sends nothing. true or false.',
+      'Send the images the image tools made back to the model, in a user message right after the tool results, so it can check them and adjust. ' +
+      'Off, a tool result carries only the images’ ids and sizes. true or false.',
     display: showOnOff,
   },
   editMaxPixels: {
     label: 'Edit Max Pixels',
     category: 'Image Generation',
     type: 'number',
-    default: '1048576',
+    default: '4194304',
     tooltip:
-      'Images sent to an image model to edit (/images/edits, from the edit_image tool or a chat with an image model) that hold more than this many pixels (width × height) are scaled down to fit, keeping their aspect ratio. ' +
-      '0 sends them at full size. Only what is sent changes: the chat keeps the original.',
+      'Images sent to an image model to edit (/images/edits, from the edit_image tool) that hold more than this many pixels (width × height) are scaled down to fit, keeping their aspect ratio. ' +
+      '0 sends them at full size. This limits only the copy sent to the API: the image kept locally stays at full size.',
     display: showScaleBudget,
   },
   editScalingMethod: {
@@ -282,26 +274,6 @@ export const GLOBAL_SETTINGS = {
     default: 'high',
     tooltip: 'How images are scaled down to Edit Max Pixels.',
     display: showOption,
-  },
-  imageModelsInChat: {
-    label: 'Image Models in Chat',
-    category: 'Image Parameters',
-    type: 'boolean',
-    default: 'false',
-    tooltip:
-      'Offer the selected image models (Select Image Models, under Image Generation) in the model dropdown. Sending to one takes the latest user message as the prompt: text alone calls /images/generations, ' +
-      'and a message with images calls /images/edits with them. The reply is the generated images. true or false.',
-    display: showOnOff,
-  },
-  imageParams: {
-    label: 'Image Parameters',
-    category: 'Image Parameters',
-    type: 'code',
-    default: '',
-    tooltip:
-      'A JSON object of extra fields sent with every request to an image model chosen in chat (Image Models in Chat), e.g. {"size": "1024x1024", "quality": "high", "response_format": "b64_json"}. ' +
-      'Not sent by the image tools: there the model sets size, quality and background itself. Empty sends none.',
-    display: showJSONFields,
   },
   chatDateGroups: {
     label: 'Chat Date Groups',

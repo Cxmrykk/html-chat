@@ -57,11 +57,11 @@ function renderReasoningDropdown(select) {
 
 /**
  * The model dropdown, driven by whatever `services/models.js` last
- * discovered (plus any manually configured extras, and image models when they
- * are allowed in chat). When editing thinking, the options flip to the
- * reasoning levels. A name too long for the dropdown scrolls (see
- * `ui/marquee.js`). Hovering it says what the selected model can do, when its
- * endpoint said.
+ * discovered (plus any manually configured extras). It lists text models
+ * only: image models are reached through the image tools. When editing
+ * thinking, the options flip to the reasoning levels. A name too long for the
+ * dropdown scrolls (see `ui/marquee.js`). Hovering it says what the selected
+ * model can do, when its endpoint said.
  */
 export function updateModelDropdown() {
   const select = $('#model-select');
@@ -123,13 +123,11 @@ function contextChars() {
 function generationLabel({ phase, tool, loop, maxLoops }) {
   const suffix = loop > 0 ? ` (Round ${loop}/${maxLoops})` : '';
   const verb =
-    phase === 'image'
-      ? 'Generating image'
-      : phase === 'tool'
-        ? toolActivityLabel(tool)
-        : phase === 'generating'
-          ? 'Generating'
-          : 'Thinking';
+    phase === 'tool'
+      ? toolActivityLabel(tool)
+      : phase === 'generating'
+        ? 'Generating'
+        : 'Thinking';
   return `${verb}${suffix}...`;
 }
 

@@ -2,19 +2,15 @@ import { state } from '../store/state.js';
 import { requestImageGeneration, requestImageEdit } from './api/images.js';
 import { ingestImage } from './images.js';
 import { editScaling, scaleImageBlob } from './image-scaling.js';
-import { parseJSONObject } from '../core/values.js';
 import { TOOL_IMAGE_OPTIONS } from '../core/tools.js';
 
 /**
- * Making images with an image model, for both ways in: an image model chosen
- * in chat, and the image tools. A prompt alone generates; a prompt with
- * images to start from edits, and those images are first scaled down to
- * Edit Max Pixels. What comes back is held like any pasted image
+ * Making images with an image model, for the image tools. A prompt alone
+ * generates; a prompt with images to start from edits, and those images are
+ * first scaled down to Edit Max Pixels (only the copy that is sent: the
+ * originals stay at full size). What comes back is held like any pasted image
  * (`services/images.js`) and resolves as attachment records.
  */
-
-/** Fields the request sets itself, never from Image Parameters. */
-const RESERVED = ['model', 'prompt', 'image', 'image[]'];
 
 const EXTENSIONS = {
   'image/png': 'png',
@@ -24,24 +20,8 @@ const EXTENSIONS = {
 };
 
 /**
- * The extra fields of a request from an image model chosen in chat: Image
- * Parameters. Throws when it is not a JSON object.
- */
-export function imageRequestParams() {
-  const parsed = parseJSONObject(state.data.config.imageParams);
-  if (!parsed.ok) throw new Error(`The Image Parameters setting is not a JSON object: ${parsed.error}`);
-
-  const params = {};
-  for (const [key, value] of Object.entries(parsed.value)) {
-    if (!RESERVED.includes(key)) params[key] = value;
-  }
-  return params;
-}
-
-/**
  * The extra fields of a request from an image tool: only the per-call
- * options (`size`, `quality`, `background`) the call set. Image Parameters
- * are for chats with an image model alone.
+ * options (`size`, `quality`, `background`) the call set.
  */
 export function toolImageParams(options = {}) {
   const params = {};

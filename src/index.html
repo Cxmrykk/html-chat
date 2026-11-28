@@ -73,16 +73,14 @@
           <label class="checkbox-label"
                  title="Offer the model a tool that runs JavaScript in this page">
             <input type="checkbox" id="cfg-js-exec" data-command="settings.saveConnection" />
-            <strong>Execute JavaScript</strong>
+            <strong>Code Execution</strong>
           </label>
-          <!-- Shown only once an image model is selected (ui/components/connection-form.js). -->
+          <!-- Shown only once an image model is identified (ui/components/connection-form.js). -->
           <label id="cfg-image-gen-label" class="checkbox-label hidden"
-                 title="Offer the model tools that generate and edit images, with the image models allowed under Image Tool Models in the settings">
+                 title="Offer the model tools that generate and edit images, with the image models allowed under Toggle Image Models in the settings">
             <input type="checkbox" id="cfg-image-gen" data-command="settings.saveConnection" />
-            <strong>Generate Images</strong>
+            <strong>Image Manipulation</strong>
           </label>
-          <button data-command="chat.import">Import</button>
-          <button data-command="chat.export">Export</button>
         </div>
 
         <!-- Fills the rest of the sidebar; the list inside scrolls on its own. -->

@@ -14,9 +14,7 @@ import {
 import * as chatsRepo from '../data/chats-repo.js';
 import { requestCompletion } from './api/completions.js';
 import { toolSchemasFor, runToolCall, offersImageTools } from './tools/index.js';
-import { wireImages, sendsGeneratedImages, uploadBlob } from './images.js';
-import { createImages, imageRequestParams } from './image-generation.js';
-import { isImageModel } from './models.js';
+import { wireImages, sendsGeneratedImages } from './images.js';
 import { buildApiMessages } from '../core/tool-calls.js';
 import { normalizeRoundReasoning } from '../core/reasoning.js';
 import { normalizeChat } from '../core/chats.js';
@@ -34,7 +32,10 @@ import {
 import { pickInteger, pickBoolean } from '../core/values.js';
 import { truncate } from '../core/format.js';
 
-/** Chat lifecycle, the send / tool-call loop, and turns with an image model. */
+/**
+ * Chat lifecycle and the send / tool-call loop. The chat always talks to a
+ * text model; image models are reached only through the image tools.
+ */
 
 const IDLE = { active: false, phase: 'idle', tool: null, loop: 0, maxLoops: 0 };
 
@@ -910,92 +911,6 @@ async function runTurns(chatId, { carryReasoning = false } = {}) {
   }
 }
 
-/* ------------------------------------------------------------------ *
- * Image models
- * ------------------------------------------------------------------ */
-
-function latestUserMessage(messages) {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.role === 'user') return messages[i];
-  }
-  return null;
-}
-
-/**
- * The images a user message gives an image model to start from. The user
- * was already asked before a placeholder goes out, so one may be sent.
- */
-async function sourcesOf(message) {
-  const sources = [];
-  for (const attachment of attachmentsOf(message)) {
-    const blob = await uploadBlob(attachment, { allowPlaceholder: true });
-    if (blob) sources.push({ blob, name: attachment.name });
-  }
-  return sources;
-}
-
-/**
- * A turn with an image model: the latest user message is the prompt, its
- * images (if any) are what to edit, and nothing else in the chat is sent.
- * The reply is an assistant message carrying the images, opened so they show.
- */
-async function runImageTurn(chatId) {
-  const chat = findChat(chatId);
-  if (!chat) return;
-
-  const controller = new AbortController();
-  const { signal } = controller;
-  state.runtime.completionAbort = controller;
-  const model = state.data.config.lastModel;
-  setGeneration({ active: true, phase: 'image', tool: null, loop: 0, maxLoops: 0 });
-
-  try {
-    const source = latestUserMessage(chat.messages);
-    const prompt = (source?.content || '').trim();
-    if (!prompt) {
-      throw new Error(
-        source && attachmentsOf(source).length
-          ? 'Describe what to do with the attached images: an image model needs a prompt.'
-          : 'There is no prompt to make an image from.',
-      );
-    }
-
-    const { records, revisedPrompt } = await createImages({
-      model,
-      prompt,
-      sources: await sourcesOf(source),
-      params: imageRequestParams(),
-      signal,
-    });
-
-    await appendMessage(
-      {
-        role: 'assistant',
-        content: revisedPrompt ? `*Revised prompt:* ${revisedPrompt}` : '',
-        attachments: records,
-        attachmentsOpen: true,
-      },
-      { chatId },
-    );
-  } catch (error) {
-    if (error.name === 'AbortError' || signal.aborted) {
-      await appendStopped(chatId);
-    } else {
-      await appendMessage(
-        { role: 'error', content: `**Error:**\n\n${error.message}` },
-        { chatId },
-      );
-    }
-  } finally {
-    releaseRuntime(controller);
-  }
-}
-
-/** Run the selected model's turn: the Images API for an image model, chat completions otherwise. */
-function runModel(chatId, options = {}) {
-  return isImageModel(state.data.config.lastModel) ? runImageTurn(chatId) : runTurns(chatId, options);
-}
-
 /**
  * Append the user's message, with any images, and run the model's turn. A
  * message may be images alone. `skipApi` appends the message without calling
@@ -1027,7 +942,7 @@ export async function sendMessage({ text = '', attachments = [], skipApi = false
   });
   if (skipApi) return;
 
-  await runModel(state.data.currentChatId);
+  await runTurns(state.data.currentChatId);
 }
 
 /**
@@ -1045,5 +960,5 @@ export async function regenerate({ carryReasoning = false } = {}) {
   }
   if (!state.data.currentChatId) return;
 
-  await runModel(state.data.currentChatId, { carryReasoning });
+  await runTurns(state.data.currentChatId, { carryReasoning });
 }

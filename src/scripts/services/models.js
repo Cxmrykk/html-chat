@@ -13,55 +13,41 @@ import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
 
 /**
  * Every model there is to pick from: the last list the server gave us and
- * the manual extras, whatever they can do. What Select Image Models lists.
+ * the manual extras, whatever they can do. What Identify Image Models lists.
  */
 export function listedModels() {
   const { models, extraModels } = state.data.config;
   return mergeModelLists(normalizeModelList(models), normalizeModelList(extraModels));
 }
 
-/** The image models: picked by hand under Select Image Models, never detected. */
+/** The image models: identified by hand under Identify Image Models, never detected. */
 export function imageModels() {
   return modelNamesFrom(state.data.config.imageModels);
 }
 
-/** Whether requests to `model` go to the Images API rather than chat completions. */
-export function isImageModel(model = state.data.config.lastModel) {
-  return Boolean(model) && imageModels().includes(model);
-}
-
 /**
  * The image models the image tools may use: every image model, except those
- * switched off under Image Tool Models.
+ * switched off under Toggle Image Models.
  */
 export function imageToolModels() {
   const excluded = new Set(modelNamesFrom(state.data.config.imageToolExcluded));
   return imageModels().filter((id) => !excluded.has(id));
 }
 
-function imageModelsInChat() {
-  return pickBoolean(
-    false,
-    state.data.config.imageModelsInChat,
-    GLOBAL_SETTINGS.imageModelsInChat.default,
-  );
-}
-
 /**
- * What the dropdown offers: the last list the server gave us, minus models it
- * says cannot chat (embedding models), plus manual extras, which are always
- * offered. Image models are offered only with Image Models in Chat on, after
- * the chat models.
+ * What the dropdown offers: text models only. The last list the server gave
+ * us, minus models it says cannot chat (embedding models), plus manual
+ * extras, which are always offered. Image models are never offered: they are
+ * only used by the image tools.
  */
 export function availableModels() {
   const { models, extraModels, modelCapabilities } = state.data.config;
-  const images = imageModels();
-  const isImage = new Set(images);
+  const isImage = new Set(imageModels());
   const chatModels = normalizeModelList(models).filter(
     (id) => modelCapabilities?.[id]?.chat !== false && !isImage.has(id),
   );
   const extras = normalizeModelList(extraModels).filter((id) => !isImage.has(id));
-  return mergeModelLists(chatModels, extras, imageModelsInChat() ? images : []);
+  return mergeModelLists(chatModels, extras);
 }
 
 /** What the endpoint reported about a model; all unknown if it said nothing. */
