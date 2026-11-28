@@ -165,7 +165,7 @@ The **Model** row at the top of LLM Behavior picks whose parameters you're editi
 | Setting                                                         | Default           | Notes                                                                    |
 | --------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------ |
 | Temperature, Top P, Max Tokens, Frequency and Presence Penalty  | API default       | Sent only when set. Per-model                                            |
-| Max Tool Rounds                                                 | 10                | After this, the model must answer without tools                          |
+| Max Tool Rounds                                                 | 25                | After this, the model must answer without tools                          |
 | Max Tool Result Tokens                                          | 4000              | `0` disables the cap                                                     |
 | Echo Reasoning Field                                            | off               | `reasoning_content` or `reasoning`, sent back during tool loops          |
 | Retry Keeps Thinking                                            | true              | A resumed turn carries the reasoning shown so far                        |

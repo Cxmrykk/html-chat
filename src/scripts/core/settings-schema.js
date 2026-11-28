@@ -138,7 +138,7 @@ export const GLOBAL_SETTINGS = {
     label: 'Max Tool Rounds',
     category: 'Tools',
     type: 'number',
-    default: '10',
+    default: '25',
     tooltip:
       'How many times in one turn the model may call tools and be sent the results. After that it is asked to answer without tools.',
     display: showValueOrDefault,
