@@ -11,7 +11,8 @@ Features:
 - Tool calling: JavaScript execution in the page
 - Edit, retry, fork and delete any message, or change its role
 - Markdown, syntax highlighting and KaTeX math
-- Chat list grouped by date, import and export
+- Chat list grouped by date
+- Import and export of one chat, all chats, or the settings
 - Light and dark themes, keyboard navigation
 
 ## Getting started
@@ -120,7 +121,9 @@ If an original is gone, its tag turns red. Click the placeholder to restore it f
 
 Image models are only used through these tools. They never appear in the model dropdown.
 
-Images sent for editing are scaled down to **Edit Max Pixels** (default `4194304`, 2048×2048) using **Edit Scaling Method**. With **Send Generated Images** on, generated images are sent back to the model so it can check them.
+When a turn generates or edits images, the assistant's answer ends with an **Attachments** drop-down holding them, opened, so they show without opening the thinking box.
+
+Images sent for editing are scaled down to **Edit Max Pixels** (default `4194304`, 2048×2048) using **Edit Scaling Method**. With **Send Generated Images** on, generated images are sent back to the model, once each, so it can check them.
 
 ## Tools
 
@@ -132,17 +135,20 @@ Calls run one at a time. Results are capped by **Max Tool Result Tokens**.
 
 ## Advanced settings
 
-Open them by clicking the **Settings** heading or pressing `Alt+I`. Select a setting, edit it in the bottom textarea, and save with **Save** or `Ctrl+Enter`. Dropdown settings save as soon as you pick. A blank value uses the default.
-
-- **Reset** restores one setting.
-- **Reset All** restores every setting. It keeps per-model overrides and identified image models.
+Open them by clicking the **Settings** heading or pressing `Alt+I`. Select a setting, edit it in the bottom textarea, and save with **Save** or `Ctrl+Enter`. Dropdown settings save as soon as you pick. A blank value uses the default. **Reset** restores one setting.
 
 ### Quick Actions
 
 The cards at the top of the advanced settings run as soon as you click them:
 
-- **Import Chats**: loads chats from a JSON export. Chats whose id already exists are skipped.
-- **Export Chats**: downloads every chat as one JSON file.
+| Card                | Does                                                                                         |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| Export Current Chat | Downloads the open chat as JSON                                                              |
+| Export All Chats    | Downloads every chat as one JSON file                                                        |
+| Export Settings     | Downloads every setting, per-model override and image model selection. The API key is left out |
+| Import              | Reads any of the three exports. Chats whose id already exists are skipped. Settings replace the current ones after a confirmation, keeping your API key |
+| Reset All Settings  | Restores every setting to its default, keeping per-model overrides and identified image models. With a model picked in LLM Behavior, removes only that model's overrides |
+| Reset Chats         | Deletes every chat, after a confirmation                                                     |
 
 ### Per-model parameters
 
@@ -191,13 +197,14 @@ Scaling methods: smooth (high, medium or low quality), progressive halving, or n
 | Ctrl+Click code, inline code or math | Copy it (math as LaTeX)              |
 | Ctrl+Click a chat                    | Copy its transcript as markdown      |
 | Alt+Click a chat                     | Export it as JSON                    |
-| Alt+Click **New**                    | Import chats                         |
+| Alt+Click **New**                    | Import (chats or settings)           |
 | Pinch or Ctrl+Scroll an image        | Zoom                                 |
 
 ## Notes
 
 - Markdown output is **not sanitised**: HTML in model output renders as HTML.
 - Clearing site data deletes your chats and key. Export to back up.
+- Settings exports never contain your API key; keep a copy of it elsewhere.
 - Ollama reports the trained context length, which may exceed `num_ctx`.
 - Image models used to be detected automatically. They now have to be identified once by hand.
 - Chatting directly with image models has been removed, along with the **Image Models in Chat** and **Image Parameters** settings. Images from earlier chats with them are still shown.

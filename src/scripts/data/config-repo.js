@@ -117,9 +117,13 @@ function migrateLegacyFields(stored) {
   return config;
 }
 
-/** Load the config, filling in any schema keys the stored record predates. */
-export async function loadConfig() {
-  const stored = migrateLegacyFields((await idb.get(KEYS.config)) || {});
+/**
+ * Any config record (stored, or imported from a settings export) brought up
+ * to the current shape: legacy fields migrated, missing schema keys filled
+ * with their defaults, and every list and map validated.
+ */
+export function normalizeConfig(record) {
+  const stored = migrateLegacyFields(record && typeof record === 'object' ? record : {});
   const config = { ...BASE_CONFIG, ...stored };
   for (const [key, entry] of Object.entries(GLOBAL_SETTINGS)) {
     if (config[key] === undefined) config[key] = entry.default;
@@ -130,8 +134,16 @@ export async function loadConfig() {
   config.modelParams = normalizeModelParams(config.modelParams);
   config.imageModels = modelNamesFrom(config.imageModels);
   config.imageToolExcluded = modelNamesFrom(config.imageToolExcluded);
+  config.jsExecution = Boolean(config.jsExecution);
   config.imageGeneration = Boolean(config.imageGeneration);
+  config.url = typeof config.url === 'string' ? config.url : BASE_CONFIG.url;
+  config.key = typeof config.key === 'string' ? config.key : '';
   return config;
+}
+
+/** Load the config, filling in any schema keys the stored record predates. */
+export async function loadConfig() {
+  return normalizeConfig((await idb.get(KEYS.config)) || {});
 }
 
 export function saveConfig(config) {

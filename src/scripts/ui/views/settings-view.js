@@ -1,7 +1,7 @@
 import { $ } from '../dom.js';
-import { state } from '../../store/state.js';
+import { state, currentChat } from '../../store/state.js';
 import { GLOBAL_SETTINGS, PER_MODEL_KEYS } from '../../core/settings-schema.js';
-import { escapeHTML } from '../../core/format.js';
+import { escapeHTML, truncate } from '../../core/format.js';
 import { mergeModelLists } from '../../core/models.js';
 import { hasOverrides } from '../../core/model-params.js';
 import { settingsListHTML, selectRowHTML } from '../components/settings-list.js';
@@ -14,10 +14,11 @@ import {
 } from '../../services/models.js';
 
 /**
- * The advanced settings screen. Its main page opens with Quick Actions
- * (importing and exporting chats, as cards that act as soon as they are
- * clicked), then holds every setting. Two more pages pick models, each opened
- * from a row under Image Generation:
+ * The advanced settings screen. Its main page opens with Quick Actions, cards
+ * that act as soon as they are clicked: exporting the open chat, every chat,
+ * or the settings; importing any of those; resetting every setting; and
+ * deleting every chat. Then it holds every setting. Two more pages pick
+ * models, each opened from a row under Image Generation:
  *
  *   - Identify Image Models lists every model there is to pick from, and a
  *     click marks or unmarks one as an image model. Image models are only
@@ -42,27 +43,80 @@ const IMAGE_CATEGORY = GLOBAL_SETTINGS.sendGeneratedImages.category;
  * Main page
  * ------------------------------------------------------------------ */
 
+/** One Quick Actions card: a setting row whose click runs `command` at once. */
+function actionCardHTML({ command, label, value, title, disabled = false }) {
+  return `
+    <button class="setting-row" data-command="${escapeHTML(command)}"
+            title="${escapeHTML(title)}"${disabled ? ' disabled' : ''}>
+      <span>${escapeHTML(label)}</span>
+      <span class="setting-value">${escapeHTML(value)}</span>
+    </button>`;
+}
+
+function chatCount(count) {
+  return count === 1 ? '1 chat' : `${count} chats`;
+}
+
 /**
- * Import and Export, as setting cards under a heading of their own. A click
- * on a card runs its command at once; there is nothing to edit.
+ * Exports, the import that reads any of them, and the resets, as setting
+ * cards under a heading of their own. Reset All Settings follows the model
+ * picked for LLM Behavior: with one picked, it removes only its overrides.
  */
-function quickActionsHTML() {
+function quickActionsHTML(model) {
+  const count = state.data.chats.length;
+  const open = currentChat();
+
+  const cards = [
+    actionCardHTML({
+      command: 'chat.exportCurrent',
+      label: 'Export Current Chat',
+      value: open ? truncate(open.title, 28) : 'No chat open',
+      title: 'Download the open chat as a JSON file',
+      disabled: !open,
+    }),
+    actionCardHTML({
+      command: 'chat.export',
+      label: 'Export All Chats',
+      value: count ? chatCount(count) : 'No chats',
+      title: 'Download every chat as one JSON file',
+      disabled: !count,
+    }),
+    actionCardHTML({
+      command: 'settings.export',
+      label: 'Export Settings',
+      value: 'Without API key',
+      title:
+        'Download every setting, per-model override and image model selection as a JSON file. The API key is left out.',
+    }),
+    actionCardHTML({
+      command: 'data.import',
+      label: 'Import',
+      value: 'Chats or settings',
+      title:
+        'Import a file made by any of the exports: one chat, all chats, or the settings. Chats whose id already exists are skipped.',
+    }),
+    actionCardHTML({
+      command: 'settings.resetAll',
+      label: 'Reset All Settings',
+      value: model ? `Overrides for ${truncate(model, 20)}` : 'To defaults',
+      title: model
+        ? `Remove every LLM Behavior override for ${model}`
+        : 'Reset every setting to its default (per-model overrides and image models are kept)',
+    }),
+    actionCardHTML({
+      command: 'chat.resetAll',
+      label: 'Reset Chats',
+      value: count ? `Delete ${chatCount(count)}` : 'No chats',
+      title: 'Delete every chat. Export them first to keep a copy.',
+      disabled: !count,
+    }),
+  ];
+
   return `
     <div class="settings-category">
       <h3>Quick Actions</h3>
     </div>
-    <div class="settings-group">
-      <button class="setting-row" data-command="chat.import"
-              title="Import chats from a JSON export. Chats whose id already exists are skipped.">
-        <span>Import Chats</span>
-        <span class="setting-value">From JSON</span>
-      </button>
-      <button class="setting-row" data-command="chat.export"
-              title="Download every chat as one JSON file">
-        <span>Export Chats</span>
-        <span class="setting-value">All chats as JSON</span>
-      </button>
-    </div>`;
+    <div class="settings-group">${cards.join('')}</div>`;
 }
 
 /** The categories that hold per-model settings, where the selector goes. */
@@ -130,17 +184,12 @@ function mainPageHTML() {
   const leadRows = Object.fromEntries([...perModelCategories()].map((category) => [category, selector]));
   leadRows[IMAGE_CATEGORY] = (leadRows[IMAGE_CATEGORY] || '') + pageRowsHTML();
 
-  const resetHint = model
-    ? `Remove every LLM Behavior override for ${model}`
-    : 'Reset every setting to its default (per-model overrides and image models are kept)';
-
   return `
     <div class="settings-panel" data-page="main">
       <div class="settings-header">
         <h2>Super Secret Settings</h2>
-        <button data-command="settings.resetAll" title="${escapeHTML(resetHint)}">Reset All</button>
       </div>
-      ${quickActionsHTML()}
+      ${quickActionsHTML(model)}
       ${settingsListHTML({
         schema: GLOBAL_SETTINGS,
         activeKey: state.session.activeSettingKey,

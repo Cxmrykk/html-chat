@@ -17,6 +17,7 @@ import * as images from '../services/images.js';
 import { pickJSONText, pickFiles } from '../services/file-io.js';
 import { isRetryable, isCollapsed, messageMarkdown } from '../ui/components/message.js';
 import { setSettingsEditorValue } from '../ui/components/input-area.js';
+import { hydrateConnectionForm } from '../ui/components/connection-form.js';
 import { sourceBlocks } from '../ui/markdown.js';
 import { isSendable, isEditable, isThinking, isPreamble } from '../core/roles.js';
 import { attachmentsOf } from '../core/attachments.js';
@@ -183,10 +184,12 @@ function setPendingAttachments(list) {
  * to yet brings the warning back. Resolves with whether to go ahead.
  */
 async function confirmPlaceholders(messages) {
-  const { missing, hashes, unconfirmed } = await images.placeholdersToConfirm(messages);
+  const { hashes, unconfirmed } = await images.placeholdersToConfirm(messages);
   if (!unconfirmed.length) return true;
 
-  const count = missing.length;
+  // By hash: an image shown in several places (a tool call and the answer
+  // after it, say) is one image.
+  const count = hashes.length;
   const subject =
     count === 1
       ? 'An image in this chat is only a placeholder'
@@ -227,6 +230,20 @@ function isEditedAttachment(index, at) {
   );
 }
 
+/** Ask before an imported set of settings replaces the current one. */
+function confirmSettingsImport(imported) {
+  const enablesCode =
+    transfer.importedCodeExecution(imported) && !state.data.config.jsExecution;
+  return confirm(
+    'Replace your current settings with the ones in this file?\n\n' +
+      'Per-model overrides and identified image models are replaced too. ' +
+      'Your API key is kept unless the file holds one, and your chats are not changed.' +
+      (enablesCode
+        ? '\n\nThis file turns Code Execution ON: the model will be able to run JavaScript in this page.'
+        : ''),
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * Commands
  * ------------------------------------------------------------------ */
@@ -252,7 +269,7 @@ export const commands = {
   /* ---- chats ---- */
 
   'chat.new': async ({ event } = {}) => {
-    if (event?.altKey) return commands['chat.import']();
+    if (event?.altKey) return commands['data.import']();
     stopEditing();
     leaveSettings();
     await conversation.createChat();
@@ -330,19 +347,73 @@ export const commands = {
     await conversation.removeChat(id);
   },
 
-  /** Every chat as one JSON file: the Export Chats card under Quick Actions. */
+  /* ---- quick actions ---- */
+
+  /** The open chat as a JSON file: Export Current Chat. */
+  'chat.exportCurrent': () => {
+    const id = state.data.currentChatId;
+    if (id) transfer.exportChat(id);
+  },
+
+  /** Every chat as one JSON file: Export All Chats. */
   'chat.export': () => transfer.exportAllChats(),
 
-  /** Chats from a JSON export: the Import Chats card under Quick Actions, or Alt+Click New. */
-  'chat.import': async () => {
+  /** The settings as a JSON file, without the API key: Export Settings. */
+  'settings.export': () => transfer.exportSettings(),
+
+  /**
+   * Import any export: one chat, all chats, or the settings (Import under
+   * Quick Actions, or Alt+Click New). What the file holds is read from it.
+   * Settings replace the current ones, after asking.
+   */
+  'data.import': async () => {
     const text = await pickJSONText();
     if (!text) return;
+
+    let parsed;
     try {
-      const added = await transfer.importChats(text);
+      parsed = transfer.parseImport(text);
+    } catch (error) {
+      alert(`Failed to import: ${error.message}`);
+      return;
+    }
+
+    if (parsed.kind === 'settings') {
+      if (!confirmSettingsImport(parsed.settings)) return;
+      try {
+        setSession(
+          { activeSettingKey: null, settingsDraft: null, settingsModel: null },
+          { silent: true },
+        );
+        await transfer.applySettings(parsed.settings);
+        hydrateConnectionForm();
+        alert('Settings imported.');
+      } catch (error) {
+        alert(`Failed to import settings: ${error.message}`);
+      }
+      return;
+    }
+
+    try {
+      const added = await transfer.addChats(parsed.chats);
       alert(`Successfully imported ${added} new chat(s).`);
     } catch (error) {
       alert(`Failed to import chats: ${error.message}`);
     }
+  },
+
+  /** Delete every chat, after asking: Reset Chats. A reply in progress is stopped first. */
+  'chat.resetAll': async () => {
+    const count = state.data.chats.length;
+    if (!count) return;
+    const question =
+      `Delete all ${count} chat(s)? This cannot be undone.\n\n` +
+      'Use Export All Chats first to keep a copy.';
+    if (!confirm(question)) return;
+
+    if (state.runtime.generation.active) conversation.abortGeneration();
+    stopEditing();
+    await conversation.removeAllChats();
   },
 
   /* ---- composing ---- */
@@ -886,6 +957,10 @@ export const commands = {
     setSession({ activeSettingKey: null, settingsDraft: null });
   },
 
+  /**
+   * Reset All Settings, under Quick Actions. With a model picked for LLM
+   * Behavior, only that model's overrides are removed.
+   */
   'settings.resetAll': async () => {
     const model = state.session.settingsModel;
     const question = model

@@ -1,4 +1,3 @@
-import { $ } from '../ui/dom.js';
 import { state, setSession } from '../store/state.js';
 import * as configRepo from '../data/config-repo.js';
 import * as chatsRepo from '../data/chats-repo.js';
@@ -6,18 +5,11 @@ import * as prefsRepo from '../data/prefs-repo.js';
 import { purgeRetiredData } from '../data/retired-repo.js';
 import { ensureActiveModel, refreshModels } from '../services/models.js';
 import { installBindings, renderAll } from '../ui/bindings.js';
+import { hydrateConnectionForm } from '../ui/components/connection-form.js';
 import { installEventHandlers } from './events.js';
 import { installShortcuts } from './shortcuts.js';
 
 /** Bootstrap: load, wire, render. Nothing else belongs here. */
-
-function hydrateConnectionForm() {
-  const config = state.data.config;
-  if ($('#cfg-url')) $('#cfg-url').value = config.url;
-  if ($('#cfg-key')) $('#cfg-key').value = config.key;
-  if ($('#cfg-js-exec')) $('#cfg-js-exec').checked = Boolean(config.jsExecution);
-  if ($('#cfg-image-gen')) $('#cfg-image-gen').checked = Boolean(config.imageGeneration);
-}
 
 async function init() {
   const [config, chats, prefs] = await Promise.all([

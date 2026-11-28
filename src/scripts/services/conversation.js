@@ -18,9 +18,14 @@ import { wireImages, sendsGeneratedImages } from './images.js';
 import { buildApiMessages } from '../core/tool-calls.js';
 import { normalizeRoundReasoning } from '../core/reasoning.js';
 import { normalizeChat } from '../core/chats.js';
-import { attachmentsOf, normalizeAttachment, normalizeAttachments } from '../core/attachments.js';
+import {
+  attachmentsOf,
+  normalizeAttachment,
+  normalizeAttachments,
+  turnImagesBefore,
+} from '../core/attachments.js';
 import { GLOBAL_SETTINGS } from '../core/settings-schema.js';
-import { isThinking, THINKING_ROLE } from '../core/roles.js';
+import { isThinking, isPreamble, THINKING_ROLE } from '../core/roles.js';
 import {
   roundsOf,
   callAt,
@@ -70,6 +75,18 @@ export async function removeChat(id) {
   }
   invalidateContext();
   await chatsRepo.deleteChat(id, state.data.chats);
+  await persistPrefs();
+  emit(EVENTS.CHATS);
+  emit(EVENTS.MESSAGES);
+}
+
+/** Delete every chat. Original images stay in the image cache, which trims itself. */
+export async function removeAllChats() {
+  const ids = state.data.chats.map((chat) => chat.id);
+  state.data.chats = [];
+  state.data.currentChatId = null;
+  invalidateContext();
+  await chatsRepo.deleteAllChats(ids);
   await persistPrefs();
   emit(EVENTS.CHATS);
   emit(EVENTS.MESSAGES);
@@ -291,6 +308,10 @@ export async function setAttachmentsOpen(index, open) {
  * turn ends. So its buttons, which act on what the model produced, only ever
  * appear on a box with something in it. Every box and preamble the turn makes
  * is marked `active` until the turn ends, which keeps their buttons hidden.
+ *
+ * When the turn ends, the answer that closes it is given copies of every
+ * image the turn's calls made, as its attachments, opened: the thinking box
+ * that holds the calls starts collapsed, so this is where the images show.
  *
  * When a round's request settles, the reasoning the provider may need back —
  * signed thinking blocks, or the raw reasoning field — is attached to the
@@ -538,6 +559,34 @@ function createTurn(chat, chatId, { resume = null } = {}) {
     repaint(work, false);
   };
 
+  /**
+   * The answer that closes the turn — the latest assistant message after the
+   * latest user message that is not a preamble — given copies of the images
+   * the turn's calls made before it, after any it already has, and opened so
+   * they show. Resolves with the answer if it changed, else null. A turn that
+   * ended without an answer (stopped, failed) has nothing to give them to:
+   * its images stay with its calls.
+   */
+  const attachTurnImages = () => {
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const message = chat.messages[i];
+      if (message?.role === 'user') return null;
+      if (message?.role !== 'assistant' || isPreamble(message)) continue;
+
+      const own = attachmentsOf(message);
+      const known = new Set(own.map((attachment) => attachment.hash));
+      const added = turnImagesBefore(chat.messages, i).filter(
+        (attachment) => !known.has(attachment.hash),
+      );
+      if (!added.length) return null;
+
+      message.attachments = [...own, ...added];
+      message.attachmentsOpen = true;
+      return message;
+    }
+    return null;
+  };
+
   return {
     /**
      * Start a round: the thinking message is mounted (or resumed) and a new
@@ -650,7 +699,7 @@ function createTurn(chat, chatId, { resume = null } = {}) {
      * before an answer started, the wait is stamped with how it ended, and so
      * is the round it ended in. Every box and preamble the turn made stops
      * being active, which shows their buttons — and a box that never received
-     * anything is removed.
+     * anything is removed. The answer is given the images the turn made.
      */
     async finish(outcome = null) {
       const now = Date.now();
@@ -682,10 +731,13 @@ function createTurn(chat, chatId, { resume = null } = {}) {
         }
       }
 
+      const answer = attachTurnImages();
+
       if (removed) {
         if (isVisible()) emit(EVENTS.MESSAGES);
       } else {
         for (const message of owned) repaint(message, false);
+        if (answer) repaint(answer, false);
       }
 
       invalidateContext();

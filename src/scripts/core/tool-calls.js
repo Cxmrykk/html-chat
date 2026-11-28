@@ -181,11 +181,16 @@ const GENERATED_NOTE = 'The images generated just above, sent back so you can ch
 
 /**
  * Images the model made, as the user message that carries them back: the
- * API takes image parts only from users. Null when there are none to send.
+ * API takes image parts only from users. Each image goes back once per
+ * request (`wire.sentGenerated`): the answer of a turn carries copies of what
+ * its calls made, and those were already sent after the tool results. Null
+ * when there are none to send.
  */
-function generatedMessage(list, images) {
-  const parts = imageParts(list, images, true);
+function generatedMessage(list, wire) {
+  const fresh = list.filter((attachment) => !wire.sentGenerated.has(attachment.hash));
+  const parts = imageParts(fresh, wire.images, true);
   if (!parts.length) return null;
+  for (const attachment of fresh) wire.sentGenerated.add(attachment.hash);
   return { role: 'user', content: [{ type: 'text', text: GENERATED_NOTE }, ...parts] };
 }
 
@@ -223,7 +228,7 @@ function wireRounds(message, replay, lead, wire) {
     );
 
     if (wire.sendGenerated) {
-      const extra = generatedMessage(answered.flatMap(attachmentsOf), wire.images);
+      const extra = generatedMessage(answered.flatMap(attachmentsOf), wire);
       if (extra) payload.push(extra);
     }
   }
@@ -289,8 +294,9 @@ function lastUserIndex(messages) {
  *     `labelImages` (the image tools are offered). Without `images`, only
  *     text is built (the context estimate does that);
  *   - with `sendGenerated`, images the model made — by an image tool call,
- *     or as an image model's reply — follow in a user message of their own,
- *     right after the tool results or the reply.
+ *     or attached to an assistant message — follow in a user message of
+ *     their own, right after the tool results or the message, each image
+ *     once.
  *
  * Everything is reduced to wire fields, so presentational ones never leave.
  */
@@ -313,6 +319,7 @@ export function buildApiMessages(
     images,
     sendGenerated: Boolean(images) && Boolean(sendGenerated),
     labelImages: Boolean(labelImages),
+    sentGenerated: new Set(),
   };
   const payload = [];
 
@@ -339,7 +346,7 @@ export function buildApiMessages(
     payload.push({ role: message.role, content: wireContent(message, wire, carried) });
 
     if (wire.sendGenerated && message.role === 'assistant') {
-      const extra = generatedMessage(attachmentsOf(message), images);
+      const extra = generatedMessage(attachmentsOf(message), wire);
       if (extra) payload.push(extra);
     }
   }

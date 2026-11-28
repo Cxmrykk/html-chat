@@ -57,6 +57,8 @@ export function renderAll() {
 export function installBindings() {
   on(EVENTS.CHATS, () => {
     renderChatList();
+    // Quick Actions read the chat list: the open chat, and how many there are.
+    if (state.session.view === 'settings') renderSettingsView();
   });
 
   on(EVENTS.MESSAGES, () => {
@@ -173,7 +175,7 @@ export function installBindings() {
 
   on(EVENTS.MODELS, () => {
     updateModelDropdown();
-    // The Generate Images switch shows only once an image model is selected.
+    // The Image Manipulation switch shows only once an image model is identified.
     renderConnectionForm();
     // The settings view lists the models parameters can be set for, the
     // image model pickers, and what each setting currently reads.

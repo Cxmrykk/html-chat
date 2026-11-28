@@ -56,3 +56,13 @@ export async function deleteChat(id, remainingChats) {
   await idb.remove(KEYS.chat(id));
   await saveChatIndex(remainingChats);
 }
+
+/**
+ * Delete every chat named in `ids`, and empty the index. Records are removed
+ * one by one rather than by prefix: the index itself (`mf_chat_index`) shares
+ * the chat records' prefix.
+ */
+export async function deleteAllChats(ids) {
+  await saveChatIndex([]);
+  for (const id of ids) await idb.remove(KEYS.chat(id));
+}

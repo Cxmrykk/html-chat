@@ -12,12 +12,15 @@ import { roundsOf } from './thinking.js';
  * the placeholder is what is shown and, scaled up to the original size, what
  * is sent.
  *
- * Images also come from the model: an image model's reply carries them as an
- * assistant message's attachments, and an image tool call carries what it made
- * as the call's own `attachments`. Those are sent back only when Send
- * Generated Images is on, and never as assistant content (the chat
- * completions API accepts image parts only from users): `core/tool-calls.js`
- * sends them in a user message of their own.
+ * Images also come from the model: an image tool call carries what it made
+ * as the call's own `attachments`, and the answer that ends the turn carries
+ * copies of every image the turn's calls made, so they show at the end of the
+ * reply (`turnImagesBefore`). Chats from when image models could be chatted
+ * with directly also hold assistant messages whose attachments are the
+ * reply. Model-made images are sent back only when Send Generated Images is
+ * on, each once, and never as assistant content (the chat completions API
+ * accepts image parts only from users): `core/tool-calls.js` sends them in a
+ * user message of their own.
  *
  * Every image has a short id, `img_` and the start of its hash, which is how
  * the model names one to the image tools.
@@ -81,6 +84,33 @@ export function allImagesOf(message) {
   return [...attachmentsOf(message), ...callImagesOf(message)];
 }
 
+/** `list` with each image once, by hash, keeping the first. */
+export function uniqueImages(list) {
+  const seen = new Set();
+  const out = [];
+  for (const attachment of list || []) {
+    if (!attachment || seen.has(attachment.hash)) continue;
+    seen.add(attachment.hash);
+    out.push(attachment);
+  }
+  return out;
+}
+
+/**
+ * The images the tool calls of a turn made before message `end`: those of
+ * every thinking message back to the latest user message, oldest first, each
+ * once. What the answer at `end` carries at its end.
+ */
+export function turnImagesBefore(messages, end) {
+  const list = Array.isArray(messages) ? messages : [];
+  const groups = [];
+  for (let i = Math.min(end, list.length) - 1; i >= 0; i--) {
+    if (list[i]?.role === 'user') break;
+    groups.unshift(callImagesOf(list[i]));
+  }
+  return uniqueImages(groups.flat());
+}
+
 /** Whether a message's own images go out with it. */
 export function sendsImages(message) {
   return message?.role === 'user';
@@ -88,8 +118,8 @@ export function sendsImages(message) {
 
 /**
  * The images a request built from this message sends: a user message's own,
- * and with `generated`, what the model made (an image model's reply, the
- * images of tool calls).
+ * and with `generated`, what the model made (an assistant message's
+ * attachments, the images of tool calls).
  */
 export function imagesToSend(message, { generated = false } = {}) {
   if (sendsImages(message)) return attachmentsOf(message);

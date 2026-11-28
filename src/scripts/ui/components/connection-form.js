@@ -1,4 +1,5 @@
 import { $, setHidden } from '../dom.js';
+import { state } from '../../store/state.js';
 import { imageModels } from '../../services/models.js';
 
 /**
@@ -9,4 +10,18 @@ import { imageModels } from '../../services/models.js';
  */
 export function renderConnectionForm() {
   setHidden($('#cfg-image-gen-label'), !imageModels().length);
+}
+
+/**
+ * Fill the form from the config: at startup, and after settings are
+ * imported. Never on an ordinary render, which would overwrite what the user
+ * is typing.
+ */
+export function hydrateConnectionForm() {
+  const config = state.data.config;
+  if ($('#cfg-url')) $('#cfg-url').value = config.url;
+  if ($('#cfg-key')) $('#cfg-key').value = config.key;
+  if ($('#cfg-js-exec')) $('#cfg-js-exec').checked = Boolean(config.jsExecution);
+  if ($('#cfg-image-gen')) $('#cfg-image-gen').checked = Boolean(config.imageGeneration);
+  renderConnectionForm();
 }
